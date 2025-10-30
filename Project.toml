@@ -1,0 +1,27 @@
+name = "CoolPDLP"
+uuid = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
+version = "0.1.0"
+authors = ["Guillaume Dalle"]
+
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+DeviceSparseArrays = "da3fe0eb-88a8-4d14-ae1a-857c283e9c70"
+DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+QPSReader = "10f199a5-22af-520b-b891-7ce84a7b1bd0"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[sources]
+DeviceSparseArrays = { url = "https://github.com/albertomercurio/DeviceSparseArrays.jl" }
+
+[compat]
+Adapt = "4.4.0"
+DeviceSparseArrays = "0.1.0"
+DocStringExtensions = "0.9.5"
+GZip = "0.6.2"
+KernelAbstractions = "0.9.38"
+LinearAlgebra = "1"
+QPSReader = "0.2.1"
+SparseArrays = "1"
