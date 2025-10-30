@@ -55,3 +55,37 @@ function relax(milp::MILP)
     (; c, G, h, A, b, l, u, intvar, varname) = milp
     return MILP(; c, G, h, A, b, l, u, intvar = zero(intvar), varname)
 end
+
+struct SaddlePointProblem{
+        T <: Number,
+        I <: Integer,
+        V <: AbstractVector{T},
+        M <: AbstractMatrix{T},
+    }
+    c::V
+    q::V
+    K::M
+    Kᵀ::M
+    l::V
+    u::V
+    m₁::I
+    m₂::I
+
+    function SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
+        T = promote_eltype(c, q, K, Kᵀ, l, u)
+        I = promote_type(typeof(m₁), typeof(m₂))
+        V = promote_type(typeof(c), typeof(q), typeof(l), typeof(u))
+        M = promote_type(typeof(K), typeof(Kᵀ))
+        return new{T, I, V, M}(c, q, K, Kᵀ, l, u, m₁, m₂)
+    end
+end
+
+function SaddlePointProblem(milp::MILP)
+    (; c, G, h, A, b, l, u) = milp
+    q = vcat(h, b)
+    K = vcat(G, A)
+    Kᵀ = convert(typeof(K), transpose(K))
+    m₁ = length(h)
+    m₂ = length(b)
+    return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
+end

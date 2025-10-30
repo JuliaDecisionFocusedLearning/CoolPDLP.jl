@@ -10,6 +10,7 @@ using SparseArrays
 include("types.jl")
 include("check.jl")
 include("io.jl")
+include("pdhg.jl")
 
 export MILP, nbvar, relax
 export is_feasible, objective_value
