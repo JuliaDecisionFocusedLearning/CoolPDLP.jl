@@ -42,12 +42,14 @@ struct MILP{
     end
 end
 
+
 function Base.show(io::IO, milp::MILP)
     (; c, h, b, intvar) = milp
     return print(io, "MILP with $(length(c)) variables ($(sum(intvar)) integer), $(length(h)) inequality constraints and $(length(b)) equality constraints")
 end
 
 Base.eltype(::MILP{T}) where {T} = T
+
 
 """
     nbvar(milp)
@@ -65,6 +67,7 @@ nbcons(milp::MILP) = nbcons_eq(milp) + nbcons_ineq(milp)
 nbcons_eq(milp::MILP) = length(milp.b)
 nbcons_ineq(milp::MILP) = length(milp.h)
 
+
 """
     relax(milp)
 
@@ -75,13 +78,15 @@ function relax(milp::MILP)
     return MILP(; c, G, h, A, b, l, u, intvar = zero(intvar), varname)
 end
 
+
 """
     SaddlePointProblem
 
 Represent the saddle point problem
 
     min_x max_y L(x, y) = cᵀx - yᵀKx + qᵀy
-    s.t. x ∈ X = {l ≤ x ≤ u} & y ∈ Y = {y[1:m₁] ≥ 0} 
+    s.t. x ∈ X = {l ≤ x ≤ u}
+         y ∈ Y = {y[1:m₁] ≥ 0} 
 
 # Fields
 
@@ -119,4 +124,31 @@ function SaddlePointProblem(milp::MILP)
     m₁ = length(h)
     m₂ = length(b)
     return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
+end
+
+
+struct PrimalDualVariable{T <: Number, V <: AbstractVector{T}}
+    x::V
+    y::V
+end
+
+Base.copy(z::PrimalDualVariable) = PrimalDualVariable(copy(z.x), copy(z.y))
+Base.zero(z::PrimalDualVariable) = PrimalDualVariable(zero(z.x), zero(z.y))
+
+function Base.copyto!(z1::PrimalDualVariable, z2::PrimalDualVariable)
+    copyto!(z1.x, z2.x)
+    copyto!(z1.y, z2.y)
+    return nothing
+end
+
+function Base.:*(α::T, z::PrimalDualVariable{T}) where {T}
+    return PrimalDualVariable(α * z.x, α * z.y)
+end
+
+function Base.:+(z1::PrimalDualVariable{T}, z2::PrimalDualVariable{T}) where {T}
+    return PrimalDualVariable(z1.x + z2.x, z1.y + z2.y)
+end
+
+function default_init(problem::SaddlePointProblem)
+    return PrimalDualVariable(zero(problem.c), zero(problem.q))
 end

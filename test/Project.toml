@@ -2,6 +2,8 @@
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+SCS = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
