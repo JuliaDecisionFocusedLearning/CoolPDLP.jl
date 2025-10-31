@@ -121,11 +121,40 @@ function SaddlePointProblem(milp::MILP)
     q = vcat(h, b)
     K = vcat(G, A)
     Kᵀ = convert(typeof(K), transpose(K))
+    Kd = DeviceSparseMatrixCSR(K)
+    Kᵀd = DeviceSparseMatrixCSR(Kᵀ)
     m₁ = length(h)
     m₂ = length(b)
-    return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
+    return SaddlePointProblem(; c, q, K = Kd, Kᵀ = Kᵀd, l, u, m₁, m₂)
 end
 
+function Adapt.adapt_structure(to, problem::SaddlePointProblem)
+    (; c, q, K, Kᵀ, l, u, m₁, m₂) = problem
+    return SaddlePointProblem(;
+        c = adapt(to, c),
+        q = adapt(to, q),
+        K = adapt(to, K),
+        Kᵀ = adapt(to, Kᵀ),
+        l = adapt(to, l),
+        u = adapt(to, u),
+        m₁ = m₁,
+        m₂ = m₂
+    )
+end
+
+function change_eltype(::Type{T}, problem::SaddlePointProblem) where {T}
+    (; c, q, K, Kᵀ, l, u, m₁, m₂) = problem
+    return SaddlePointProblem(;
+        c = change_eltype(T, c),
+        q = change_eltype(T, q),
+        K = change_eltype(T, K),
+        Kᵀ = change_eltype(T, Kᵀ),
+        l = change_eltype(T, l),
+        u = change_eltype(T, u),
+        m₁ = m₁,
+        m₂ = m₂
+    )
+end
 
 struct PrimalDualVariable{T <: Number, V <: AbstractVector{T}}
     x::V

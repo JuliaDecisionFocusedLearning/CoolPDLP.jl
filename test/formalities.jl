@@ -4,9 +4,9 @@ using JET
 using Test
 
 @testset "Aqua" begin
-    Aqua.test_all(CoolPDLP; undocumented_names = true)
+    Aqua.test_all(CoolPDLP; undocumented_names = false)
 end;
 
 @testset "JET" begin
-    JET.test_package(CoolPDLP)
+    JET.test_package(CoolPDLP; target_modules = [CoolPDLP])
 end

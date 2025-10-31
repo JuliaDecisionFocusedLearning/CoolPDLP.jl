@@ -31,9 +31,11 @@ function read_milp(mps_gz_path::String)
     smaller_inds = .!eq_inds .& (U .< typemax(eltype(L)))
 
     A = A_eq_ineq[eq_inds, :]
+    Ad = DeviceSparseMatrixCSR(A)
     b = U[eq_inds]
 
     G = vcat(A_eq_ineq[larger_inds, :], -A_eq_ineq[smaller_inds, :])
+    Gd = DeviceSparseMatrixCSR(G)
     h = vcat(L[larger_inds], -U[smaller_inds])
 
     binvar = vartypes .== VTYPE_Binary
@@ -43,7 +45,7 @@ function read_milp(mps_gz_path::String)
 
     varname = varnames
 
-    milp = MILP(; c, G, h, A, b, l, u, intvar = binvar .| intvar, varname)
+    milp = MILP(; c, G = Gd, h, A = Ad, b, l, u, intvar = binvar .| intvar, varname)
     return milp
 end
 

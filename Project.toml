@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Guillaume Dalle"]
 
 [workspace]
-projects = ["test"]
+projects = ["test", "test/metal", "test/reactant"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -20,7 +20,7 @@ QPSReader = "10f199a5-22af-520b-b891-7ce84a7b1bd0"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [sources]
-DeviceSparseArrays = {url = "https://github.com/albertomercurio/DeviceSparseArrays.jl"}
+DeviceSparseArrays = { url = "https://github.com/albertomercurio/DeviceSparseArrays.jl" }
 
 [compat]
 Adapt = "4.4.0"
