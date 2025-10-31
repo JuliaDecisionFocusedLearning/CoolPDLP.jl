@@ -1,8 +1,13 @@
 module CoolPDLP
 
+using Adapt
+using DeviceSparseArrays
 using DocStringExtensions
 using GZip
+using KernelAbstractions
 using LinearAlgebra
+using Logging
+using ProgressMeter
 using QPSReader
 using QPSReader: VTYPE_Binary, VTYPE_Integer
 using SparseArrays
@@ -10,10 +15,11 @@ using SparseArrays
 include("types.jl")
 include("check.jl")
 include("io.jl")
-include("pdhg.jl")
+include("pdlp.jl")
 
-export MILP, nbvar, relax
+export MILP, nbvar, nbcons, relax
 export is_feasible, objective_value
 export read_milp, write_sol, read_sol
+export PrimalDualVariable, SaddlePointProblem, PDLPParameters, pdlp
 
 end # module CoolPDLP

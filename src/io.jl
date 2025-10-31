@@ -14,7 +14,9 @@ function read_milp(mps_gz_path::String)
         write(f, contents)
     end
 
-    qps_data = readqps(mps_path)
+    qps_data = with_logger(NullLogger()) do
+        readqps(mps_path)
+    end
     (; arows, acols, avals, lcon, ucon, lvar, uvar, c, vartypes, varnames) = qps_data
 
     A_eq_ineq = sparse(arows, acols, avals)

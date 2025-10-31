@@ -49,13 +49,44 @@ end
 
 Base.eltype(::MILP{T}) where {T} = T
 
+"""
+    nbvar(milp)
+
+Return the number of variables in `milp`.
+"""
 nbvar(milp::MILP) = length(milp.c)
 
+"""
+    nbcons(milp)
+
+Return the number of constraints in `milp`, not including variable bounds or integrality requirements.
+"""
+nbcons(milp::MILP) = nbcons_eq(milp) + nbcons_ineq(milp)
+nbcons_eq(milp::MILP) = length(milp.b)
+nbcons_ineq(milp::MILP) = length(milp.h)
+
+"""
+    relax(milp)
+
+Return a new `MILP` identical to `milp` but without integrality requirements.
+"""
 function relax(milp::MILP)
     (; c, G, h, A, b, l, u, intvar, varname) = milp
     return MILP(; c, G, h, A, b, l, u, intvar = zero(intvar), varname)
 end
 
+"""
+    SaddlePointProblem
+
+Represent the saddle point problem
+
+    min_x max_y L(x, y) = cᵀx - yᵀKx + qᵀy
+    s.t. x ∈ X = {l ≤ x ≤ u} & y ∈ Y = {y[1:m₁] ≥ 0} 
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
 struct SaddlePointProblem{
         T <: Number,
         I <: Integer,
@@ -72,7 +103,7 @@ struct SaddlePointProblem{
     m₂::I
 
     function SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
-        T = promote_eltype(c, q, K, Kᵀ, l, u)
+        T = Base.promote_eltype(c, q, K, Kᵀ, l, u)
         I = promote_type(typeof(m₁), typeof(m₂))
         V = promote_type(typeof(c), typeof(q), typeof(l), typeof(u))
         M = promote_type(typeof(K), typeof(Kᵀ))

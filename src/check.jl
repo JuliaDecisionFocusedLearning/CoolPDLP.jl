@@ -1,10 +1,15 @@
+"""
+    is_feasible(x, milp[; cons_tol=1e-6, int_tol=1e-5, verbose=true])
+
+Check whether solution vector `x` is feasible for `milp`, with a tolerance `cons_tol` on constraint satisfaction and `int_tol` on integrality requirements.
+"""
 function is_feasible(
-        x::AbstractVector{<:Number}, milp::MILP{T};
+        x::AbstractVector{T}, milp::MILP{T};
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
     ) where {T}
     (; G, h, A, b, l, u, intvar) = milp
-    eq_err = maximum(abs, A * x - b)
-    ineq_err = maximum(h - G * x)
+    eq_err = maximum(abs, A * x - b; init = typemin(T))
+    ineq_err = maximum(h - G * x; init = typemin(T))
     bounds_err = max(maximum(x - u), maximum(l - x))
     xint = x[intvar]
     int_err = maximum(abs, xint .- round.(Int, xint))
@@ -17,7 +22,7 @@ function is_feasible(
     elseif bounds_err > cons_tol
         verbose && @warn "Variable bounds not satisfied"
         return false
-    elseif bin_err > int_tol || int_err > int_tol
+    elseif int_err > int_tol
         verbose && @warn "Integrality not satisfied"
         return false
     else
@@ -25,6 +30,11 @@ function is_feasible(
     end
 end
 
+"""
+    objective_value(x, milp)
+
+Compute the value of the linear objective of `milp` at solution vector `x`.
+"""
 function objective_value(x::AbstractVector{<:Number}, milp::MILP)
     return dot(x, milp.c)
 end
