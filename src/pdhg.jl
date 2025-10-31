@@ -2,6 +2,7 @@
     ϵ_termination::T = 1.0e-4
     max_kkt_passes::Int = 100_000
     time_limit::Float64 = 100.0
+    check_every::Int = 40
 end
 
 @enum TerminationReason CONVERGENCE TIME ITERATIONS STILL_RUNNING
@@ -33,7 +34,8 @@ function pdhg(
         yield()
         next!(prog, showvalues = [("rel_err", state.rel_err)])
         pdhg_step!(state, problem)
-        if termination_check!(state, problem, params)
+        if (state.kkt_passes % params.check_every == 0) &&
+                termination_check!(state, problem, params)
             break
         end
     end
@@ -82,7 +84,7 @@ function pdhg_step!(
     yp = proj_Y(problem, y + σ * (q - K * (2 * xp - x)))
     zp = PrimalDualVariable(xp, yp)
     copyto!(z, zp)
-    state.kkt_passes += 2
+    state.kkt_passes += 1
     return nothing
 end
 
