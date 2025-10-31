@@ -119,13 +119,10 @@ function adaptive_step_pdhg(
     for it in 1:100 # TODO: infinite
         xp = proj_X(sad, x - (η / ω) * (c - Kᵀ * y))
         yp = proj_Y(sad, y + (η * ω) * (q - K * (2 * xp - x)))
-        xp = x - (η / ω) * (c - Kᵀ * y)
-        yp = y + (η * ω) * (q - K * (2 * xp - x))
         xdiff = xp - x
         ydiff = yp - y
         zdiff = PrimalDualVariable(xdiff, ydiff)
-        @assert dot(ydiff, K, xdiff) > 0
-        η̄ = custom_sqnorm(zdiff, ω) / (2 * dot(ydiff, K, xdiff))
+        η̄ = custom_sqnorm(zdiff, ω) / abs(2 * dot(ydiff, K, xdiff))
         ηp = min(
             (1 - (k + 1)^T(-0.3)) * η̄,
             (1 + (k + 1)^T(-0.6)) * η
