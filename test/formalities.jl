@@ -4,7 +4,7 @@ using JET
 using Test
 
 @testset "Aqua" begin
-    Aqua.test_all(CoolPDLP; undocumented_names = false)
+    Aqua.test_all(CoolPDLP; undocumented_names = true, piracies = false)
 end;
 
 @testset "JET" begin

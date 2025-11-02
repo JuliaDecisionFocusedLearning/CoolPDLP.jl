@@ -28,7 +28,7 @@ LocalPreferences.toml
 JuliaLocalPreferences.toml
 
 # custom
-playground.jl
+playground*.jl
 *.mps
 *.mps.gz
 *.sol

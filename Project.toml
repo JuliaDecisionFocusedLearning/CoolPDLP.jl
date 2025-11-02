@@ -8,6 +8,7 @@ projects = ["test", "test/metal", "test/reactant"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
 DeviceSparseArrays = "da3fe0eb-88a8-4d14-ae1a-857c283e9c70"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
@@ -20,10 +21,11 @@ QPSReader = "10f199a5-22af-520b-b891-7ce84a7b1bd0"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [sources]
-DeviceSparseArrays = { url = "https://github.com/albertomercurio/DeviceSparseArrays.jl" }
+DeviceSparseArrays = {url = "https://github.com/albertomercurio/DeviceSparseArrays.jl"}
 
 [compat]
 Adapt = "4.4.0"
+DataDeps = "0.7.13"
 DeviceSparseArrays = "0.1.0"
 DocStringExtensions = "0.9.5"
 GZip = "0.6.2"

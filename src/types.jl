@@ -1,3 +1,19 @@
+abstract type AbstractProblem end
+
+"""
+    nbvar(problem)
+
+Return the number of variables in `problem`.
+"""
+function nbvar end
+
+"""
+    nbcons(problem)
+
+Return the number of constraints in `problem`, not including variable bounds or integrality requirements.
+"""
+function nbcons end
+
 """
     MILP
 
@@ -15,15 +31,24 @@ struct MILP{
         M <: AbstractMatrix{T},
         Vb <: AbstractVector{Bool},
         Vs <: AbstractVector{String},
-    }
+    } <: AbstractProblem
+    "objective vector"
     c::V
+    "inequality constraint matrix"
     G::M
+    "inequality constraint right-hand side"
     h::V
+    "equality constraint matrix"
     A::M
+    "equality constraint right-hand side"
     b::V
+    "variable lower bound"
     l::V
+    "variable upper bound"
     u::V
+    "specify which variables must be integers"
     intvar::Vb
+    "list of variable names"
     varname::Vs
 
     function MILP(; c, G, h, A, b, l, u, intvar, varname)
@@ -42,31 +67,19 @@ struct MILP{
     end
 end
 
-
 function Base.show(io::IO, milp::MILP)
-    (; c, h, b, intvar) = milp
-    return print(io, "MILP with $(length(c)) variables ($(sum(intvar)) integer), $(length(h)) inequality constraints and $(length(b)) equality constraints")
+    return print(io, "MILP with $(nbvar(milp)) variables ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer), $(nbcons_ineq(milp)) inequality constraints and $(nbcons_eq(milp)) equality constraints (total of $(nnz(milp.G) + nnz(milp.A)) nonzero coefficients)")
 end
 
 Base.eltype(::MILP{T}) where {T} = T
 
-
-"""
-    nbvar(milp)
-
-Return the number of variables in `milp`.
-"""
 nbvar(milp::MILP) = length(milp.c)
+nbvar_int(milp::MILP) = sum(milp.intvar)
+nbvar_cont(milp::MILP) = nbvar(milp) - nbvar_int(milp)
 
-"""
-    nbcons(milp)
-
-Return the number of constraints in `milp`, not including variable bounds or integrality requirements.
-"""
 nbcons(milp::MILP) = nbcons_eq(milp) + nbcons_ineq(milp)
 nbcons_eq(milp::MILP) = length(milp.b)
 nbcons_ineq(milp::MILP) = length(milp.h)
-
 
 """
     relax(milp)
@@ -94,70 +107,78 @@ $(TYPEDFIELDS)
 """
 struct SaddlePointProblem{
         T <: Number,
-        I <: Integer,
+        Ti <: Integer,
         V <: AbstractVector{T},
         M <: AbstractMatrix{T},
-    }
+    } <: AbstractProblem
+    "objective vector"
     c::V
+    "constraint right-hand side"
     q::V
+    "constraint matrix"
     K::M
+    "transposed constraint matrix"
     Kᵀ::M
+    "variable lower bound"
     l::V
+    "variable upped bound"
     u::V
-    m₁::I
-    m₂::I
+    "number of inequality constraints"
+    m₁::Ti
+    "number of equality constraints"
+    m₂::Ti
 
     function SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
         T = Base.promote_eltype(c, q, K, Kᵀ, l, u)
-        I = promote_type(typeof(m₁), typeof(m₂))
+        Ti = promote_type(typeof(m₁), typeof(m₂))
         V = promote_type(typeof(c), typeof(q), typeof(l), typeof(u))
         M = promote_type(typeof(K), typeof(Kᵀ))
-        return new{T, I, V, M}(c, q, K, Kᵀ, l, u, m₁, m₂)
+        return new{T, Ti, V, M}(c, q, K, Kᵀ, l, u, m₁, m₂)
     end
 end
 
+"""
+    SaddlePointProblem(milp::MILP)
+
+Construct a [`SaddlePointProblem`](@ref) from a [`MILP`](@ref) as in the PDLP paper:
+
+- `K = vcat(G, A)`
+- `q = vcat(h, b)`
+"""
 function SaddlePointProblem(milp::MILP)
     (; c, G, h, A, b, l, u) = milp
     q = vcat(h, b)
     K = vcat(G, A)
     Kᵀ = convert(typeof(K), transpose(K))
-    Kd = DeviceSparseMatrixCSR(K)
-    Kᵀd = DeviceSparseMatrixCSR(Kᵀ)
     m₁ = length(h)
     m₂ = length(b)
-    return SaddlePointProblem(; c, q, K = Kd, Kᵀ = Kᵀd, l, u, m₁, m₂)
+    return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
 end
 
-function Adapt.adapt_structure(to, problem::SaddlePointProblem)
-    (; c, q, K, Kᵀ, l, u, m₁, m₂) = problem
-    return SaddlePointProblem(;
-        c = adapt(to, c),
-        q = adapt(to, q),
-        K = adapt(to, K),
-        Kᵀ = adapt(to, Kᵀ),
-        l = adapt(to, l),
-        u = adapt(to, u),
-        m₁ = m₁,
-        m₂ = m₂
-    )
+function Base.show(io::IO, sad::SaddlePointProblem)
+    return print(io, "Saddle point problem with $(nbvar(sad)) variables, $(nbcons_ineq(sad)) inequality constraints and $(nbcons_eq(sad)) equality constraints (total of $(nnz(sad.K)) nonzero coefficients)")
 end
 
-function change_eltype(::Type{T}, problem::SaddlePointProblem) where {T}
-    (; c, q, K, Kᵀ, l, u, m₁, m₂) = problem
-    return SaddlePointProblem(;
-        c = change_eltype(T, c),
-        q = change_eltype(T, q),
-        K = change_eltype(T, K),
-        Kᵀ = change_eltype(T, Kᵀ),
-        l = change_eltype(T, l),
-        u = change_eltype(T, u),
-        m₁ = m₁,
-        m₂ = m₂
-    )
-end
+Base.eltype(::SaddlePointProblem{T}) where {T} = T
 
+nbvar(sad::SaddlePointProblem) = length(sad.c)
+nbcons(sad::SaddlePointProblem) = nbcons_eq(sad) + nbcons_ineq(sad)
+nbcons_eq(sad::SaddlePointProblem) = sad.m₂
+nbcons_ineq(sad::SaddlePointProblem) = sad.m₁
+
+"""
+    PrimalDualVariable
+
+Represent a couple of primal and dual variables.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
 struct PrimalDualVariable{T <: Number, V <: AbstractVector{T}}
+    "primal variable"
     x::V
+    "dual variable"
     y::V
 end
 
@@ -178,6 +199,6 @@ function Base.:+(z1::PrimalDualVariable{T}, z2::PrimalDualVariable{T}) where {T}
     return PrimalDualVariable(z1.x + z2.x, z1.y + z2.y)
 end
 
-function default_init(problem::SaddlePointProblem)
-    return PrimalDualVariable(zero(problem.c), zero(problem.q))
+function default_init(sad::SaddlePointProblem)
+    return PrimalDualVariable(zero(sad.c), zero(sad.q))
 end

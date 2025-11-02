@@ -1,17 +1,19 @@
 """
-    read_milp(mps_gz_path::String)
+    read_milp(path::String)
 
-Read an MILP stored in a gzipped MPS file, return an [`MILP`](@ref) object.
+Read an optimization problem stored in a (possibly gzipped) MPS file stored at `path`, return an [`MILP`](@ref) object.
 """
-function read_milp(mps_gz_path::String)
-    @assert endswith(mps_gz_path, ".mps.gz")
-
-    mps_path = tempname(; suffix = ".mps")
-    contents = GZip.open(mps_gz_path, "r") do f
-        read(f, String)
-    end
-    open(mps_path, "w") do f
-        write(f, contents)
+function read_milp(path::String)
+    if endswith(path, ".mps.gz")
+        contents = GZip.open(path, "r") do f
+            read(f, String)
+        end
+        mps_path = tempname(; suffix = ".mps")
+        open(mps_path, "w") do f
+            write(f, contents)
+        end
+    elseif endswith(path, ".mps")
+        mps_path = path
     end
 
     qps_data = with_logger(NullLogger()) do
@@ -31,11 +33,9 @@ function read_milp(mps_gz_path::String)
     smaller_inds = .!eq_inds .& (U .< typemax(eltype(L)))
 
     A = A_eq_ineq[eq_inds, :]
-    Ad = DeviceSparseMatrixCSR(A)
     b = U[eq_inds]
 
     G = vcat(A_eq_ineq[larger_inds, :], -A_eq_ineq[smaller_inds, :])
-    Gd = DeviceSparseMatrixCSR(G)
     h = vcat(L[larger_inds], -U[smaller_inds])
 
     binvar = vartypes .== VTYPE_Binary
@@ -45,13 +45,13 @@ function read_milp(mps_gz_path::String)
 
     varname = varnames
 
-    milp = MILP(; c, G = Gd, h, A = Ad, b, l, u, intvar = binvar .| intvar, varname)
+    milp = MILP(; c, G, h, A, b, l, u, intvar = binvar .| intvar, varname)
     return milp
 end
 
 
 """
-    read_sol(path, milp)
+    read_sol(path::String, milp::MILP)
 
 Read a solution stored in a `.sol` file following the MIPLIB specification, return a vector of floating-point numbers.
 """
@@ -79,7 +79,7 @@ end
 
 
 """
-    write_sol(path, x, milp)
+    write_sol(path::String, x::AbstractVector, milp::MILP)
 
 Write a solution to a `.sol` file following the MIPLIB specification.
 """

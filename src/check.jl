@@ -1,7 +1,13 @@
 """
     is_feasible(x, milp[; cons_tol=1e-6, int_tol=1e-5, verbose=true])
 
-Check whether solution vector `x` is feasible for `milp`, with a tolerance `cons_tol` on constraint satisfaction and `int_tol` on integrality requirements.
+Check whether solution vector `x` is feasible for `milp`.
+
+# Keyword arguments
+
+- `cons_tol`: tolerance for constraint satisfaction
+- `int_tol`: tolerance for integrality requirements
+- `verbose`: whether to display warnings
 """
 function is_feasible(
         x::AbstractVector{T}, milp::MILP{T};
