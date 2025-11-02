@@ -5,13 +5,14 @@ using DataDeps
 using DeviceSparseArrays
 using DocStringExtensions
 using GZip
+using IterativeSolvers
 using KernelAbstractions
-using KrylovKit
 using LinearAlgebra
 using Logging
 using ProgressMeter
 using QPSReader
 using QPSReader: VTYPE_Binary, VTYPE_Integer
+using Random
 using SparseArrays
 
 include("types.jl")
@@ -21,7 +22,6 @@ include("pdhg.jl")
 include("data.jl")
 include("io.jl")
 include("adapt.jl")
-include("piracy.jl")
 
 export MILP, SaddlePointProblem, nbvar, nbcons, relax
 export change_floating_type, change_integer_type, to_device

@@ -88,9 +88,9 @@ function pdhg(
         z_init::PrimalDualVariable{T} = default_init(sad);
         show_progress::Bool = true
     ) where {T}
-    (; K) = sad
+    (; K, Kᵀ) = sad
     z = copy(z_init)
-    η = T(0.9) * inv(spectral_norm(K))
+    η = T(0.9) * inv(spectral_norm(K, Kᵀ))
     state = PDHGState(; z, η)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
