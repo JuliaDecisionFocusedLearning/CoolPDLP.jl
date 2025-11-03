@@ -51,14 +51,18 @@ function read_miplib2017_instance(name::String)
 end
 
 """
-    list_netlib_instances()
+    list_netlib_instances(; exclude_failing::Bool=false)
 
 List all available [Netlib](https://www.netlib.org/lp/) instances.
 """
-function list_netlib_instances()
+function list_netlib_instances(; exclude_failing::Bool = false)
     netlib_path = fetch_netlib()
     valid_instances = filter(n -> endswith(n, ".SIF"), readdir(netlib_path))
-    return map(n -> lowercase(chopsuffix(n, ".SIF")), valid_instances)
+    instances_nosuffix = map(n -> lowercase(chopsuffix(n, ".SIF")), valid_instances)
+    if exclude_failing
+        instances_nosuffix = filter(n -> !in(n, ("agg", "blend", "dfl001", "forplan", "gfrd-pnc", "sierra")), instances_nosuffix)
+    end
+    return instances_nosuffix
 end
 
 """

@@ -1,0 +1,7 @@
+[deps]
+CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+
+[sources]
+CoolPDLP = {path = "../.."}
