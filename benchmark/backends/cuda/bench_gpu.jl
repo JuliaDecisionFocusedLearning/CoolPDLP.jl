@@ -1,5 +1,5 @@
 using Pkg
-Pkg.activate(joinpath(@__DIR__, "backends", "cuda"))
+Pkg.activate(@__DIR__)
 
 using CoolPDLP
 using KernelAbstractions
