@@ -20,16 +20,16 @@ function is_feasible(
     xint = x[intvar]
     int_err = maximum(abs, xint .- round.(Int, xint))
     if eq_err > cons_tol
-        verbose && @warn "Equality constraints not satisfied"
+        verbose && @warn "Equality constraints not satisfied" eq_err cons_tol
         return false
     elseif ineq_err > cons_tol
-        verbose && @warn "Inequality constraints not satisfied"
+        verbose && @warn "Inequality constraints not satisfied" ineq_err cons_tol
         return false
     elseif bounds_err > cons_tol
-        verbose && @warn "Variable bounds not satisfied"
+        verbose && @warn "Variable bounds not satisfied" bounds_err cons_tol
         return false
     elseif int_err > int_tol
-        verbose && @warn "Integrality not satisfied"
+        verbose && @warn "Integrality not satisfied" int_err cons_tol
         return false
     else
         return true
