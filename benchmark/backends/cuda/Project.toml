@@ -1,7 +1,8 @@
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 
 [sources]
-CoolPDLP = { path = "../../.." }
+CoolPDLP = {path = "../../.."}
