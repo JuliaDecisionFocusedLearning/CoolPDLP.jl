@@ -49,3 +49,21 @@ function spectral_norm(
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)
 end
+
+myvcat(A::AbstractMatrix, B::AbstractMatrix) = vcat(A, B)
+
+function myvcat(A::DeviceSparseMatrixCSR, B::DeviceSparseMatrixCSR)
+    AB_cpu = vcat(A, B)
+    AB_gpu = DeviceSparseMatrixCSR(SparseMatrixCSC(AB_cpu))
+    AB_gpu_rightbackend = adapt(common_backend(A, B), AB_gpu)
+    return AB_gpu_rightbackend
+end
+
+mytranspose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
+
+function mytranspose(A::DeviceSparseMatrixCSR)
+    Aᵀ_cpu = transpose(SparseMatrixCSC(A))
+    Aᵀ_gpu = DeviceSparseMatrixCSR(Aᵀ_cpu)
+    Aᵀ_gpu_rightbackend = adapt(get_backend(A), Aᵀ_gpu)
+    return Aᵀ_gpu_rightbackend
+end

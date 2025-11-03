@@ -8,6 +8,8 @@ Parameters for configuration of the baseline primal-dual hybrid gradient.
 $(TYPEDFIELDS)
 """
 @kwdef struct PDHGParameters{T <: Number}
+    "scaling of the inverse spectral norm of `K` when defining the step size"
+    stepsize_scaling::T = 0.9
     "tolerance when checking KKT relative errors to decide termination"
     tol_termination::T = 1.0e-4
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
@@ -16,24 +18,23 @@ $(TYPEDFIELDS)
     time_limit::Float64 = 100.0
     "frequency of termination checks"
     check_every::Int = 40
+    "whether or not to record error evolution"
+    record_error_history::Bool = false
 end
 
 function Base.show(io::IO, params::PDHGParameters)
-    (; tol_termination, max_kkt_passes, time_limit, check_every) = params
-    return print(io, "PDHGParameters(; tol_termination=$tol_termination, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit, check_every=$check_every)")
+    (; stepsize_scaling, tol_termination, max_kkt_passes, time_limit, check_every) = params
+    return print(
+        io,
+        "PDHGParameters(; " *
+            "stepsize_scaling=$stepsize_scaling, " *
+            "tol_termination=$tol_termination, " *
+            "max_kkt_passes=$max_kkt_passes, " *
+            "time_limit=$time_limit, " *
+            "check_every=$check_every" *
+            ")"
+    )
 end
-
-"""
-    TerminationReason
-
-Enum type listing possible reasons for algorithm termination:
-
-- `CONVERGENCE`
-- `TIME`
-- `ITERATIONS`
-- `STILL_RUNNING`
-"""
-@enum TerminationReason CONVERGENCE TIME ITERATIONS STILL_RUNNING
 
 """
     PDHGState
@@ -45,16 +46,22 @@ Current solution, step sizes and various buffers / metrics for the baseline prim
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{T <: Number, V <: AbstractVector{T}}
-    "current solution"
-    z::PrimalDualVariable{T, V}
+    "current primal solution"
+    const x::V
+    "current dual solution"
+    const y::V
     "step size"
     η::T
     "primal weight"
     ω::T = one(η)
     "buffer"
-    z_scratch::PrimalDualVariable{T, V} = copy(z)
+    const x_scratch1::V = copy(x)
     "buffer"
-    λ_scratch::V = copy(z.x)
+    const x_scratch2::V = copy(x)
+    "buffer"
+    const x_scratch3::V = copy(x)
+    "buffer"
+    const y_scratch::V = copy(y)
     "time at which the algorithm started, in seconds"
     starting_time::Float64 = time()
     "time elapsed since the algorithm started, in seconds"
@@ -62,40 +69,64 @@ $(TYPEDFIELDS)
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int = 0
     "current relative KKT error"
-    rel_err::T = typemax(typeof(η))
+    relative_error::T = typemax(eltype(x))
     "termination reason (should be `STILL_RUNNING` until the algorithm actuall terminates)"
     termination_reason::TerminationReason = STILL_RUNNING
+    "history of relative KKT errors, indexed by number of KKT passes"
+    const relative_error_history::Vector{Tuple{Int, T}} = Tuple{Int, eltype(x)}[]
 end
 
 function Base.show(io::IO, state::PDHGState)
-    (; elapsed, kkt_passes, rel_err, termination_reason) = state
-    return print(io, "PDHG state with termination reason $termination_reason: $rel_err relative KKT error after $elapsed seconds elapsed and $kkt_passes KKT passes")
+    (; elapsed, kkt_passes, relative_error, termination_reason) = state
+    return print(
+        io,
+        @sprintf(
+            "PDHG state with termination reason %s: %.2e relative KKT error after %g seconds elapsed and %s KKT passes",
+            termination_reason,
+            relative_error,
+            elapsed,
+            kkt_passes,
+        )
+    )
 end
 
 """
     pdhg(
-        sad::SaddlePointProblem,
+        milp::MILP,
         params::PDHGParameters,
-        z_init::PrimalDualVariable;
+        x_init::AbstractVector;
         show_progress::Bool=true
     )
     
-Apply the primal-dual hybrid gradient algorithm to solve `sad` using configuration `params`, starting from `z_init`.
+Apply the primal-dual hybrid gradient algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from `x_init`.
 """
 function pdhg(
-        sad::SaddlePointProblem{T},
+        milp::MILP{T},
         params::PDHGParameters,
-        z_init::PrimalDualVariable{T} = default_init(sad);
+        x_init::AbstractVector{T} = zero(milp.c);
         show_progress::Bool = true
     ) where {T}
-    (; K, Kᵀ) = sad
-    z = copy(z_init)
-    η = T(0.9) * inv(spectral_norm(K, Kᵀ))
-    state = PDHGState(; z, η)
+    starting_time = time()
+    sad = SaddlePointProblem(milp)
+    y_init = zero(sad.q)
+    return pdhg(sad, params, x_init, y_init; show_progress, starting_time)
+end
+
+function pdhg(
+        sad::SaddlePointProblem,
+        params::PDHGParameters,
+        x_init::AbstractVector{T},
+        y_init::AbstractVector{T};
+        show_progress::Bool = true,
+        starting_time::Float64 = time()
+    ) where {T}
+    x, y = copy(x_init), copy(y_init)
+    η = fixed_stepsize(sad, params)
+    state = PDHGState(; x, y, η, starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
         yield()
-        next!(prog; showvalues = (("rel_err", state.rel_err),))
+        next!(prog; showvalues = (("relative_error", state.relative_error),))
         pdhg_step!(state, sad)
         if (state.kkt_passes % params.check_every == 0) &&
                 termination_check!(state, sad, params)
@@ -106,6 +137,12 @@ function pdhg(
     return state
 end
 
+function fixed_stepsize(sad::SaddlePointProblem{T}, params::PDHGParameters) where {T}
+    (; K, Kᵀ) = sad
+    (; stepsize_scaling) = params
+    η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
+    return η
+end
 
 function proj_X!(
         x::AbstractVector,
@@ -135,10 +172,10 @@ function pdhg_step!(
         state::PDHGState{T},
         sad::SaddlePointProblem{T, Ti},
     ) where {T, Ti}
-    (; z, η, ω, z_scratch) = state
+    (; x, y, η, ω, x_scratch1, y_scratch) = state
     (; c, q, K, Kᵀ, l, u, m₁) = sad
-    (; x, y) = z
-    xp, yp = z_scratch.x, z_scratch.y
+
+    xp, yp = x_scratch1, y_scratch
     τ, σ = η / ω, η * ω
 
     # xp = proj_X(x - τ * (c - Kᵀ * y))
@@ -164,10 +201,8 @@ function individual_kkt_errors!(
         state::PDHGState{T},
         sad::SaddlePointProblem{T, Ti},
     ) where {T, Ti}
-    (; z, z_scratch, λ_scratch) = state
+    (; x, y, x_scratch1, x_scratch2, x_scratch3, y_scratch) = state
     (; c, q, K, Kᵀ, l, u, m₁, m₂) = sad
-    (; x, y) = z
-    x_scratch, y_scratch = z_scratch.x, z_scratch.y
 
     qᵀy = dot(q, y)
     cᵀx = dot(c, x)
@@ -181,14 +216,20 @@ function individual_kkt_errors!(
     b = @view q[(m₁ + Ti(1)):(m₁ + m₂)]
 
     # λ = proj_Λ(c - Kᵀ * y)  from cuPDLP-C paper
-    λ = x_scratch
+    λ = x_scratch1
     λ .= c
     mul!(λ, Kᵀ, y, -Ti(1), Ti(1))
     proj_Λ!(λ, l, u)
-    λ_scratch .= positive_part.(λ)
-    lᵀλ⁺ = dot(l, λ_scratch)
-    λ_scratch .= negative_part.(λ)
-    uᵀλ⁻ = dot(u, λ_scratch)
+
+    λ⁺, l_noinf = x_scratch2, x_scratch3
+    λ⁺ .= positive_part.(λ)
+    l_noinf .= ifelse.(iszero.(λ⁺), zero(T), l)
+    lᵀλ⁺ = dot(l_noinf, λ⁺)
+
+    λ⁻, u_noinf = x_scratch2, x_scratch3
+    λ⁻ .= negative_part.(λ)
+    u_noinf .= ifelse.(iszero.(λ⁻), zero(T), u)
+    uᵀλ⁻ = dot(u_noinf, λ⁻)
 
     # err_primal = sqrt(sqnorm(Ax - b) + sqnorm((h - Gx)⁺)
     err_primal_scratch = y_scratch
@@ -199,7 +240,7 @@ function individual_kkt_errors!(
     err_primal_denominator = one(T) + norm(q)
 
     # err_dual = norm(c - Kᵀ * y - λ)
-    err_dual_scratch = x_scratch
+    err_dual_scratch = x_scratch1
     err_dual_scratch .= c .- λ
     mul!(err_dual_scratch, Kᵀ, y, -Ti(1), Ti(1))
 
@@ -229,11 +270,11 @@ function relative_kkt_error!(
         err_primal_denominator, err_dual_denominator, err_gap_denominator,
     ) = individual_kkt_errors!(state, sad)
 
-    rel_error_primal = err_primal / err_primal_denominator
-    rel_error_dual = err_dual / err_dual_denominator
-    rel_error_gap = err_gap / err_gap_denominator
+    relative_erroror_primal = err_primal / err_primal_denominator
+    relative_erroror_dual = err_dual / err_dual_denominator
+    relative_erroror_gap = err_gap / err_gap_denominator
 
-    return max(rel_error_primal, rel_error_dual, rel_error_gap)
+    return max(relative_erroror_primal, relative_erroror_dual, relative_erroror_gap)
 end
 
 
@@ -243,16 +284,20 @@ function termination_check!(
         params::PDHGParameters,
     ) where {T}
     (; starting_time) = state
-    (; tol_termination, time_limit, max_kkt_passes) = params
+    (; tol_termination, time_limit, max_kkt_passes, record_error_history) = params
     state.elapsed = time() - starting_time
-    state.rel_err = relative_kkt_error!(state, sad)
-    if state.rel_err <= tol_termination
+    state.relative_error = relative_kkt_error!(state, sad)
+    if record_error_history
+        push!(state.relative_error_history, (state.kkt_passes, state.relative_error))
+    end
+
+    if state.relative_error <= tol_termination
         state.termination_reason = CONVERGENCE
         return true
-    elseif state.elapsed > time_limit
+    elseif state.elapsed >= time_limit
         state.termination_reason = TIME
         return true
-    elseif state.kkt_passes > max_kkt_passes
+    elseif state.kkt_passes >= max_kkt_passes
         state.termination_reason = ITERATIONS
         return true
     else

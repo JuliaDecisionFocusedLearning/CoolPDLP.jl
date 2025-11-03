@@ -14,6 +14,8 @@ function read_milp(path::String)
         end
     elseif endswith(path, ".mps")
         mps_path = path
+    elseif endswith(path, ".SIF")
+        mps_path = path  # the netlib SIF files seem to be MPS too
     end
 
     qps_data = with_logger(NullLogger()) do
@@ -21,7 +23,7 @@ function read_milp(path::String)
     end
     (; arows, acols, avals, lcon, ucon, lvar, uvar, c, vartypes, varnames) = qps_data
 
-    A_eq_ineq = sparse(arows, acols, avals)
+    A_eq_ineq = sparse(arows, acols, avals, length(lcon), length(lvar))
     L = lcon
     U = ucon
     l = lvar

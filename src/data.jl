@@ -23,11 +23,11 @@ function __init__()
 end
 
 """
-    pdlp_miplib2017_subset()
+    list_pdlp_miplib2017_subset()
 
-Return a list of all MIPLIB 2017 instances used in the original PDLP benchmark.
+Return a list of all [MIPLIB 2017](https://miplib.zib.de/) collection instances used in the original [PDLP benchmark](https://arxiv.org/abs/2106.04756).
 """
-function pdlp_miplib2017_subset()
+function list_pdlp_miplib2017_subset()
     list_path = joinpath(datadep"pdlp-miplib2017-subset", "mip_relaxations_instance_list")
     lines = open(list_path, "r") do file
         readlines(file)
@@ -36,11 +36,40 @@ function pdlp_miplib2017_subset()
 end
 
 """
-    miplib2017_instance(name::String)
+    read_miplib2017_instance(name::String)
 
-Parse a particular MIPLIB 2017 instance and return a [`MILP`](@ref) object.
+Parse a particular [MIPLIB 2017](https://miplib.zib.de/) collection instance and return an [`MILP`](@ref) object along with the path to the source file.
+
+!!! danger
+    This will (after manual validation) download the entire MIPLIB 2017 collection, which is 3.5 GB when compressed.
 """
-function miplib2017_instance(name::String)
+function read_miplib2017_instance(name::String)
+    name = lowercase(name)
     mps_gz_path = joinpath(datadep"miplib2017-collection", "$name.mps.gz")
-    return read_milp(mps_gz_path)
+    milp = read_milp(mps_gz_path)
+    return milp, mps_gz_path
+end
+
+"""
+    list_netlib_instances()
+
+List all available [Netlib](https://www.netlib.org/lp/) instances.
+"""
+function list_netlib_instances()
+    netlib_path = fetch_netlib()
+    valid_instances = filter(n -> endswith(n, ".SIF"), readdir(netlib_path))
+    return map(n -> lowercase(chopsuffix(n, ".SIF")), valid_instances)
+end
+
+"""
+    read_netlib_instance(name::String)
+
+Parse a particular [Netlib](https://www.netlib.org/lp/) instance and return an [`MILP`](@ref) object.
+"""
+function read_netlib_instance(name::String)
+    name = uppercase(name)
+    netlib_path = fetch_netlib()
+    sif_path = joinpath(netlib_path, "$name.SIF")
+    milp = read_milp(sif_path)
+    return milp, sif_path
 end

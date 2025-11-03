@@ -9,6 +9,7 @@ using IterativeSolvers
 using KernelAbstractions
 using LinearAlgebra
 using Logging
+using Printf
 using ProgressMeter
 using QPSReader
 using QPSReader: VTYPE_Binary, VTYPE_Integer
@@ -28,7 +29,8 @@ export change_floating_type, change_integer_type, to_device
 export is_feasible, objective_value
 export read_milp, write_sol, read_sol
 export PrimalDualVariable, SaddlePointProblem
-export PDHGParameters, pdhg
-export pdlp_miplib2017_subset, miplib2017_instance
+export PDHGParameters, PDHGState, TerminationReason, pdhg
+export list_pdlp_miplib2017_subset, read_miplib2017_instance
+export list_netlib_instances, read_netlib_instance
 
 end # module CoolPDLP

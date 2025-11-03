@@ -54,15 +54,28 @@ struct MILP{
     function MILP(; c, G, h, A, b, l, u, intvar, varname)
         T = Base.promote_eltype(c, G, h, A, b, l, u)
         V = promote_type(typeof(c), typeof(h), typeof(b), typeof(l), typeof(u))
+        M = promote_type(typeof(G), typeof(A))
         Vb = typeof(intvar)
         Vs = typeof(varname)
-        M = promote_type(typeof(G), typeof(A))
+        @assert isconcretetype(T)
+        @assert isconcretetype(V)
+        @assert isconcretetype(M)
+
         n = length(c)
+        m₁ = length(h)
+        m₂ = length(b)
         @assert n == length(l) == length(u)
         @assert n == length(intvar) == length(varname)
         @assert n == size(G, 2) == size(A, 2)
-        @assert length(h) == size(G, 1)
-        @assert length(b) == size(A, 1)
+        @assert m₁ == size(G, 1)
+        @assert m₂ == size(A, 1)
+
+        @assert all(isfinite, c)
+        # @assert all(isfinite, G)
+        @assert all(isfinite, h)
+        # @assert all(isfinite, A)
+        @assert all(isfinite, b)
+
         return new{T, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname)
     end
 end
@@ -131,8 +144,15 @@ struct SaddlePointProblem{
     function SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
         T = Base.promote_eltype(c, q, K, Kᵀ, l, u)
         Ti = promote_type(typeof(m₁), typeof(m₂))
-        V = promote_type(typeof(c), typeof(q), typeof(l), typeof(u))
+        V = promote_type(
+            typeof(c), typeof(q),
+            typeof(l), typeof(u),
+        )
         M = promote_type(typeof(K), typeof(Kᵀ))
+        @assert isconcretetype(T)
+        @assert isconcretetype(Ti)
+        @assert isconcretetype(V)
+        @assert isconcretetype(M)
         return new{T, Ti, V, M}(c, q, K, Kᵀ, l, u, m₁, m₂)
     end
 end
@@ -145,11 +165,11 @@ Construct a [`SaddlePointProblem`](@ref) from a [`MILP`](@ref) as in the PDLP pa
 - `K = vcat(G, A)`
 - `q = vcat(h, b)`
 """
-function SaddlePointProblem(milp::MILP)
+function SaddlePointProblem(milp::MILP{T}) where {T}
     (; c, G, h, A, b, l, u) = milp
     q = vcat(h, b)
-    K = vcat(G, A)
-    Kᵀ = convert(typeof(K), transpose(K))
+    K = myvcat(G, A)
+    Kᵀ = mytranspose(K)::typeof(K)
     m₁ = length(h)
     m₂ = length(b)
     return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
@@ -202,3 +222,16 @@ end
 function default_init(sad::SaddlePointProblem)
     return PrimalDualVariable(zero(sad.c), zero(sad.q))
 end
+
+
+"""
+    TerminationReason
+
+Enum type listing possible reasons for algorithm termination:
+
+- `CONVERGENCE`
+- `TIME`
+- `ITERATIONS`
+- `STILL_RUNNING`
+"""
+@enum TerminationReason CONVERGENCE TIME ITERATIONS STILL_RUNNING

@@ -1,3 +1,19 @@
+function common_backend(arrs::Vararg{Any, N}) where {N}
+    backends = map(get_backend, arrs)
+    @assert all(==(backends[1]), backends)
+    return backends[1]
+end
+
+function KernelAbstractions.get_backend(milp::MILP)
+    (; c, G, h, A, b, l, u) = milp
+    return common_backend(c, G, h, A, b, l, u)
+end
+
+function KernelAbstractions.get_backend(sad::SaddlePointProblem)
+    (; c, q, K, Kᵀ, l, u) = sad
+    return common_backend(c, q, K, Kᵀ, l, u)
+end
+
 const FloatOrFloatArray = Union{AbstractFloat, AbstractArray{<:AbstractFloat}}
 const IntOrIntArray = Union{Integer, AbstractArray{<:Integer}}
 const NotFloatOrInteger = Union{AbstractString, AbstractArray{<:AbstractString}}
@@ -109,7 +125,7 @@ to_device(problem::AbstractProblem) = to_device(DeviceSparseMatrixCSR, problem)
 
 function to_device(::Type{DSM}, milp::MILP) where {DSM <: AbstractDeviceSparseMatrix}
     (; c, G, h, A, b, l, u, intvar, varname) = milp
-    return MILP(; c, G, h, A = DSM(A), b, l, u, intvar, varname)
+    return MILP(; c, G = DSM(G), h, A = DSM(A), b, l, u, intvar, varname)
 end
 
 function to_device(::Type{DSM}, sad::SaddlePointProblem) where {DSM <: AbstractDeviceSparseMatrix}

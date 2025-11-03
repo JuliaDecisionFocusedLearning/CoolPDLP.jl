@@ -1,5 +1,9 @@
 # API reference
 
+```@meta
+CollapsedDocStrings = true
+```
+
 ## Public API
 
 ```@autodocs
