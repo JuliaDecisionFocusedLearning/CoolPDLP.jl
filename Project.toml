@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Guillaume Dalle"]
 
 [workspace]
-projects = ["test", "test/metal", "test/reactant"]
+projects = ["docs", "test", "test/metal", "test/reactant"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -22,7 +22,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [sources]
-DeviceSparseArrays = {url = "https://github.com/albertomercurio/DeviceSparseArrays.jl"}
+DeviceSparseArrays = { url = "https://github.com/albertomercurio/DeviceSparseArrays.jl" }
 
 [compat]
 Adapt = "4.4.0"
