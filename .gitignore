@@ -36,3 +36,5 @@ playground*.jl
 *.sol
 
 .DS_Store
+*.trace
+*.gputrace
