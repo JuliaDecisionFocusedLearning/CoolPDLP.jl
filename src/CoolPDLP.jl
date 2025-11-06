@@ -24,8 +24,9 @@ include("data.jl")
 include("io.jl")
 include("adapt.jl")
 
-export MILP, SaddlePointProblem, nbvar, nbcons, relax
-export change_floating_type, change_integer_type, to_device
+export MILP, SaddlePointProblem, relax
+export nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
+export change_floating_type, change_integer_type, single_precision, to_device
 export is_feasible, objective_value
 export read_milp, write_sol, read_sol
 export PrimalDualVariable, SaddlePointProblem

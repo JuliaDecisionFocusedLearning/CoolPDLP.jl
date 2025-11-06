@@ -112,6 +112,13 @@ for change_type in (:change_floating_type, :change_integer_type)
 end
 
 """
+    single_precision(problem)
+
+Convert all integers in `problem` to `Int32` and all floating-point numbers to `Float32`.
+"""
+single_precision(problem) = change_integer_type(Int32, change_floating_type(Float32, problem))
+
+"""
     to_device(::Type{DSM}, problem)
     to_device(problem)
 

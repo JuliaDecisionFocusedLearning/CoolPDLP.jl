@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Guillaume Dalle"]
 
 [workspace]
-projects = ["docs", "test", "benchmark"]
+projects = ["docs", "test", "benchmark", "challenge"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"

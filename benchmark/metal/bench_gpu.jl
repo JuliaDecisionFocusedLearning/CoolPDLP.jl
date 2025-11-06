@@ -2,6 +2,7 @@ using Pkg
 Pkg.activate(@__DIR__)
 Pkg.instantiate()
 
+using Adapt
 using CoolPDLP
 using KernelAbstractions
 using Metal
