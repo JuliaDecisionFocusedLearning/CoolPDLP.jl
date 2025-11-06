@@ -1,14 +1,15 @@
 using CoolPDLP
 using HiGHS: HiGHS
+using JLArrays
 using LinearAlgebra
 using JuMP: JuMP, MOI
 using Test
 
-@testset "Comparison with JuMP" begin
-    netlib = list_netlib_instances()
-    milp, path = read_netlib_instance(netlib[4])
+netlib = list_netlib_instances()
+milp, path = read_netlib_instance(netlib[4])
+params = PDHGParameters(; tol_termination = 1.0e-6, max_kkt_passes = 10^7)
 
-    params = PDHGParameters(; tol_termination = 1.0e-6, max_kkt_passes = 10^7)
+@testset "Comparison with JuMP" begin
     state = pdhg(milp, params; show_progress = false)
     @test state.termination_reason == CoolPDLP.CONVERGENCE
     sol = state.x
@@ -22,4 +23,10 @@ using Test
     @test is_feasible(sol, milp; cons_tol = 1.0e-4)
     @test is_feasible(jump_sol, milp)
     @test objective_value(jump_sol, milp) ≈ objective_value(sol, milp) rtol = 1.0e-4
+end
+
+@testset "Running on GPU arrays" begin
+    milp_jl = adapt(JLBackend(), to_device(milp))
+    state = pdhg(milp_jl, params; show_progress = false)
+    @test state.termination_reason == CoolPDLP.CONVERGENCE
 end

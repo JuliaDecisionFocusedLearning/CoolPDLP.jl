@@ -67,3 +67,37 @@ function mytranspose(A::DeviceSparseMatrixCSR)
     Aᵀ_gpu_rightbackend = adapt(get_backend(A), Aᵀ_gpu)
     return Aᵀ_gpu_rightbackend
 end
+
+mymul!(C::AbstractArray, A::AbstractArray, B::AbstractArray) = mymul!(C, A, B, true, false)
+mymul!(C::AbstractArray, A::AbstractArray, B::AbstractArray, α::Number, β::Number) = mul!(C, A, B, α, β)
+
+@kernel function spmv_csr!(
+        c::AbstractVector{T},
+        A_rowptr::AbstractVector{Ti},
+        A_colval::AbstractVector{Ti},
+        A_nzval::AbstractVector{T},
+        b::AbstractVector{T},
+        α::Number,
+        β::Number
+    ) where {T, Ti}
+    i = @index(Global, Linear)
+    s = zero(T)
+    for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
+        j = A_colval[k]
+        s += A_nzval[k] * b[j]
+    end
+    c[i] = α * s + β * c[i]
+end
+
+function mymul!(
+        c::AbstractVector,
+        A::DeviceSparseMatrixCSR,
+        b::AbstractVector,
+        α::Number,
+        β::Number
+    )
+    backend = common_backend(c, A, b)
+    kernel! = spmv_csr!(backend)
+    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
+    return nothing
+end

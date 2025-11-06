@@ -180,13 +180,13 @@ function pdhg_step!(
 
     # xp = proj_X(x - τ * (c - Kᵀ * y))
     xp .= x .- τ .* c
-    mul!(xp, Kᵀ, y, τ, Ti(1))
+    mymul!(xp, Kᵀ, y, τ, Ti(1))
     proj_X!(xp, l, u)
 
     # yp = proj_Y(y + σ * (q - K * (2 * xp - x)))
     yp .= y .+ σ .* q
     x .= 2 .* xp .- x
-    mul!(yp, K, x, -σ, Ti(1))
+    mymul!(yp, K, x, -σ, Ti(1))
     proj_Y!(yp, m₁)
 
     copyto!(x, xp)
@@ -209,7 +209,7 @@ function individual_kkt_errors!(
 
     # Kxᵀ = (Gxᵀ, Axᵀ), qᵀ = (hᵀ, bᵀ)
     Kx = y_scratch
-    mul!(Kx, K, x)
+    mymul!(Kx, K, x)
     Gx = @view Kx[Ti(1):m₁]
     h = @view q[Ti(1):m₁]
     Ax = @view Kx[(m₁ + Ti(1)):(m₁ + m₂)]
@@ -218,7 +218,7 @@ function individual_kkt_errors!(
     # λ = proj_Λ(c - Kᵀ * y)  from cuPDLP-C paper
     λ = x_scratch1
     λ .= c
-    mul!(λ, Kᵀ, y, -Ti(1), Ti(1))
+    mymul!(λ, Kᵀ, y, -Ti(1), Ti(1))
     proj_Λ!(λ, l, u)
 
     λ⁺, l_noinf = x_scratch2, x_scratch3
@@ -242,7 +242,7 @@ function individual_kkt_errors!(
     # err_dual = norm(c - Kᵀ * y - λ)
     err_dual_scratch = x_scratch1
     err_dual_scratch .= c .- λ
-    mul!(err_dual_scratch, Kᵀ, y, -Ti(1), Ti(1))
+    mymul!(err_dual_scratch, Kᵀ, y, -Ti(1), Ti(1))
 
     err_dual = norm(err_dual_scratch)
     err_dual_denominator = one(T) + norm(c)

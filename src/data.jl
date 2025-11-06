@@ -51,7 +51,7 @@ function read_miplib2017_instance(name::String)
 end
 
 """
-    list_netlib_instances(; exclude_failing::Bool=false)
+    list_netlib_instances()
 
 List all available [Netlib](https://www.netlib.org/lp/) instances.
 """
@@ -59,9 +59,6 @@ function list_netlib_instances(; exclude_failing::Bool = false)
     netlib_path = fetch_netlib()
     valid_instances = filter(n -> endswith(n, ".SIF"), readdir(netlib_path))
     instances_nosuffix = map(n -> lowercase(chopsuffix(n, ".SIF")), valid_instances)
-    if exclude_failing
-        instances_nosuffix = filter(n -> !in(n, ("agg", "blend", "dfl001", "forplan", "gfrd-pnc", "sierra")), instances_nosuffix)
-    end
     return instances_nosuffix
 end
 
@@ -72,8 +69,14 @@ Parse a particular [Netlib](https://www.netlib.org/lp/) instance and return an [
 """
 function read_netlib_instance(name::String)
     name = uppercase(name)
+    if name in ("BLEND", "DFL001", "FORPLAN", "GFRD-PNC", "SIERRA")
+        # https://github.com/JuliaSmoothOptimizers/QPSReader.jl/issues/58
+        mpsformat = :fixed
+    else
+        mpsformat = :free
+    end
     netlib_path = fetch_netlib()
     sif_path = joinpath(netlib_path, "$name.SIF")
-    milp = read_milp(sif_path)
+    milp = read_milp(sif_path; mpsformat)
     return milp, sif_path
 end

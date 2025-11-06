@@ -1,9 +1,9 @@
 """
-    read_milp(path::String)
+    read_milp(path::String; mpsformat::Symbol=:free)
 
 Read an optimization problem stored in a (possibly gzipped) MPS file stored at `path`, return an [`MILP`](@ref) object.
 """
-function read_milp(path::String)
+function read_milp(path::String; mpsformat = :free)
     if endswith(path, ".mps.gz")
         contents = GZip.open(path, "r") do f
             read(f, String)
@@ -12,14 +12,13 @@ function read_milp(path::String)
         open(mps_path, "w") do f
             write(f, contents)
         end
-    elseif endswith(path, ".mps")
+    else
+        @assert endswith(path, ".mps") || endswith(path, ".SIF")
         mps_path = path
-    elseif endswith(path, ".SIF")
-        mps_path = path  # the netlib SIF files seem to be MPS too
     end
 
     qps_data = with_logger(NullLogger()) do
-        readqps(mps_path)
+        readqps(mps_path; mpsformat)
     end
     (; arows, acols, avals, lcon, ucon, lvar, uvar, c, vartypes, varnames) = qps_data
 

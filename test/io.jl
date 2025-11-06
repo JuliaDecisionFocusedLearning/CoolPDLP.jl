@@ -24,10 +24,10 @@ end
 @testset "Netlib" begin
     netlib = list_netlib_instances()
     @testset for instance_name in netlib
+        milp, path = read_netlib_instance(instance_name)
         if instance_name in ["agg", "blend", "dfl001", "forplan", "gfrd-pnc", "sierra"]
-            @test_skip read_netlib_instance(instance_name)
+            @test_skip JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
         else
-            milp, path = read_netlib_instance(instance_name)
             jump_model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
             @test eltype(milp) == Float64
             @test nbvar(milp) == JuMP.num_variables(jump_model)
