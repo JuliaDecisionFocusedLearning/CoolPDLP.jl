@@ -29,6 +29,7 @@ include("adapt.jl")
 
 export DeviceSparseMatrixCOO, DeviceSparseMatrixCSR
 export DeviceSparseMatrixELL
+export sort_columns
 export MILP, SaddlePointProblem, relax
 export nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
 export change_floating_type, change_integer_type, single_precision, change_matrix_type
