@@ -8,11 +8,39 @@ Return the number of variables in `problem`.
 function nbvar end
 
 """
+    nbvar_int(problem)
+
+Return the number of integer variables in `problem`.
+"""
+function nbvar_int end
+
+"""
+    nbvar_cont(problem)
+
+Return the number of integer variables in `problem`.
+"""
+function nbvar_cont end
+
+"""
     nbcons(problem)
 
 Return the number of constraints in `problem`, not including variable bounds or integrality requirements.
 """
 function nbcons end
+
+"""
+    nbcons_eq(problem)
+
+Return the number of equality constraints in `problem`.
+"""
+function nbcons_eq end
+
+"""
+    nbcons_ineq(problem)
+
+Return the number of inequality constraints in `problem`, not including variable bounds.
+"""
+function nbcons_ineq end
 
 """
     MILP
@@ -168,8 +196,8 @@ Construct a [`SaddlePointProblem`](@ref) from a [`MILP`](@ref) as in the PDLP pa
 function SaddlePointProblem(milp::MILP{T}) where {T}
     (; c, G, h, A, b, l, u) = milp
     q = vcat(h, b)
-    K = myvcat(G, A)
-    Kᵀ = mytranspose(K)::typeof(K)
+    K = vcat(G, A)
+    Kᵀ = convert(typeof(K), transpose(K))
     m₁ = length(h)
     m₂ = length(b)
     return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)

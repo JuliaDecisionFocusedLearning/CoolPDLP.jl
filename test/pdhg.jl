@@ -26,7 +26,8 @@ params = PDHGParameters(; tol_termination = 1.0e-6, max_kkt_passes = 10^7)
 end
 
 @testset "Running on GPU arrays" begin
-    milp_jl = adapt(JLBackend(), to_device(milp))
-    state = pdhg(milp_jl, params; show_progress = false)
+    sad = SaddlePointProblem(milp)
+    sad_jl = adapt(JLBackend(), change_matrix_type(DeviceSparseMatrixCSR, sad))
+    state = pdhg(sad_jl, params; show_progress = false)
     @test state.termination_reason == CoolPDLP.CONVERGENCE
 end

@@ -1,20 +1,3 @@
-proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
-
-function proj_λ(λ::T, l::T, u::T) where {T <: Number}
-    if l == typemin(T) && u == typemax(T)
-        return zero(T)  # project on {0}
-    elseif l == typemin(T)
-        return -negative_part(λ)  # project on ℝ⁻
-    elseif u == typemax(T)
-        return positive_part(λ)  # project on ℝ⁺
-    else
-        return λ  # project on ℝ
-    end
-end
-
-positive_part(a::Number) = max(a, zero(a))
-negative_part(a::Number) = -min(a, zero(a))
-
 sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
@@ -48,56 +31,4 @@ function spectral_norm(
     KᵀK = Symmetrized(K, Kᵀ)
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)
-end
-
-myvcat(A::AbstractMatrix, B::AbstractMatrix) = vcat(A, B)
-
-function myvcat(A::DeviceSparseMatrixCSR, B::DeviceSparseMatrixCSR)
-    AB_cpu = vcat(A, B)
-    AB_gpu = DeviceSparseMatrixCSR(SparseMatrixCSC(AB_cpu))
-    AB_gpu_rightbackend = adapt(common_backend(A, B), AB_gpu)
-    return AB_gpu_rightbackend
-end
-
-mytranspose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
-
-function mytranspose(A::DeviceSparseMatrixCSR)
-    Aᵀ_cpu = transpose(SparseMatrixCSC(A))
-    Aᵀ_gpu = DeviceSparseMatrixCSR(Aᵀ_cpu)
-    Aᵀ_gpu_rightbackend = adapt(get_backend(A), Aᵀ_gpu)
-    return Aᵀ_gpu_rightbackend
-end
-
-mymul!(C::AbstractArray, A::AbstractArray, B::AbstractArray) = mymul!(C, A, B, true, false)
-mymul!(C::AbstractArray, A::AbstractArray, B::AbstractArray, α::Number, β::Number) = mul!(C, A, B, α, β)
-
-@kernel function spmv_csr!(
-        c::AbstractVector{T},
-        A_rowptr::AbstractVector{Ti},
-        A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
-        α::Number,
-        β::Number
-    ) where {T, Ti}
-    i = @index(Global, Linear)
-    s = zero(T)
-    for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
-        j = A_colval[k]
-        s += A_nzval[k] * b[j]
-    end
-    c[i] = α * s + β * c[i]
-end
-
-function mymul!(
-        c::AbstractVector,
-        A::DeviceSparseMatrixCSR,
-        b::AbstractVector,
-        α::Number,
-        β::Number
-    )
-    backend = common_backend(c, A, b)
-    kernel! = spmv_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
-    return nothing
 end

@@ -2,7 +2,6 @@
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
-DeviceSparseArrays = "da3fe0eb-88a8-4d14-ae1a-857c283e9c70"
 HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"

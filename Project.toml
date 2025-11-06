@@ -8,9 +8,10 @@ projects = ["docs", "test", "benchmark", "challenge"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
 DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
-DeviceSparseArrays = "da3fe0eb-88a8-4d14-ae1a-857c283e9c70"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -22,14 +23,12 @@ QPSReader = "10f199a5-22af-520b-b891-7ce84a7b1bd0"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
-[sources]
-DeviceSparseArrays = { url = "https://github.com/albertomercurio/DeviceSparseArrays.jl" }
-
 [compat]
 Adapt = "4.4.0"
+Atomix = "1.1.2"
 DataDeps = "0.7.13"
-DeviceSparseArrays = "0.1.0"
 DocStringExtensions = "0.9.5"
+GPUArrays = "11.2.6"
 GZip = "0.6.2"
 IterativeSolvers = "0.9.4"
 KernelAbstractions = "0.9.38"

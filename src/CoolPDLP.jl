@@ -1,9 +1,10 @@
 module CoolPDLP
 
 using Adapt
+using Atomix
 using DataDeps
-using DeviceSparseArrays
 using DocStringExtensions
+using GPUArrays
 using GZip
 using IterativeSolvers
 using KernelAbstractions
@@ -16,17 +17,21 @@ using QPSReader: VTYPE_Binary, VTYPE_Integer
 using Random
 using SparseArrays
 
-include("types.jl")
-include("check.jl")
+include("matrices.jl")
 include("linalg.jl")
+include("problems.jl")
+include("check.jl")
+include("proj.jl")
 include("pdhg.jl")
 include("data.jl")
 include("io.jl")
 include("adapt.jl")
 
+export DeviceSparseMatrixCOO, DeviceSparseMatrixCSR
+export DeviceSparseMatrixELL
 export MILP, SaddlePointProblem, relax
 export nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
-export change_floating_type, change_integer_type, single_precision, to_device
+export change_floating_type, change_integer_type, single_precision, change_matrix_type
 export is_feasible, objective_value
 export read_milp, write_sol, read_sol
 export PrimalDualVariable, SaddlePointProblem

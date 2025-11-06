@@ -94,11 +94,11 @@ end
     pdhg(
         milp::MILP,
         params::PDHGParameters,
-        x_init::AbstractVector;
+        x_init::AbstractVector=zero(milp.c);
         show_progress::Bool=true
     )
     
-Apply the primal-dual hybrid gradient algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from `x_init`.
+Apply the primal-dual hybrid gradient algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
 """
 function pdhg(
         milp::MILP{T},
@@ -112,11 +112,22 @@ function pdhg(
     return pdhg(sad, params, x_init, y_init; show_progress, starting_time)
 end
 
+"""
+    pdhg(
+        sad::SaddlePointProblems,
+        params::PDHGParameters,
+        x_init::AbstractVector=zero(sad.c);
+        y_init::AbstractVector=zero(sad.q);
+        show_progress::Bool=true
+    )
+    
+Apply the primal-dual hybrid gradient algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `(x_init, y_init)`.
+"""
 function pdhg(
         sad::SaddlePointProblem,
         params::PDHGParameters,
-        x_init::AbstractVector{T},
-        y_init::AbstractVector{T};
+        x_init::AbstractVector{T} = zero(sad.c),
+        y_init::AbstractVector{T} = zero(sad.q);
         show_progress::Bool = true,
         starting_time::Float64 = time()
     ) where {T}
@@ -180,13 +191,13 @@ function pdhg_step!(
 
     # xp = proj_X(x - τ * (c - Kᵀ * y))
     xp .= x .- τ .* c
-    mymul!(xp, Kᵀ, y, τ, Ti(1))
+    mul!(xp, Kᵀ, y, τ, Ti(1))
     proj_X!(xp, l, u)
 
     # yp = proj_Y(y + σ * (q - K * (2 * xp - x)))
     yp .= y .+ σ .* q
     x .= 2 .* xp .- x
-    mymul!(yp, K, x, -σ, Ti(1))
+    mul!(yp, K, x, -σ, Ti(1))
     proj_Y!(yp, m₁)
 
     copyto!(x, xp)
@@ -209,7 +220,7 @@ function individual_kkt_errors!(
 
     # Kxᵀ = (Gxᵀ, Axᵀ), qᵀ = (hᵀ, bᵀ)
     Kx = y_scratch
-    mymul!(Kx, K, x)
+    mul!(Kx, K, x)
     Gx = @view Kx[Ti(1):m₁]
     h = @view q[Ti(1):m₁]
     Ax = @view Kx[(m₁ + Ti(1)):(m₁ + m₂)]
@@ -218,7 +229,7 @@ function individual_kkt_errors!(
     # λ = proj_Λ(c - Kᵀ * y)  from cuPDLP-C paper
     λ = x_scratch1
     λ .= c
-    mymul!(λ, Kᵀ, y, -Ti(1), Ti(1))
+    mul!(λ, Kᵀ, y, -Ti(1), Ti(1))
     proj_Λ!(λ, l, u)
 
     λ⁺, l_noinf = x_scratch2, x_scratch3
@@ -242,7 +253,7 @@ function individual_kkt_errors!(
     # err_dual = norm(c - Kᵀ * y - λ)
     err_dual_scratch = x_scratch1
     err_dual_scratch .= c .- λ
-    mymul!(err_dual_scratch, Kᵀ, y, -Ti(1), Ti(1))
+    mul!(err_dual_scratch, Kᵀ, y, -Ti(1), Ti(1))
 
     err_dual = norm(err_dual_scratch)
     err_dual_denominator = one(T) + norm(c)

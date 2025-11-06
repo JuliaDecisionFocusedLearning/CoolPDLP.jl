@@ -70,8 +70,8 @@ end
 
 function change_integer_type(::Type{T}, A::DeviceSparseMatrixCSR) where {T}
     return DeviceSparseMatrixCSR(
-        A.m,
-        A.n,
+        T(A.m),
+        T(A.n),
         change_integer_type(T, A.rowptr),
         change_integer_type(T, A.colval),
         A.nzval
@@ -119,25 +119,20 @@ Convert all integers in `problem` to `Int32` and all floating-point numbers to `
 single_precision(problem) = change_integer_type(Int32, change_floating_type(Float32, problem))
 
 """
-    to_device(::Type{DSM}, problem)
-    to_device(problem)
+    change_matrix_type(::Type{M}, problem)
 
-Convert the sparse matrices inside `problem` to a device-friendly matrix format `DSM` from DeviceSparseArrays.jl (the default format is `DeviceSparseMatrixCSR`).
-
-The resulting problem can then be `adapt`-ed to GPU thanks to Adapt.jl.
+Convert the sparse matrices inside `problem` using constructor `M`.
 """
-function to_device end
+function change_matrix_type end
 
-to_device(problem::AbstractProblem) = to_device(DeviceSparseMatrixCSR, problem)
-
-function to_device(::Type{DSM}, milp::MILP) where {DSM <: AbstractDeviceSparseMatrix}
+function change_matrix_type(::Type{M}, milp::MILP) where {M <: AbstractMatrix}
     (; c, G, h, A, b, l, u, intvar, varname) = milp
-    return MILP(; c, G = DSM(G), h, A = DSM(A), b, l, u, intvar, varname)
+    return MILP(; c, G = M(G), h, A = M(A), b, l, u, intvar, varname)
 end
 
-function to_device(::Type{DSM}, sad::SaddlePointProblem) where {DSM <: AbstractDeviceSparseMatrix}
+function change_matrix_type(::Type{M}, sad::SaddlePointProblem) where {M <: AbstractMatrix}
     (; c, q, K, Kᵀ, l, u, m₁, m₂) = sad
-    return SaddlePointProblem(; c, q, K = DSM(K), Kᵀ = DSM(Kᵀ), l, u, m₁, m₂)
+    return SaddlePointProblem(; c, q, K = M(K), Kᵀ = M(Kᵀ), l, u, m₁, m₂)
 end
 
 function Adapt.adapt_structure(to, milp::MILP)

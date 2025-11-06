@@ -36,7 +36,7 @@ for i in 1:50
     milp = read_milp(joinpath(instance_folder, "instance_$i_str.mps"))
     sad = SaddlePointProblem(milp)
     sad32 = single_precision(sad)
-    sad32_device = to_device(sad32)
+    sad32_device = change_matrix_type(sad32)
     sad32_metal = adapt(MetalBackend(), sad32_device)
 
     t32 = kkt_pass_timing(sad32)

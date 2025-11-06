@@ -5,6 +5,9 @@ using Test
     @testset "Formalities" begin
         include("formalities.jl")
     end
+    @testset "Matrices" begin
+        include("matrices.jl")
+    end
     @testset "Linear algebra" begin
         include("linalg.jl")
     end
