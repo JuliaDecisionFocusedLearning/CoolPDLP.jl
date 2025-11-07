@@ -302,6 +302,6 @@ function restart_check!(
     necessary_decay = err_restart_cand <= β_necessary * err_last_restart
     no_local_progress = err_restart_cand > err_prev_restart_cand
     long_inner_loop = inner_iterations >= β_artificial * total_iterations
-    return false
+
     return sufficient_decay || (necessary_decay && no_local_progress) || long_inner_loop
 end
