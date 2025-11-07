@@ -15,8 +15,8 @@ struct DeviceSparseMatrixCOO{
         Vv <: AbstractVector{Tv},
         Vi <: AbstractVector{Ti},
     } <: AbstractDeviceSparseMatrix{Tv, Ti}
-    m::Ti
-    n::Ti
+    m::Int
+    n::Int
     rowval::Vi
     colval::Vi
     nzval::Vv
@@ -38,7 +38,7 @@ end
 
 function DeviceSparseMatrixCOO(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
     rowval, colval, nzval = findnz(A)
-    return DeviceSparseMatrixCOO(Ti(A.m), Ti(A.n), rowval, colval, nzval)
+    return DeviceSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
 end
 
 function Base.getindex(A::DeviceSparseMatrixCOO{Tv}, i::Integer, j::Integer) where {Tv}
@@ -50,6 +50,8 @@ function Base.getindex(A::DeviceSparseMatrixCOO{Tv}, i::Integer, j::Integer) whe
     end
     return zero(Tv)
 end
+
+SparseArrays.nnz(A::DeviceSparseMatrixCOO) = length(A.nzval)
 
 @kernel function spmv_coo!(
         c::AbstractVector{Tv},
@@ -92,8 +94,8 @@ struct DeviceSparseMatrixCSR{
         Vv <: AbstractVector{Tv},
         Vi <: AbstractVector{Ti},
     } <: AbstractDeviceSparseMatrix{Tv, Ti}
-    m::Ti
-    n::Ti
+    m::Int
+    n::Int
     rowptr::Vi
     colval::Vi
     nzval::Vv
@@ -115,7 +117,7 @@ end
 
 function DeviceSparseMatrixCSR(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
     At = sparse(transpose(A))
-    return DeviceSparseMatrixCSR(Ti(At.n), Ti(At.m), At.colptr, At.rowval, At.nzval)
+    return DeviceSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
 end
 
 function Base.getindex(
@@ -135,6 +137,8 @@ function Base.getindex(
         end
     end
 end
+
+SparseArrays.nnz(A::DeviceSparseMatrixCSR) = length(A.nzval)
 
 @kernel function spmv_csr!(
         c::AbstractVector{Tv},
@@ -180,8 +184,8 @@ struct DeviceSparseMatrixELL{
         Mv <: AbstractMatrix{Tv},
         Mi <: AbstractMatrix{Ti},
     } <: AbstractDeviceSparseMatrix{Tv, Ti}
-    m::Ti
-    n::Ti
+    m::Int
+    n::Int
     colval::Mi
     nzval::Mv
 end
@@ -233,6 +237,8 @@ function Base.getindex(
         return zero(Tv)
     end
 end
+
+SparseArrays.nnz(A::DeviceSparseMatrixELL) = sum(!==(0), A.colval)
 
 @kernel function spmv_ell!(
         c::AbstractVector{Tv},

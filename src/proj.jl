@@ -14,3 +14,27 @@ end
 
 positive_part(a::Number) = max(a, zero(a))
 negative_part(a::Number) = -min(a, zero(a))
+
+
+function proj_X!(
+        x::AbstractVector,
+        l::AbstractVector,
+        u::AbstractVector
+    )
+    return x .= proj_box.(x, l, u)
+end
+
+function proj_Y!(
+        y::AbstractVector,
+        ineq_cons::AbstractVector{Bool}
+    )
+    return y .= ifelse.(ineq_cons, positive_part.(y), y)
+end
+
+function proj_Λ!(
+        λ::AbstractVector,
+        l::AbstractVector,
+        u::AbstractVector
+    )
+    return λ .= proj_λ.(λ, l, u)
+end

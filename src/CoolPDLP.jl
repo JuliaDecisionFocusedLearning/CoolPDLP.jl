@@ -20,8 +20,10 @@ using SparseArrays
 include("matrices.jl")
 include("linalg.jl")
 include("problems.jl")
+include("precondition.jl")
 include("check.jl")
 include("proj.jl")
+include("termination.jl")
 include("pdhg.jl")
 include("data.jl")
 include("io.jl")
@@ -36,6 +38,7 @@ export change_floating_type, change_integer_type, single_precision, change_matri
 export is_feasible, objective_value
 export read_milp, write_sol, read_sol
 export PrimalDualVariable, SaddlePointProblem
+export precondition_pdlp
 export PDHGParameters, PDHGState, TerminationReason, pdhg
 export list_pdlp_miplib2017_subset, read_miplib2017_instance
 export list_netlib_instances, read_netlib_instance

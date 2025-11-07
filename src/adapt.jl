@@ -4,14 +4,9 @@ function common_backend(arrs::Vararg{Any, N}) where {N}
     return backends[1]
 end
 
-function KernelAbstractions.get_backend(milp::MILP)
-    (; c, G, h, A, b, l, u) = milp
-    return common_backend(c, G, h, A, b, l, u)
-end
-
 function KernelAbstractions.get_backend(sad::SaddlePointProblem)
-    (; c, q, K, Kᵀ, l, u) = sad
-    return common_backend(c, q, K, Kᵀ, l, u)
+    (; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2) = sad
+    return common_backend(c, q, K, Kᵀ, l, u, ineq_cons, D1, D2)
 end
 
 const FloatOrFloatArray = Union{AbstractFloat, AbstractArray{<:AbstractFloat}}
@@ -19,7 +14,7 @@ const IntOrIntArray = Union{Integer, AbstractArray{<:Integer}}
 const NotFloatOrInteger = Union{AbstractString, AbstractArray{<:AbstractString}}
 
 """
-    change_floating_type(T, stuf)
+    change_floating_type(T, stuff)
 
 Change the element type of floating-point containers inside `stuff` to `T`.
 """
@@ -34,16 +29,6 @@ function change_floating_type(::Type{T}, A::SparseMatrixCSC) where {T}
         A.n,
         A.colptr,
         A.rowval,
-        change_floating_type(T, A.nzval)
-    )
-end
-
-function change_floating_type(::Type{T}, A::DeviceSparseMatrixCSR) where {T}
-    return DeviceSparseMatrixCSR(
-        A.m,
-        A.n,
-        A.rowptr,
-        A.colval,
         change_floating_type(T, A.nzval)
     )
 end
@@ -68,35 +53,10 @@ function change_integer_type(::Type{T}, A::SparseMatrixCSC) where {T}
     )
 end
 
-function change_integer_type(::Type{T}, A::DeviceSparseMatrixCSR) where {T}
-    return DeviceSparseMatrixCSR(
-        T(A.m),
-        T(A.n),
-        change_integer_type(T, A.rowptr),
-        change_integer_type(T, A.colval),
-        A.nzval
-    )
-end
-
 for change_type in (:change_floating_type, :change_integer_type)
     @eval begin
-        function $change_type(::Type{T}, milp::MILP) where {T}
-            (; c, G, h, A, b, l, u, intvar, varname) = milp
-            return MILP(;
-                c = $change_type(T, c),
-                G = $change_type(T, G),
-                h = $change_type(T, h),
-                A = $change_type(T, A),
-                b = $change_type(T, b),
-                l = $change_type(T, l),
-                u = $change_type(T, u),
-                intvar,
-                varname
-            )
-        end
-
         function $change_type(::Type{T}, sad::SaddlePointProblem) where {T}
-            (; c, q, K, Kᵀ, l, u, m₁, m₂) = sad
+            (; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2) = sad
             return SaddlePointProblem(;
                 c = $change_type(T, c),
                 q = $change_type(T, q),
@@ -104,8 +64,9 @@ for change_type in (:change_floating_type, :change_integer_type)
                 Kᵀ = $change_type(T, Kᵀ),
                 l = $change_type(T, l),
                 u = $change_type(T, u),
-                m₁ = $change_type(T, m₁),
-                m₂ = $change_type(T, m₂)
+                ineq_cons,
+                D1 = $change_type(T, D1),
+                D2 = $change_type(T, D2),
             )
         end
     end
@@ -125,33 +86,13 @@ Convert the sparse matrices inside `problem` using constructor `M`.
 """
 function change_matrix_type end
 
-function change_matrix_type(::Type{M}, milp::MILP) where {M <: AbstractMatrix}
-    (; c, G, h, A, b, l, u, intvar, varname) = milp
-    return MILP(; c, G = M(G), h, A = M(A), b, l, u, intvar, varname)
-end
-
 function change_matrix_type(::Type{M}, sad::SaddlePointProblem) where {M <: AbstractMatrix}
-    (; c, q, K, Kᵀ, l, u, m₁, m₂) = sad
-    return SaddlePointProblem(; c, q, K = M(K), Kᵀ = M(Kᵀ), l, u, m₁, m₂)
-end
-
-function Adapt.adapt_structure(to, milp::MILP)
-    (; c, G, h, A, b, l, u, intvar, varname) = milp
-    return MILP(;
-        c = adapt(to, c),
-        G = adapt(to, G),
-        h = adapt(to, h),
-        A = adapt(to, A),
-        b = adapt(to, b),
-        l = adapt(to, l),
-        u = adapt(to, u),
-        intvar = adapt(to, intvar),
-        varname
-    )
+    (; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2) = sad
+    return SaddlePointProblem(; c, q, K = M(K), Kᵀ = M(Kᵀ), l, u, ineq_cons, D1, D2)
 end
 
 function Adapt.adapt_structure(to, sad::SaddlePointProblem)
-    (; c, q, K, Kᵀ, l, u, m₁, m₂) = sad
+    (; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2) = sad
     return SaddlePointProblem(;
         c = adapt(to, c),
         q = adapt(to, q),
@@ -159,7 +100,8 @@ function Adapt.adapt_structure(to, sad::SaddlePointProblem)
         Kᵀ = adapt(to, Kᵀ),
         l = adapt(to, l),
         u = adapt(to, u),
-        m₁ = m₁,
-        m₂ = m₂
+        ineq_cons = adapt(to, ineq_cons),
+        D1 = adapt(to, D1),
+        D2 = adapt(to, D2),
     )
 end

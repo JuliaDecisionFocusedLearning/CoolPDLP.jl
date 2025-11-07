@@ -33,6 +33,8 @@ function spectral_norm(
     return sqrt(λ)
 end
 
+column_view(A::SparseMatrixCSC, j::Integer) = view(nonzeros(A), nzrange(A, j))
+
 
 """
     sort_columns(A::SparseMatrixCSC)

@@ -54,9 +54,9 @@ Represent a Mixed Integer Linear Program in "PDLP form":
 $(TYPEDFIELDS)
 """
 struct MILP{
-        T <: Number,
-        V <: AbstractVector{T},
-        M <: AbstractMatrix{T},
+        Tv <: Number,
+        V <: AbstractVector{Tv},
+        M <: AbstractMatrix{Tv},
         Vb <: AbstractVector{Bool},
         Vs <: AbstractVector{String},
     } <: AbstractProblem
@@ -80,12 +80,12 @@ struct MILP{
     varname::Vs
 
     function MILP(; c, G, h, A, b, l, u, intvar, varname)
-        T = Base.promote_eltype(c, G, h, A, b, l, u)
+        Tv = Base.promote_eltype(c, G, h, A, b, l, u)
         V = promote_type(typeof(c), typeof(h), typeof(b), typeof(l), typeof(u))
         M = promote_type(typeof(G), typeof(A))
         Vb = typeof(intvar)
         Vs = typeof(varname)
-        @assert isconcretetype(T)
+        @assert isconcretetype(Tv)
         @assert isconcretetype(V)
         @assert isconcretetype(M)
 
@@ -99,12 +99,10 @@ struct MILP{
         @assert m₂ == size(A, 1)
 
         @assert all(isfinite, c)
-        # @assert all(isfinite, G)
         @assert all(isfinite, h)
-        # @assert all(isfinite, A)
         @assert all(isfinite, b)
 
-        return new{T, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname)
+        return new{Tv, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname)
     end
 end
 
@@ -112,7 +110,7 @@ function Base.show(io::IO, milp::MILP)
     return print(io, "MILP with $(nbvar(milp)) variables ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer), $(nbcons_ineq(milp)) inequality constraints and $(nbcons_eq(milp)) equality constraints (total of $(nnz(milp.G) + nnz(milp.A)) nonzero coefficients)")
 end
 
-Base.eltype(::MILP{T}) where {T} = T
+Base.eltype(::MILP{Tv}) where {Tv} = Tv
 
 nbvar(milp::MILP) = length(milp.c)
 nbvar_int(milp::MILP) = sum(milp.intvar)
@@ -140,17 +138,18 @@ Represent the saddle point problem
 
     min_x max_y L(x, y) = cᵀx - yᵀKx + qᵀy
     s.t. x ∈ X = {l ≤ x ≤ u}
-         y ∈ Y = {y[1:m₁] ≥ 0} 
+         y ∈ Y = {y[ineq_cons] ≥ 0} 
 
 # Fields
 
 $(TYPEDFIELDS)
 """
 struct SaddlePointProblem{
-        T <: Number,
-        Ti <: Integer,
-        V <: AbstractVector{T},
-        M <: AbstractMatrix{T},
+        Tv <: Number,
+        V <: AbstractVector{Tv},
+        M <: AbstractMatrix{Tv},
+        Vb <: AbstractVector{Bool},
+        Dv <: Diagonal{Tv},
     } <: AbstractProblem
     "objective vector"
     c::V
@@ -164,24 +163,28 @@ struct SaddlePointProblem{
     l::V
     "variable upped bound"
     u::V
-    "number of inequality constraints"
-    m₁::Ti
-    "number of equality constraints"
-    m₂::Ti
+    "indicators of inequality constraints"
+    ineq_cons::Vb
+    "left preconditioner"
+    D1::Dv
+    "right preconditioner"
+    D2::Dv
 
-    function SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
-        T = Base.promote_eltype(c, q, K, Kᵀ, l, u)
-        Ti = promote_type(typeof(m₁), typeof(m₂))
+    function SaddlePointProblem(; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2)
+        Tv = Base.promote_eltype(c, q, K, Kᵀ, l, u, D1, D2)
         V = promote_type(
             typeof(c), typeof(q),
             typeof(l), typeof(u),
         )
         M = promote_type(typeof(K), typeof(Kᵀ))
-        @assert isconcretetype(T)
-        @assert isconcretetype(Ti)
+        Vb = typeof(ineq_cons)
+        Dv = promote_type(typeof(D1), typeof(D2))
+        @assert isconcretetype(Tv)
         @assert isconcretetype(V)
         @assert isconcretetype(M)
-        return new{T, Ti, V, M}(c, q, K, Kᵀ, l, u, m₁, m₂)
+        @assert isconcretetype(Vb)
+        @assert isconcretetype(Dv)
+        return new{Tv, V, M, Vb, Dv}(c, q, K, Kᵀ, l, u, ineq_cons, D1, D2)
     end
 end
 
@@ -192,27 +195,40 @@ Construct a [`SaddlePointProblem`](@ref) from a [`MILP`](@ref) as in the PDLP pa
 
 - `K = vcat(G, A)`
 - `q = vcat(h, b)`
+- `ineq_cons = (1:(m₁ + m₂)) .<= m₁`
+
+# Fields
+
+$(TYPEDFIELDS)
 """
-function SaddlePointProblem(milp::MILP{T}) where {T}
+function SaddlePointProblem(milp::MILP{Tv}) where {Tv}
     (; c, G, h, A, b, l, u) = milp
     q = vcat(h, b)
     K = vcat(G, A)
     Kᵀ = convert(typeof(K), transpose(K))
     m₁ = length(h)
     m₂ = length(b)
-    return SaddlePointProblem(; c, q, K, Kᵀ, l, u, m₁, m₂)
+    ineq_cons = similar(q, Bool)
+    ineq_cons .= (1:(m₁ + m₂)) .<= m₁
+    d1 = similar(q)
+    d2 = similar(c)
+    fill!(d1, one(Tv))
+    fill!(d2, one(Tv))
+    D1 = Diagonal(d1)
+    D2 = Diagonal(d2)
+    return SaddlePointProblem(; c, q, K, Kᵀ, l, u, ineq_cons, D1, D2)
 end
 
 function Base.show(io::IO, sad::SaddlePointProblem)
     return print(io, "Saddle point problem with $(nbvar(sad)) variables, $(nbcons_ineq(sad)) inequality constraints and $(nbcons_eq(sad)) equality constraints (total of $(nnz(sad.K)) nonzero coefficients)")
 end
 
-Base.eltype(::SaddlePointProblem{T}) where {T} = T
+Base.eltype(::SaddlePointProblem{Tv}) where {Tv} = Tv
 
 nbvar(sad::SaddlePointProblem) = length(sad.c)
-nbcons(sad::SaddlePointProblem) = nbcons_eq(sad) + nbcons_ineq(sad)
-nbcons_eq(sad::SaddlePointProblem) = sad.m₂
-nbcons_ineq(sad::SaddlePointProblem) = sad.m₁
+nbcons(sad::SaddlePointProblem) = length(sad.q)
+nbcons_ineq(sad::SaddlePointProblem) = sum(sad.ineq_cons)
+nbcons_eq(sad::SaddlePointProblem) = nbcons(sad) - nbcons_ineq(sad)
 
 """
     PrimalDualVariable
@@ -223,7 +239,7 @@ Represent a couple of primal and dual variables.
 
 $(TYPEDFIELDS)
 """
-struct PrimalDualVariable{T <: Number, V <: AbstractVector{T}}
+struct PrimalDualVariable{Tv <: Number, V <: AbstractVector{Tv}}
     "primal variable"
     x::V
     "dual variable"
@@ -251,7 +267,6 @@ function default_init(sad::SaddlePointProblem)
     return PrimalDualVariable(zero(sad.c), zero(sad.q))
 end
 
-
 """
     TerminationReason
 
@@ -263,3 +278,54 @@ Enum type listing possible reasons for algorithm termination:
 - `STILL_RUNNING`
 """
 @enum TerminationReason CONVERGENCE TIME ITERATIONS STILL_RUNNING
+
+"""
+    AbstractState
+
+Algorithm state supertype.
+
+!!! warning
+    Work in progress.
+
+# Required fields
+
+- `x`, `y`
+- `x_scratch1`, `x_scratch2`, `x_scratch3`, `y_scratch`
+- `elapsed`
+- `kkt_passes`
+- `relative_error`
+- `termination_reason`
+"""
+abstract type AbstractState{Tv, V} end
+
+function Base.show(io::IO, state::AbstractState)
+    (; elapsed, kkt_passes, relative_error, termination_reason) = state
+    return print(
+        io,
+        @sprintf(
+            "%s with termination reason %s: %.2e relative KKT error after %g seconds elapsed and %s KKT passes",
+            nameof(typeof(state)),
+            termination_reason,
+            relative_error,
+            elapsed,
+            kkt_passes,
+        )
+    )
+end
+
+"""
+    AbstractParameters
+
+Algorithm parameter supertype.
+
+!!! warning
+    Work in progress.
+
+# Required fields
+
+- `tol_termination`
+- `time_limit`
+- `max_kkt_passes`
+- `record_error_history`
+"""
+abstract type AbstractParameters{Tv} end
