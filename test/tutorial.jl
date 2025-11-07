@@ -25,7 +25,7 @@ milp
 # The first thing to do is define parameters.
 
 params = PDHGParameters(;
-    tol_termination = 1.0e-6,
+    termination_reltol = 1.0e-6,
     time_limit = 10.0,
     record_error_history = true
 )

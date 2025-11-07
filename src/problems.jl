@@ -291,7 +291,7 @@ Algorithm state supertype.
 
 - `x`, `y`
 - `x_scratch1`, `x_scratch2`, `x_scratch3`, `y_scratch`
-- `elapsed`
+- `time_elapsed`
 - `kkt_passes`
 - `relative_error`
 - `termination_reason`
@@ -299,7 +299,7 @@ Algorithm state supertype.
 abstract type AbstractState{Tv, V} end
 
 function Base.show(io::IO, state::AbstractState)
-    (; elapsed, kkt_passes, relative_error, termination_reason) = state
+    (; time_elapsed, kkt_passes, relative_error, termination_reason) = state
     return print(
         io,
         @sprintf(
@@ -307,11 +307,25 @@ function Base.show(io::IO, state::AbstractState)
             nameof(typeof(state)),
             termination_reason,
             relative_error,
-            elapsed,
+            time_elapsed,
             kkt_passes,
         )
     )
 end
+
+"""
+    primal_solution(state, sad::SaddlePointProblem)
+
+Get the primal solution corresponding to `state`, by reverting the preconditioning of `sad`.
+"""
+primal_solution(state::AbstractState, sad::SaddlePointProblem) = sad.D2 * state.x
+
+"""
+    dual_solution(state, sad::SaddlePointProblem)
+
+Get the dual solution corresponding to `state`, by reverting the preconditioning of `sad`.
+"""
+dual_solution(state::AbstractState, sad::SaddlePointProblem) = sad.D1 \ state.y
 
 """
     AbstractParameters
@@ -323,7 +337,7 @@ Algorithm parameter supertype.
 
 # Required fields
 
-- `tol_termination`
+- `termination_reltol`
 - `time_limit`
 - `max_kkt_passes`
 - `record_error_history`

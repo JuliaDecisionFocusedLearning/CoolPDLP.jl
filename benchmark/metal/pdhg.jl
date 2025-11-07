@@ -8,7 +8,7 @@ using KernelAbstractions
 using Metal
 
 params = PDHGParameters(;
-    tol_termination = 1.0f-3, max_kkt_passes = 10^2, check_every = 10^2
+    termination_reltol = 1.0f-3, max_kkt_passes = 10^2, check_every = 10^2
 )
 
 netlib = list_netlib_instances(; exclude_failing = true)

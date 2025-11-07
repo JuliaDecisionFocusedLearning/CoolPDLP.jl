@@ -1,8 +1,10 @@
 function individual_kkt_errors!(
-        state::AbstractState{Tv},
-        sad::SaddlePointProblem{Tv},
-    ) where {Tv}
-    (; x, y, x_scratch1, x_scratch2, x_scratch3, y_scratch) = state
+        state::AbstractState{Tv, V},
+        sad::SaddlePointProblem{Tv, V},
+        x::V,
+        y::V,
+    ) where {Tv, V}
+    (; x_scratch1, x_scratch2, x_scratch3, y_scratch) = state
     (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
 
     qᵀy = dot(q, y)
@@ -57,15 +59,16 @@ function individual_kkt_errors!(
     )
 end
 
-
-function relative_kkt_error!(
-        state::AbstractState,
-        sad::SaddlePointProblem,
-    )
+function max_relative_kkt_error!(
+        state::AbstractState{Tv, V},
+        sad::SaddlePointProblem{Tv, V},
+        x::V,
+        y::V,
+    ) where {Tv, V}
     (;
         err_primal, err_dual, err_gap,
         err_primal_denominator, err_dual_denominator, err_gap_denominator,
-    ) = individual_kkt_errors!(state, sad)
+    ) = individual_kkt_errors!(state, sad, x, y)
 
     relative_error_primal = err_primal / err_primal_denominator
     relative_error_dual = err_dual / err_dual_denominator
@@ -74,6 +77,17 @@ function relative_kkt_error!(
     return max(relative_error_primal, relative_error_dual, relative_error_gap)
 end
 
+function aggregated_absolute_kkt_error!(
+        state::AbstractState{Tv, V},
+        sad::SaddlePointProblem{Tv, V},
+        x::V,
+        y::V,
+        ω::Number
+    ) where {Tv, V}
+    (; err_primal, err_dual, err_gap) = individual_kkt_errors!(state, sad, x, y)
+    err_agg = sqrt(ω^2 * err_primal^2 + inv(ω^2) * err_dual^2 + err_gap^2)
+    return err_agg
+end
 
 function termination_check!(
         state::AbstractState,
@@ -81,17 +95,17 @@ function termination_check!(
         params::AbstractParameters,
     )
     (; starting_time) = state
-    (; tol_termination, time_limit, max_kkt_passes, record_error_history) = params
-    state.elapsed = time() - starting_time
-    state.relative_error = relative_kkt_error!(state, sad)
+    (; termination_reltol, time_limit, max_kkt_passes, record_error_history) = params
+    state.time_elapsed = time() - starting_time
+    state.relative_error = max_relative_kkt_error!(state, sad, state.x, state.y)
     if record_error_history
         push!(state.relative_error_history, (state.kkt_passes, state.relative_error))
     end
 
-    if state.relative_error <= tol_termination
+    if state.relative_error <= termination_reltol
         state.termination_reason = CONVERGENCE
         return true
-    elseif state.elapsed >= time_limit
+    elseif state.time_elapsed >= time_limit
         state.termination_reason = TIME
         return true
     elseif state.kkt_passes >= max_kkt_passes

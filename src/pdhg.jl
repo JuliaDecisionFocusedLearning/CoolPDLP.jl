@@ -9,9 +9,11 @@ $(TYPEDFIELDS)
 """
 @kwdef struct PDHGParameters{Tv <: Number} <: AbstractParameters{Tv}
     "tolerance when checking KKT relative errors to decide termination"
-    tol_termination::Tv = 1.0e-4
+    termination_reltol::Tv = 1.0e-4
     "scaling of the inverse spectral norm of `K` when defining the step size"
-    stepsize_scaling::Tv = typeof(tol_termination)(0.9)
+    stepsize_scaling::Tv = typeof(termination_reltol)(0.9)
+    "norm parameter in the Chambolle-pock preconditioner"
+    preconditioner_chambollepock_alpha::Tv = typeof(termination_reltol)(1)
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::Int = 100_000
     "time limit in seconds"
@@ -53,7 +55,7 @@ $(TYPEDFIELDS)
     "time at which the algorithm started, in seconds"
     starting_time::Float64 = time()
     "time elapsed since the algorithm started, in seconds"
-    elapsed::Float64 = 0.0
+    time_elapsed::Float64 = 0.0
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int = 0
     "current relative KKT error"
@@ -96,6 +98,8 @@ end
     )
     
 Apply the primal-dual hybrid gradient algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `(x_init, y_init)`.
+
+Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
 """
 function pdhg(
         sad::SaddlePointProblem{Tv, V},
@@ -106,6 +110,7 @@ function pdhg(
         starting_time::Float64 = time()
     ) where {Tv, V}
     x, y = copy(x_init), copy(y_init)
+    sad = precondition_chambolle_pock(sad; α = params.preconditioner_chambollepock_alpha)
     η = fixed_stepsize(sad, params)
     state = PDHGState(; x, y, η, starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
@@ -120,7 +125,7 @@ function pdhg(
         end
     end
     finish!(prog)
-    return state
+    return primal_solution(state, sad), dual_solution(state, sad), state
 end
 
 function fixed_stepsize(

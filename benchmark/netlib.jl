@@ -22,10 +22,10 @@ states = tmap(names_and_milps) do (name, milp)
 end
 
 function plot_profile(states, params)
-    max_time = maximum(s -> s.elapsed, states)
+    max_time = maximum(s -> s.time_elapsed, states)
     time_range = range(0, max_time, 100)
     fractions = [
-        mean(s -> s.elapsed <= t && s.termination_reason == CoolPDLP.CONVERGENCE, states)
+        mean(s -> s.time_elapsed <= t && s.termination_reason == CoolPDLP.CONVERGENCE, states)
             for t in time_range
     ]
 
@@ -35,7 +35,7 @@ function plot_profile(states, params)
         xlabel = "Wall clock time (secs)",
         ylabel = "Fraction of problems solved",
         title = "Convergence of LP solvers on Netlib",
-        subtitle = "Tolerance - $(params.tol_termination)"
+        subtitle = "Tolerance - $(params.termination_reltol)"
     )
     lines!(ax, time_range, fractions; label = "baseline PDHG")
     axislegend(position = :rb)

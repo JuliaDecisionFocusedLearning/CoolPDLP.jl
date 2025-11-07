@@ -29,10 +29,18 @@ function diagonal_norm_preconditioner(
     d1 = similar(q)
     d2 = similar(c)
     for j in axes(K, 1)
-        d1[j] = sqrt(norm(column_view(Kᵀ, j), Tv(p_row))) |> inv  # missing in PDLP paper
+        if isempty(column_view(Kᵀ, j))
+            d1[j] = one(Tv)
+        else
+            d1[j] = sqrt(norm(column_view(Kᵀ, j), Tv(p_row))) |> inv  # missing in PDLP paper
+        end
     end
     for i in axes(K, 2)
-        d2[i] = sqrt(norm(column_view(K, i), Tv(p_col))) |> inv  # missing in PDLP paper
+        if isempty(column_view(K, i))
+            d2[i] = one(Tv)
+        else
+            d2[i] = sqrt(norm(column_view(K, i), Tv(p_col))) |> inv  # missing in PDLP paper
+        end
     end
     return Diagonal(d1), Diagonal(d2)
 end
@@ -57,9 +65,9 @@ end
 Apply the default PDLP preconditioning to `sad`: a few iterations of Ruiz scaling, followed by Chambolle-Pock scaling.
 """
 function precondition_pdlp(
-        sad::SaddlePointProblem; ruiz_iterations = 10, chambolle_pock_alpha = 1
+        sad::SaddlePointProblem; ruiz_iterations = 10, chambollepock_alpha = 1
     )
     sad_ruiz = precondition_ruiz(sad; iterations = ruiz_iterations)
-    sad_cp = precondition_chambolle_pock(sad_ruiz; α = chambolle_pock_alpha)
+    sad_cp = precondition_chambolle_pock(sad_ruiz; α = chambollepock_alpha)
     return sad_cp
 end

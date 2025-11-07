@@ -8,7 +8,7 @@ using Test
 
 netlib = list_netlib_instances()
 milp, path = read_netlib_instance(netlib[4])
-params = PDHGParameters(; tol_termination = 1.0e-6, max_kkt_passes = 10^7)
+params = PDHGParameters(; termination_reltol = 1.0e-6, max_kkt_passes = 10^7)
 
 @testset "Comparison with JuMP" begin
     state = pdhg(milp, params; show_progress = false)
