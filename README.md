@@ -1,5 +1,7 @@
 # CoolPDLP.jl
 
+[![Build Status](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml?query=branch%3Amain)
+
 A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP).
 
 Unlike cuPDLP and its variants, this code is designed to run on most common GPU architectures (NVIDIA, AMD, Intel, Apple).
