@@ -353,7 +353,8 @@ function PrimalDualSolution(
     λ⁺ = positive_part.(λ)
     λ⁻ = negative_part.(λ)
     err = KKTErrors(T)
-    return PrimalDualSolution(; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻, err)
+    z = PrimalDualSolution(; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻, err)
+    return z
 end
 
 function Base.copy(z::PrimalDualSolution)
@@ -378,9 +379,9 @@ function Base.copyto!(z1::PrimalDualSolution, z2::PrimalDualSolution)
 end
 
 function weighted_sum!(
-        z1::PrimalDualSolution{T}, z2::PrimalDualSolution{T},
+        z1::PrimalDualSolution{T, V}, z2::PrimalDualSolution{T, V},
         a1::T, a2::T,
-    ) where {T}
+    ) where {T, V}
     @. z1.x = a1 * z1.x + a2 * z2.x
     @. z1.y = a1 * z1.y + a2 * z2.y
     @. z1.Kx = a1 * z1.Kx + a2 * z2.Kx

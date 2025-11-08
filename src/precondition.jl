@@ -62,19 +62,6 @@ function precondition_ruiz(sad::SaddlePointProblem{T}; iterations::Integer) wher
     return sad_iter
 end
 
-"""
-    precondition_pdlp(sad::SaddlePointProblem)
-
-Apply the default PDLP preconditioning to `sad`: a few iterations of Ruiz scaling, followed by Chambolle-Pock scaling.
-"""
-function precondition_pdlp(
-        sad::SaddlePointProblem; ruiz_iterations = 10, chambollepock_alpha = 1
-    )
-    sad_ruiz = precondition_ruiz(sad; iterations = ruiz_iterations)
-    sad_cp = precondition_chambolle_pock(sad_ruiz; α = chambollepock_alpha)
-    return sad_cp
-end
-
 function preconditioned_solution(
         sad::SaddlePointProblem,
         x::AbstractVector, y::AbstractVector,

@@ -12,6 +12,10 @@ $(TYPEDFIELDS)
     enable_restarts::Bool = true
     "whether to enable scaling"
     enable_scaling::Bool = true
+    "whether to enable primal weight heuristics"
+    enable_primal_weight::Bool = true
+    # primal weight parameters
+    θ::T = 0.5
     # step size parameters
     "scaling of the inverse spectral norm of `K` when defining the step size"
     stepsize_scaling::T = 0.9
@@ -19,14 +23,14 @@ $(TYPEDFIELDS)
     "norm parameter in the Chambolle-pock preconditioner"
     preconditioner_chambollepock_alpha::T = 1.0
     "iteration parameter in the Ruiz preconditioner"
-    preconditioner_ruiz_iterations::Int = enable_scaling ? 10 : 0
+    preconditioner_ruiz_iterations::Int = 0
     # restart parameters
     "restart criterion: sufficient decay in normalized duality gap"
-    β_sufficient::T = enable_restarts ? 0.2 : NaN
+    β_sufficient::T = 0.2
     "restart criterion: necessary decay"
-    β_necessary::T = enable_restarts ? 0.8 : NaN
+    β_necessary::T = 0.8
     "restart criterion: long inner loop"
-    β_artificial::T = enable_restarts ? 0.36 : NaN
+    β_artificial::T = 0.36
     # termination parameters
     "tolerance on KKT relative errors to decide termination"
     termination_reltol::T = 1.0e-4
@@ -35,6 +39,8 @@ $(TYPEDFIELDS)
     "time limit in seconds"
     time_limit::Float64 = 100.0
     # meta parameters
+    "tolerance in absolute comparisons to zero"
+    zero_tol::T = 1.0e-8
     "frequency of restart or termination checks"
     check_every::Int = 40
     "whether or not to record error evolution"
@@ -67,8 +73,8 @@ $(TYPEDFIELDS)
     "sum of step sizes since the last restart"
     η_sum::T = zero(η)
     # scratch spaces
-    err_primal_scratch::V = zero(z.y)
-    err_dual_scratch::V = zero(z.x)
+    primal_scratch::V = zero(z.x)
+    dual_scratch::V = zero(z.y)
     # counters
     "number of outer iterations (`n`)"
     outer_iterations::Int = 0
@@ -148,21 +154,11 @@ function pdlp(
         show_progress::Bool = true,
         starting_time::Float64 = time()
     ) where {T, V}
-    sad = precondition_pdlp(
-        sad;
-        ruiz_iterations = params.preconditioner_ruiz_iterations,
-        chambollepock_alpha = params.preconditioner_chambollepock_alpha,
-    )
-    x, y = preconditioned_solution(sad, x_init, y_init)
-    η = fixed_stepsize(sad, params)
-    z = PrimalDualSolution(sad, x, y)
-    state = PDLPState(; z, η, starting_time)
-    push!(state.error_history, (0, kkt_errors!(state, sad, z)))
+    sad, state = initialize_pdlp(sad, params, x_init, y_init; starting_time)
     prog = ProgressUnknown(desc = "PDLP iterations:", enabled = show_progress)
-    must_restart = false
-    must_terminate = false
     try
         while true
+            must_restart = false
             while true
                 yield()
                 for _ in 1:params.check_every
@@ -179,11 +175,12 @@ function pdlp(
                     break
                 end
             end
-            state.outer_iterations += 1
             if must_restart
+                primal_weight_update!(state, params)
                 restart!(state)
+                state.outer_iterations += 1
                 state.inner_iterations = 0
-            elseif must_terminate
+            else # must_terminate
                 break
             end
         end
@@ -195,6 +192,48 @@ function pdlp(
         end
     end
     return unpreconditioned_solution(sad, state.z.x, state.z.y), state
+end
+
+function initialize_pdlp(
+        sad::SaddlePointProblem{T, V},
+        params::PDLPParameters{T},
+        x_init::V,
+        y_init::V = zero(sad.q);
+        starting_time::Float64
+    ) where {T, V}
+    sad = precondition_pdlp(sad, params)
+    x, y = preconditioned_solution(sad, x_init, y_init)
+    η = fixed_stepsize(sad, params)
+    ω = initialize_primal_weight(sad, params)
+    z = PrimalDualSolution(sad, x, y)
+    state = PDLPState(; z, η, ω, starting_time)
+    push!(state.error_history, (0, z.err))
+    return sad, state
+end
+
+function precondition_pdlp(
+        sad::SaddlePointProblem, params::PDLPParameters,
+    )
+    (;
+        enable_scaling, preconditioner_ruiz_iterations, preconditioner_chambollepock_alpha,
+    ) = params
+    if enable_scaling
+        sad = precondition_ruiz(sad; iterations = preconditioner_ruiz_iterations)
+    end
+    return precondition_chambolle_pock(sad; α = preconditioner_chambollepock_alpha)
+end
+
+function initialize_primal_weight(
+        sad::SaddlePointProblem{T}, params::PDLPParameters
+    ) where {T}
+    (; c, q) = sad
+    (; enable_primal_weight, zero_tol) = params
+    c_norm, q_norm = norm(c), norm(q)
+    if enable_primal_weight && c_norm > zero_tol && q_norm > zero_tol
+        return c_norm / q_norm
+    else
+        return one(T)
+    end
 end
 
 function fixed_stepsize(
@@ -220,8 +259,32 @@ function kkt_errors!(
         sad::SaddlePointProblem{T, V},
         z::PrimalDualSolution{T, V},
     ) where {T, V}
+    (; ω, primal_scratch, dual_scratch) = state
+    return kkt_errors!(
+        primal_scratch, dual_scratch, sad, z, ω
+    )
+end
+
+function kkt_errors(
+        sad::SaddlePointProblem{T, V},
+        z::PrimalDualSolution{T, V},
+        ω::T,
+    ) where {T, V}
+    primal_scratch = similar(z.x)
+    dual_scratch = similar(z.y)
+    return kkt_errors!(
+        primal_scratch, dual_scratch, sad, z, ω
+    )
+end
+
+function kkt_errors!(
+        primal_scratch::V,
+        dual_scratch::V,
+        sad::SaddlePointProblem{T, V},
+        z::PrimalDualSolution{T, V},
+        ω::T
+    ) where {T, V}
     (; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻) = z
-    (; ω, err_primal_scratch, err_dual_scratch) = state
     (; c, q, l_noinf, u_noinf, ineq_cons) = sad
 
     qᵀy = dot(q, y)
@@ -229,12 +292,12 @@ function kkt_errors!(
     lᵀλ⁺ = dot(l_noinf, λ⁺)
     uᵀλ⁻ = dot(u_noinf, λ⁻)
 
-    @. err_primal_scratch = ifelse(ineq_cons, positive_part(q - Kx), q - Kx)
-    err_primal = norm(err_primal_scratch)
+    @. dual_scratch = ifelse(ineq_cons, positive_part(q - Kx), q - Kx)
+    err_primal = norm(dual_scratch)
     err_primal_scale = one(T) + norm(q)
 
-    @. err_dual_scratch = c - Kᵀy - λ
-    err_dual = norm(err_dual_scratch)
+    @. primal_scratch = c - Kᵀy - λ
+    err_dual = norm(primal_scratch)
     err_dual_scale = one(T) + norm(c)
 
     err_gap = abs(qᵀy + lᵀλ⁺ - uᵀλ⁻ - cᵀx)
@@ -289,6 +352,20 @@ function pdlp_step!(state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}) where
     return nothing
 end
 
+function primal_weight_update!(
+        state::PDLPState{T}, params::PDLPParameters
+    ) where {T}
+    (; ω, z_restart_candidate, z_last_restart, primal_scratch, dual_scratch) = state
+    (; enable_primal_weight, θ, zero_tol) = params
+    @. primal_scratch = z_restart_candidate.x - z_last_restart.x
+    @. dual_scratch = z_restart_candidate.y - z_last_restart.y
+    Δx = norm(primal_scratch)
+    Δy = norm(dual_scratch)
+    if enable_primal_weight && Δx > zero_tol && Δy > zero_tol
+        state.ω = exp(θ * log(Δy / Δx) + (one(T) - θ) * log(ω))
+    end
+    return nothing
+end
 
 function restart!(state::PDLPState)
     (; z, z_restart_candidate, z_last_restart) = state
@@ -317,7 +394,7 @@ function update_restart_candidate!(state::PDLPState)
 end
 
 function restart_check(state::PDLPState, params::PDLPParameters)
-    (; β_sufficient, β_necessary, β_artificial) = params
+    (; enable_restarts, β_sufficient, β_necessary, β_artificial) = params
     (;
         z_restart_candidate, z_prev_restart_candidate, z_last_restart,
         inner_iterations, total_iterations,
@@ -333,7 +410,7 @@ function restart_check(state::PDLPState, params::PDLPParameters)
     long_inner_loop = inner_iterations >= β_artificial * total_iterations
 
     restart_criterion = sufficient_decay || (necessary_decay && no_local_progress) || long_inner_loop
-    return restart_criterion
+    return enable_restarts && restart_criterion
 end
 
 function termination_check(state::PDLPState, params::PDLPParameters)
