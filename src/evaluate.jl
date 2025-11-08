@@ -50,7 +50,7 @@ function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParamet
     prog = Progress(length(milps); desc = "Benchmarking $solver:")
     states = map(milps) do milp
         next!(prog)
-        solver(milp, params; show_progress = false)[end]
+        solver(milp, params; show_progress = true)[end]
     end
     kkt_passes = map(states) do state
         if state.termination_reason == CONVERGENCE

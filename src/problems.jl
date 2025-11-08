@@ -78,8 +78,12 @@ struct MILP{
     intvar::Vb
     "list of variable names"
     varname::Vs
+    "file path where the MILP was read from"
+    path::String
+    "instance name (last part of the path)"
+    name::String
 
-    function MILP(; c, G, h, A, b, l, u, intvar, varname)
+    function MILP(; c, G, h, A, b, l, u, intvar, varname, path = "")
         T = Base.promote_eltype(c, G, h, A, b, l, u)
         V = promote_type(typeof(c), typeof(h), typeof(b), typeof(l), typeof(u))
         M = promote_type(typeof(G), typeof(A))
@@ -102,12 +106,14 @@ struct MILP{
         @assert all(isfinite, h)
         @assert all(isfinite, b)
 
-        return new{T, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname)
+        name = splitext(splitpath(path)[end])[1]
+
+        return new{T, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname, path, name)
     end
 end
 
 function Base.show(io::IO, milp::MILP)
-    return print(io, "MILP with $(nbvar(milp)) variables ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer), $(nbcons_ineq(milp)) inequality constraints and $(nbcons_eq(milp)) equality constraints (total of $(nnz(milp.G) + nnz(milp.A)) nonzero coefficients)")
+    return print(io, "MILP instance $(milp.name) with $(nbvar(milp)) variables ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer), $(nbcons_ineq(milp)) inequality constraints and $(nbcons_eq(milp)) equality constraints (total of $(nnz(milp.G) + nnz(milp.A)) nonzero coefficients)")
 end
 
 Base.eltype(::MILP{T}) where {T} = T

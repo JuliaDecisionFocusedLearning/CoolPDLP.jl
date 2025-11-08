@@ -46,7 +46,7 @@ function read_milp(path::String; mpsformat = :free)
 
     varname = varnames
 
-    milp = MILP(; c, G, h, A, b, l, u, intvar = binvar .| intvar, varname)
+    milp = MILP(; c, G, h, A, b, l, u, intvar = binvar .| intvar, varname, path)
     return milp
 end
 
