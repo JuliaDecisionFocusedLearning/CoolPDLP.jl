@@ -56,6 +56,8 @@ Store the results of a solver over several instances.
     states::Vector{S}
     kkt_passes::Vector{Int}
     time_elapsed::Vector{Float64}
+    kkt_passes_sgm10::Float64
+    time_elapsed_sgm10::Float64
 end
 
 function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParameters) where {S <: Function}
@@ -78,7 +80,11 @@ function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParamet
             params.time_limit
         end
     end
-    return BenchmarkResult(; params, states, kkt_passes, time_elapsed)
+    kkt_passes_sgm10 = exp(mean(log.(kkt_passes .+ 10))) .- 10
+    time_elapsed_sgm10 = exp(mean(log.(time_elapsed .+ 10))) .- 10
+    return BenchmarkResult(;
+        params, states, kkt_passes, time_elapsed, kkt_passes_sgm10, time_elapsed_sgm10
+    )
 end
 
 function run_benchmark(solver::S, milps::Vector{<:MILP}, params_candidates::Vector{<:AbstractParameters}) where {S}

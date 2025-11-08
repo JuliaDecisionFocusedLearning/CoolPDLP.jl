@@ -63,10 +63,10 @@ $(TYPEDFIELDS)
     } <: AbstractState{T, V}
     # solutions
     const z::PrimalDualSolution{T, V}
-    const z_avg::PrimalDualSolution{T, V} = copy(z)
-    const z_restart_candidate::PrimalDualSolution{T, V} = copy(z)
-    const z_prev_restart_candidate::PrimalDualSolution{T, V} = copy(z)
-    const z_last_restart::PrimalDualSolution{T, V} = copy(z)
+    const z_avg::PrimalDualSolution{T, V} = zero(z)
+    const z_restart_candidate::PrimalDualSolution{T, V} = zero(z)
+    const z_prev_restart_candidate::PrimalDualSolution{T, V} = zero(z)
+    const z_last_restart::PrimalDualSolution{T, V} = zero(z)
     # step sizes
     "step size"
     η::T
@@ -94,7 +94,7 @@ $(TYPEDFIELDS)
     "termination reason (should be `STILL_RUNNING` until the algorithm actually terminates)"
     termination_reason::TerminationReason = STILL_RUNNING
     "history of KKT errors, indexed by number of KKT passes"
-    const error_history::Vector{Tuple{Int, KKTErrors{T}}} = Tuple{Int, KKTErrors{eltype(z)}}[]
+    const error_history::Vector{Tuple{Int, KKTErrors{T}}} = [(0, z.err)]
 end
 
 function Base.show(io::IO, state::PDLPState)
@@ -203,9 +203,8 @@ function initialize_pdlp(
     x, y = preconditioned_solution(sad, x_init, y_init)
     η = fixed_stepsize(sad, params)
     ω = initialize_primal_weight(sad, params)
-    z = PrimalDualSolution(sad, x, y)
+    z = PrimalDualSolution(sad, x, y, ω)
     state = PDLPState(; z, η, ω, starting_time)
-    push!(state.error_history, (0, z.err))
     return sad, state
 end
 
@@ -242,14 +241,6 @@ function fixed_stepsize(
     (; stepsize_scaling) = params
     η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
     return η
-end
-
-function proj_λ⁺(λ::T, l::T) where {T <: Number}
-    return ifelse(l == typemin(T), zero(T), positive_part(λ))
-end
-
-function proj_λ⁻(λ::T, u::T) where {T <: Number}
-    return ifelse(u == typemax(T), zero(T), negative_part(λ))
 end
 
 function kkt_errors!(
@@ -366,16 +357,18 @@ function primal_weight_update!(
     return nothing
 end
 
-function restart!(state::PDLPState)
-    (; z, z_restart_candidate, z_last_restart) = state
+function restart!(state::PDLPState{T}) where {T}
+    (; z, z_avg, z_restart_candidate, z_last_restart) = state
     copyto!(z, z_restart_candidate)
     copyto!(z_last_restart, z)
+    zero!(z_avg)
+    state.η_sum = zero(T)
     return nothing
 end
 
 function update_average!(state::PDLPState, sad::SaddlePointProblem)
     (; z_avg, z, η, η_sum) = state
-    weighted_sum!(z_avg, z, η / (η + η_sum), η_sum / (η + η_sum))
+    axpby!(η / (η + η_sum), z, η_sum / (η + η_sum), z_avg)
     z_avg.err = kkt_errors!(state, sad, z_avg)
     state.η_sum += η
     return nothing
@@ -408,7 +401,9 @@ function restart_check(state::PDLPState, params::PDLPParameters)
     no_local_progress = err_restart_candidate > err_prev_restart_candidate
     long_inner_loop = inner_iterations >= β_artificial * total_iterations
 
-    restart_criterion = sufficient_decay || (necessary_decay && no_local_progress) || long_inner_loop
+    restart_criterion = sufficient_decay ||
+        (necessary_decay && no_local_progress) ||
+        long_inner_loop
     return enable_restarts && restart_criterion
 end
 

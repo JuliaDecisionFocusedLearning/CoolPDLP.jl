@@ -23,16 +23,22 @@ function __init__()
 end
 
 """
-    list_pdlp_miplib2017_subset()
+    list_pdlp_miplib2017_subset(; exclude_failing=true)
 
 Return a list of all [MIPLIB 2017](https://miplib.zib.de/) collection instances used in the original [PDLP benchmark](https://arxiv.org/abs/2106.04756).
 """
-function list_pdlp_miplib2017_subset()
+function list_pdlp_miplib2017_subset(; exclude_failing::Bool = true)
     list_path = joinpath(datadep"pdlp-miplib2017-subset", "mip_relaxations_instance_list")
     lines = open(list_path, "r") do file
         readlines(file)
     end
-    return filter(l -> !startswith(l, "#"), lines)
+    all_instances = filter(l -> !startswith(l, "#"), lines)
+    if exclude_failing
+        # https://github.com/JuliaSmoothOptimizers/QPSReader.jl/issues/42
+        return filter(n -> n != "neos-5044663-wairoa", all_instances)
+    else
+        return all_instances
+    end
 end
 
 """

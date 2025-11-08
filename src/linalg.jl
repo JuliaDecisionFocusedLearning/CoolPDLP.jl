@@ -1,3 +1,5 @@
+zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
+
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 

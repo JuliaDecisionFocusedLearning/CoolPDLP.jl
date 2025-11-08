@@ -358,8 +358,9 @@ Base.eltype(::PrimalDualSolution{T}) where {T} = T
 
 function PrimalDualSolution(
         sad::SaddlePointProblem{T, V},
-        x::V = zero(sad.c),
-        y::V = zero(sad.q)
+        x::V,
+        y::V,
+        ω::T
     ) where {T, V}
     (; c, K, Kᵀ, l, u) = sad
     Kx = K * x
@@ -369,16 +370,46 @@ function PrimalDualSolution(
     λ⁻ = negative_part.(λ)
     err = KKTErrors(T)
     z = PrimalDualSolution(; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻, err)
+    z.err = kkt_errors(sad, z, ω)
     return z
 end
 
 function Base.copy(z::PrimalDualSolution)
     return PrimalDualSolution(
-        copy(z.x), copy(z.y),
-        copy(z.Kx), copy(z.Kᵀy),
-        copy(z.λ), copy(z.λ⁺), copy(z.λ⁻),
+        copy(z.x),
+        copy(z.y),
+        copy(z.Kx),
+        copy(z.Kᵀy),
+        copy(z.λ),
+        copy(z.λ⁺),
+        copy(z.λ⁻),
         z.err
     )
+end
+
+function Base.zero(z::PrimalDualSolution{T}) where {T}
+    return PrimalDualSolution(
+        zero(z.x),
+        zero(z.y),
+        zero(z.Kx),
+        zero(z.Kᵀy),
+        zero(z.λ),
+        zero(z.λ⁺),
+        zero(z.λ⁻),
+        KKTErrors(T)
+    )
+end
+
+function zero!(z::PrimalDualSolution{T}) where {T}
+    zero!(z.x)
+    zero!(z.y)
+    zero!(z.Kx)
+    zero!(z.Kᵀy)
+    zero!(z.λ)
+    zero!(z.λ⁺)
+    zero!(z.λ⁻)
+    z.err = KKTErrors(T)
+    return nothing
 end
 
 function Base.copyto!(z1::PrimalDualSolution, z2::PrimalDualSolution)
@@ -393,17 +424,16 @@ function Base.copyto!(z1::PrimalDualSolution, z2::PrimalDualSolution)
     return z1
 end
 
-function weighted_sum!(
-        z1::PrimalDualSolution{T, V}, z2::PrimalDualSolution{T, V},
-        a1::T, a2::T,
+function LinearAlgebra.axpby!(
+        a::T, x::PrimalDualSolution{T, V}, b::T, y::PrimalDualSolution{T, V},
     ) where {T, V}
-    @. z1.x = a1 * z1.x + a2 * z2.x
-    @. z1.y = a1 * z1.y + a2 * z2.y
-    @. z1.Kx = a1 * z1.Kx + a2 * z2.Kx
-    @. z1.Kᵀy = a1 * z1.Kᵀy + a2 * z2.Kᵀy
-    @. z1.λ = a1 * z1.λ + a2 * z2.λ
-    @. z1.λ⁺ = positive_part(z1.λ)
-    @. z1.λ⁻ = negative_part(z1.λ)
-    z1.err = KKTErrors(T)
-    return z1
+    axpby!(a, x.x, b, y.x)
+    axpby!(a, x.y, b, y.y)
+    axpby!(a, x.Kx, b, y.Kx)
+    axpby!(a, x.Kᵀy, b, y.Kᵀy)
+    axpby!(a, x.λ, b, y.λ)
+    map!(positive_part, y.λ⁺, y.λ)
+    map!(negative_part, y.λ⁻, y.λ)
+    y.err = KKTErrors(T)
+    return y
 end

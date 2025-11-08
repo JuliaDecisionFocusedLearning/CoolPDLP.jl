@@ -19,6 +19,7 @@ using QPSReader: VTYPE_Binary, VTYPE_Integer
 using Random
 using SparseArrays
 using StableRNGs
+using Statistics
 
 include("matrices.jl")
 include("linalg.jl")

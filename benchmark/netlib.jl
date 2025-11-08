@@ -52,8 +52,8 @@ function plot_profiles(benchmark_results)
             label = params.name
         )
     end
-    axislegend(ax, position = :rb)
+    axislegend(ax, position = :lt)
     return fig
 end
 
-plot_profiles(reverse(benchmark_results))
+plot_profiles(reverse(results))
