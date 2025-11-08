@@ -14,6 +14,8 @@ $(TYPEDFIELDS)
     enable_scaling::Bool = true
     "whether to enable primal weight heuristics"
     enable_primal_weight::Bool = true
+    "whether to enable adaptive step sizes"
+    enable_step_size::Bool = true
     # primal weight parameters
     θ::T = 0.5
     # step size parameters
@@ -68,15 +70,19 @@ $(TYPEDFIELDS)
     const z_prev_restart_candidate::PrimalDualSolution{T, V} = zero(z)
     const z_last_restart::PrimalDualSolution{T, V} = zero(z)
     # step sizes
-    "step size"
-    η::T
     "primal weight"
-    ω::T = one(η)
+    ω::T
+    "initialization for step size line search"
+    η_init::T
+    "current step size"
+    η::T = η_init
     "sum of step sizes since the last restart"
-    η_sum::T = zero(η)
+    η_sum::T = zero(η_init)
     # scratch spaces
     primal_scratch::V = zero(z.x)
+    primal_scratch2::V = zero(z.x)
     dual_scratch::V = zero(z.y)
+    dual_scratch2::V = zero(z.y)
     # counters
     "number of outer iterations (`n`)"
     outer_iterations::Int = 0
@@ -161,7 +167,7 @@ function pdlp(
                 yield()
                 for _ in 1:params.check_every
                     next!(prog; showvalues = (("relative_error", state.z.err.max_rel_err),))
-                    pdlp_step!(state, sad)
+                    pdlp_step!(state, sad, params)
                     update_average!(state, sad)
                     update_restart_candidate!(state)
                     state.inner_iterations += 1
@@ -201,10 +207,10 @@ function initialize_pdlp(
     ) where {T, V}
     sad = precondition_pdlp(sad, params)
     x, y = preconditioned_solution(sad, x_init, y_init)
-    η = fixed_stepsize(sad, params)
+    η_init = initial_stepsize(sad, params)
     ω = initialize_primal_weight(sad, params)
     z = PrimalDualSolution(sad, x, y, ω)
-    state = PDLPState(; z, η, ω, starting_time)
+    state = PDLPState(; z, η_init, ω, starting_time)
     return sad, state
 end
 
@@ -233,14 +239,18 @@ function initialize_primal_weight(
     end
 end
 
-function fixed_stepsize(
+function initial_stepsize(
         sad::SaddlePointProblem{T},
         params::PDLPParameters{T}
     ) where {T}
     (; K, Kᵀ) = sad
-    (; stepsize_scaling) = params
-    η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
-    return η
+    (; enable_step_size, stepsize_scaling) = params
+    if enable_step_size
+        η_init = inv(opnorm(K, Inf))
+    else
+        η_init = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
+    end
+    return η_init
 end
 
 function kkt_errors!(
@@ -311,7 +321,19 @@ function kkt_errors!(
     )
 end
 
-function pdlp_step!(state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}) where {T, V}
+function pdlp_step!(
+        state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}, params::PDLPParameters{T}
+    ) where {T, V}
+    return if params.enable_step_size
+        adaptive_pdlp_step!(state, sad, params)
+    else
+        fixed_pdlp_step!(state, sad)
+    end
+end
+
+function fixed_pdlp_step!(
+        state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}
+    ) where {T, V}
     (; z, η, ω) = state
     (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
     (; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻) = z
@@ -338,6 +360,86 @@ function pdlp_step!(state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}) where
     z.err = kkt_errors!(state, sad, z)
 
     state.kkt_passes += 1
+    return nothing
+end
+
+function custom_sqnorm(x::AbstractVector{T}, y::AbstractVector{T}, ω::T) where {T}
+    return ω * sqnorm(x) + inv(ω) * sqnorm(y)
+end
+
+function adaptive_pdlp_step!(
+        state::PDLPState{T, V}, sad::SaddlePointProblem{T, V}, params::PDLPParameters{T}
+    ) where {T, V}
+    (;
+        z, ω, η_init, total_iterations,
+        primal_scratch, dual_scratch,
+        primal_scratch2, dual_scratch2,
+    ) = state
+    (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
+    (; x, y, Kx, Kᵀy, λ, λ⁺, λ⁻) = z
+    (; zero_tol) = params
+
+    η, ηp = η_init, η_init
+    xp, yp = primal_scratch, dual_scratch
+    xp_minus_x, yp_minus_y = primal_scratch2, dual_scratch2
+    k = total_iterations
+
+    for _ in 1:100
+        yield()
+        # xp = proj_X(x - τ * (c - Kᵀ * y))
+        @. xp = x - (η / ω) * (c - Kᵀy)
+        @. xp = proj_box(xp, l, u)
+
+        # yp = proj_Y(y + σ * (q - K * (2 * xp - x)))
+        # @. yp = y + (η * ω) * (q + Kx)
+        # mul!(yp, K, xp, -2(η * ω), 1)
+        yp = y + (η * ω) * (q - K * (2 * xp - x))
+        @. yp = ifelse(ineq_cons, positive_part(yp), yp)
+
+        @. xp_minus_x = xp - x
+        @. yp_minus_y = yp - y
+
+        η_bar_num = custom_sqnorm(xp_minus_x, yp_minus_y, ω)
+        η_bar_den = 2 * abs(dot(yp_minus_y, K, xp_minus_x))  # TODO: why should this be > 0?
+        if η_bar_den < zero_tol
+            η_bar = typemax(T)
+        else
+            η_bar = η_bar_num / η_bar_den
+        end
+
+        @assert !isnan(η_bar)
+
+        state.kkt_passes += 1
+
+        ηp = min(
+            (1 - (k + 2)^T(-0.3)) * η_bar,
+            (1 + (k + 2)^T(-0.6)) * η
+        )
+
+        if η <= η_bar
+            break
+        else
+            η = ηp
+        end
+    end
+
+    state.η = η
+    state.η_init = ηp
+
+    copyto!(x, xp)
+    copyto!(y, yp)
+
+    mul!(Kx, K, x)
+    mul!(Kᵀy, Kᵀ, y)
+    state.kkt_passes += 1
+
+    # λ = proj_Λ(c - Kᵀy)
+    @. λ = proj_λ(c - Kᵀy, l, u)
+    @. λ⁺ = positive_part(λ)
+    @. λ⁻ = negative_part(λ)
+
+    # update errors
+    z.err = kkt_errors!(state, sad, z)
     return nothing
 end
 
