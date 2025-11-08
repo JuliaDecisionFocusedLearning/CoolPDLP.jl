@@ -1,4 +1,4 @@
-abstract type AbstractDeviceSparseMatrix{Tv, Ti} <: AbstractMatrix{Tv} end
+abstract type AbstractDeviceSparseMatrix{T, Ti} <: AbstractMatrix{T} end
 
 Base.size(A::AbstractDeviceSparseMatrix) = (A.m, A.n)
 
@@ -10,11 +10,11 @@ Base.size(A::AbstractDeviceSparseMatrix) = (A.m, A.n)
 $(TYPEDFIELDS)
 """
 struct DeviceSparseMatrixCOO{
-        Tv <: Number,
+        T <: Number,
         Ti <: Integer,
-        Vv <: AbstractVector{Tv},
+        Vv <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
-    } <: AbstractDeviceSparseMatrix{Tv, Ti}
+    } <: AbstractDeviceSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowval::Vi
@@ -36,31 +36,31 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixCOO)
     )
 end
 
-function DeviceSparseMatrixCOO(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
+function DeviceSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     rowval, colval, nzval = findnz(A)
     return DeviceSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
 end
 
-function Base.getindex(A::DeviceSparseMatrixCOO{Tv}, i::Integer, j::Integer) where {Tv}
+function Base.getindex(A::DeviceSparseMatrixCOO{T}, i::Integer, j::Integer) where {T}
     (; rowval, colval, nzval) = A
     for k in eachindex(rowval, colval, nzval)
         if rowval[k] == i && colval[k] == j
             return nzval[k]
         end
     end
-    return zero(Tv)
+    return zero(T)
 end
 
 SparseArrays.nnz(A::DeviceSparseMatrixCOO) = length(A.nzval)
 
 @kernel function spmv_coo!(
-        c::AbstractVector{Tv},
+        c::AbstractVector{T},
         A_rowval::AbstractVector{Ti},
         A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{Tv},
-        b::AbstractVector{Tv},
+        A_nzval::AbstractVector{T},
+        b::AbstractVector{T},
         α::Number,
-    ) where {Tv, Ti}
+    ) where {T, Ti}
     k = @index(Global, Linear)
     i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
     Atomix.@atomic c[i] += α * v * b[j]
@@ -89,11 +89,11 @@ end
 $(TYPEDFIELDS)
 """
 struct DeviceSparseMatrixCSR{
-        Tv <: Number,
+        T <: Number,
         Ti <: Integer,
-        Vv <: AbstractVector{Tv},
+        Vv <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
-    } <: AbstractDeviceSparseMatrix{Tv, Ti}
+    } <: AbstractDeviceSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowptr::Vi
@@ -115,23 +115,23 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixCSR)
     )
 end
 
-function DeviceSparseMatrixCSR(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
+function DeviceSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     At = sparse(transpose(A))
     return DeviceSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
 end
 
 function Base.getindex(
-        A::DeviceSparseMatrixCSR{Tv, Ti}, i::Integer, j::Integer
-    ) where {Tv, Ti}
+        A::DeviceSparseMatrixCSR{T, Ti}, i::Integer, j::Integer
+    ) where {T, Ti}
     (; rowptr, colval, nzval) = A
     k1 = rowptr[i]
     k2 = rowptr[i + 1] - 1
     if k1 > k2
-        return zero(Tv)
+        return zero(T)
     else
         k = k1 + searchsortedfirst(view(colval, k1:k2), j) - 1
         if k > k2 || colval[k] != j
-            return zero(Tv)
+            return zero(T)
         else
             return nzval[k]
         end
@@ -141,16 +141,16 @@ end
 SparseArrays.nnz(A::DeviceSparseMatrixCSR) = length(A.nzval)
 
 @kernel function spmv_csr!(
-        c::AbstractVector{Tv},
+        c::AbstractVector{T},
         A_rowptr::AbstractVector{Ti},
         A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{Tv},
-        b::AbstractVector{Tv},
+        A_nzval::AbstractVector{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {Tv, Ti}
+    ) where {T, Ti}
     i = @index(Global, Linear)
-    s = zero(Tv)
+    s = zero(T)
     for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
         j = A_colval[k]
         s += A_nzval[k] * b[j]
@@ -179,11 +179,11 @@ end
 $(TYPEDFIELDS)
 """
 struct DeviceSparseMatrixELL{
-        Tv <: Number,
+        T <: Number,
         Ti <: Integer,
-        Mv <: AbstractMatrix{Tv},
+        Mv <: AbstractMatrix{T},
         Mi <: AbstractMatrix{Ti},
-    } <: AbstractDeviceSparseMatrix{Tv, Ti}
+    } <: AbstractDeviceSparseMatrix{T, Ti}
     m::Int
     n::Int
     colval::Mi
@@ -203,14 +203,14 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixELL)
     )
 end
 
-function DeviceSparseMatrixELL(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
+function DeviceSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     m, n = size(A)
     A_csr = DeviceSparseMatrixCSR(A)
     d = maximum(diff(A_csr.rowptr))
     colval = similar(A.rowval, m, d)
     nzval = similar(A.nzval, m, d)
     fill!(colval, zero(Ti))
-    fill!(nzval, zero(Tv))
+    fill!(nzval, zero(T))
     for i in axes(A, 1)
         k1, k2 = A_csr.rowptr[i], A_csr.rowptr[i + 1] - 1
         for k in k1:k2
@@ -222,8 +222,8 @@ function DeviceSparseMatrixELL(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
 end
 
 function Base.getindex(
-        A::DeviceSparseMatrixELL{Tv, Ti}, i::Integer, j::Integer
-    ) where {Tv, Ti}
+        A::DeviceSparseMatrixELL{T, Ti}, i::Integer, j::Integer
+    ) where {T, Ti}
     (; colval, nzval) = A
     k2 = size(colval, 2)
     colval_row = view(colval, i, :)
@@ -234,22 +234,22 @@ function Base.getindex(
     if 1 <= k <= length(colval_row) && colval_row[k] == j
         return nzval[i, k]
     else
-        return zero(Tv)
+        return zero(T)
     end
 end
 
 SparseArrays.nnz(A::DeviceSparseMatrixELL) = sum(!==(0), A.colval)
 
 @kernel function spmv_ell!(
-        c::AbstractVector{Tv},
+        c::AbstractVector{T},
         A_colval::AbstractMatrix{Ti},
-        A_nzval::AbstractMatrix{Tv},
-        b::AbstractVector{Tv},
+        A_nzval::AbstractMatrix{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {Tv, Ti}
+    ) where {T, Ti}
     i = @index(Global, Linear)
-    s = zero(Tv)
+    s = zero(T)
     for k in axes(A_colval, 2)
         j = A_colval[i, k]
         if j != zero(Ti)

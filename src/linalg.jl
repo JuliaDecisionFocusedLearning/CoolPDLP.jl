@@ -1,3 +1,8 @@
+@inline positive_part(a::Number) = max(a, zero(a))
+@inline negative_part(a::Number) = -min(a, zero(a))
+
+@inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
+
 sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
@@ -27,7 +32,7 @@ function spectral_norm(
         kwargs...
     )
     x0 = allocate(get_backend(K), eltype(K), size(K, 2))
-    randn!(x0)
+    randn!(StableRNG(0), x0)
     KᵀK = Symmetrized(K, Kᵀ)
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)

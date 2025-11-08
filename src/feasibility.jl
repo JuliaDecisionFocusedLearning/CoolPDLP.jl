@@ -10,12 +10,12 @@ Check whether solution vector `x` is feasible for `milp`.
 - `verbose`: whether to display warnings
 """
 function is_feasible(
-        x::AbstractVector{Tv}, milp::MILP{Tv};
+        x::AbstractVector{T}, milp::MILP{T};
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
-    ) where {Tv}
+    ) where {T}
     (; G, h, A, b, l, u, intvar) = milp
-    eq_err = maximum(abs, A * x - b; init = typemin(Tv))
-    ineq_err = maximum(h - G * x; init = typemin(Tv))
+    eq_err = maximum(abs, A * x - b; init = typemin(T))
+    ineq_err = maximum(h - G * x; init = typemin(T))
     bounds_err = max(maximum(x - u), maximum(l - x))
     xint = x[intvar]
     int_err = maximum(abs, xint .- round.(Int, xint))

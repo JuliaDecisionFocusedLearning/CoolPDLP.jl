@@ -16,14 +16,13 @@ using QPSReader
 using QPSReader: VTYPE_Binary, VTYPE_Integer
 using Random
 using SparseArrays
+using StableRNGs
 
 include("matrices.jl")
 include("linalg.jl")
 include("problems.jl")
 include("precondition.jl")
 include("feasibility.jl")
-include("proj.jl")
-include("termination.jl")
 include("pdhg.jl")
 include("pdlp.jl")
 include("data.jl")
