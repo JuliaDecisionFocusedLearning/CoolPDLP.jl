@@ -23,7 +23,7 @@ $(TYPEDFIELDS)
     "norm parameter in the Chambolle-pock preconditioner"
     preconditioner_chambollepock_alpha::T = 1.0
     "iteration parameter in the Ruiz preconditioner"
-    preconditioner_ruiz_iterations::Int = 0
+    preconditioner_ruiz_iterations::Int = 10
     # restart parameters
     "restart criterion: sufficient decay in normalized duality gap"
     β_sufficient::T = 0.2
@@ -128,23 +128,19 @@ function pdlp(
     ) where {T, V}
     starting_time = time()
     sad = SaddlePointProblem(milp)
-    # TODO: handle preconditioning
     y_init = zero(sad.q)
-    z_init = PrimalDualSolution(x_init, y_init)
-    return pdlp(sad, params, z_init; show_progress, starting_time)
+    return pdlp(sad, params, x_init, y_init; show_progress, starting_time)
 end
 
 """
     pdlp(
         sad::SaddlePointProblems,
         params::PDLPParameters,
-        z_init::PrimalDualSolution;
+        x_init, y_init;
         show_progress::Bool=true
     )
     
 Apply the primal-dual hybrid gradient algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `z_init = (x_init, y_init)`.
-
-Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
 """
 function pdlp(
         sad::SaddlePointProblem{T, V},
@@ -362,7 +358,8 @@ function primal_weight_update!(
     Δx = norm(primal_scratch)
     Δy = norm(dual_scratch)
     if enable_primal_weight && Δx > zero_tol && Δy > zero_tol
-        state.ω = exp(θ * log(Δy / Δx) + (one(T) - θ) * log(ω))
+        new_ω = exp(θ * log(Δy / Δx) + (one(T) - θ) * log(ω))
+        state.ω = new_ω
     end
     return nothing
 end

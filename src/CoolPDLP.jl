@@ -1,5 +1,6 @@
 module CoolPDLP
 
+using Accessors
 using Adapt
 using Atomix
 using DataDeps
@@ -22,7 +23,7 @@ include("matrices.jl")
 include("linalg.jl")
 include("problems.jl")
 include("precondition.jl")
-include("feasibility.jl")
+include("evaluate.jl")
 include("pdhg.jl")
 include("pdlp.jl")
 include("data.jl")
@@ -43,5 +44,6 @@ export PDLPParameters, PDLPState, pdlp
 export precondition_pdlp
 export list_pdlp_miplib2017_subset, read_miplib2017_instance
 export list_netlib_instances, read_netlib_instance
+export run_benchmark, plot_profiles
 
 end # module CoolPDLP

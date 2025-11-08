@@ -45,3 +45,36 @@ Compute the value of the linear objective of `milp` at solution vector `x`.
 function objective_value(x::AbstractVector, milp::MILP)
     return dot(x, milp.c)
 end
+
+function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParameters) where {S <: Function}
+    prog = Progress(length(milps); desc = "Benchmarking $solver:")
+    states = map(milps) do milp
+        next!(prog)
+        solver(milp, params; show_progress = false)[end]
+    end
+    kkt_passes = map(states) do state
+        if state.termination_reason == CONVERGENCE
+            state.kkt_passes
+        else
+            params.max_kkt_passes
+        end
+    end
+    time_elapsed = map(states) do state
+        if state.termination_reason == CONVERGENCE
+            state.time_elapsed
+        else
+            params.time_limit
+        end
+    end
+    return states, kkt_passes, time_elapsed
+end
+
+function run_benchmark(solver::S, milps::Vector{<:MILP}, params_candidates::Vector{<:AbstractParameters}) where {S}
+    results = map(params_candidates) do params
+        @info "Benchmarking" params
+        run_benchmark(solver, milps, params)
+    end
+    return results
+end
+
+function plot_profiles end

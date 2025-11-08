@@ -1,20 +1,25 @@
 using Pkg
 Pkg.activate(@__DIR__)
 
-using Base.Threads
+using Accessors
 using CairoMakie
 using CoolPDLP
-using OhMyThreads
 using Statistics
 
-@show nthreads()
+Base.get_extension(CoolPDLP, :CoolPDLPCairoMakieExt)
 
-names_and_milps = [
-    (name, read_netlib_instance(name)[1])
-        for name in list_netlib_instances(; exclude_failing = true)
-]
+netlib = list_netlib_instances()
 
-params = PDHGParameters(; time_limit = 100.0, max_kkt_passes = 10^8)
+milps = map(first ∘ read_netlib_instance, netlib)
+
+params1 = PDLPParameters(;
+    termination_reltol = 1.0e-2,
+    time_limit = 10.0,
+    max_kkt_passes = 10^3
+)
+params2 = @set params1 enable_restarts = true
+params3 = @set params2 enable_scaling = true
+params4 = @set params3 enable_primal_weight = true
 
 states = tmap(names_and_milps) do (name, milp)
     @info "$name"
