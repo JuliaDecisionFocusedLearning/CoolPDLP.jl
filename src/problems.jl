@@ -78,12 +78,17 @@ struct MILP{
     intvar::Vb
     "list of variable names"
     varname::Vs
-    "file path where the MILP was read from"
-    path::String
+    "source dataset"
+    dataset::String
     "instance name (last part of the path)"
     name::String
+    "file path where the MILP was read from"
+    path::String
 
-    function MILP(; c, G, h, A, b, l, u, intvar, varname, path = "")
+    function MILP(;
+            c, G, h, A, b, l, u, intvar, varname,
+            dataset = "", name = "", path = ""
+        )
         T = Base.promote_eltype(c, G, h, A, b, l, u)
         V = promote_type(typeof(c), typeof(h), typeof(b), typeof(l), typeof(u))
         M = promote_type(typeof(G), typeof(A))
@@ -106,9 +111,13 @@ struct MILP{
         @assert all(isfinite, h)
         @assert all(isfinite, b)
 
-        name = splitext(splitpath(path)[end])[1]
+        if isempty(name)
+            name = splitext(splitpath(path)[end])[1]
+        end
 
-        return new{T, V, M, Vb, Vs}(c, G, h, A, b, l, u, intvar, varname, path, name)
+        return new{T, V, M, Vb, Vs}(
+            c, G, h, A, b, l, u, intvar, varname, dataset, name, path
+        )
     end
 end
 

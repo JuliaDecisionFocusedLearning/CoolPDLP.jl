@@ -46,11 +46,23 @@ function objective_value(x::AbstractVector, milp::MILP)
     return dot(x, milp.c)
 end
 
+"""
+    BenchmarkResult
+
+Store the results of a solver over several instances.
+"""
+@kwdef struct BenchmarkResult{P, S}
+    params::P
+    states::Vector{S}
+    kkt_passes::Vector{Int}
+    time_elapsed::Vector{Float64}
+end
+
 function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParameters) where {S <: Function}
     prog = Progress(length(milps); desc = "Benchmarking $solver:")
-    states = map(milps) do milp
+    states = tmap(milps) do milp
         next!(prog)
-        solver(milp, params; show_progress = true)[end]
+        solver(milp, params; show_progress = false)[end]
     end
     kkt_passes = map(states) do state
         if state.termination_reason == CONVERGENCE
@@ -66,7 +78,7 @@ function run_benchmark(solver::S, milps::Vector{<:MILP}, params::AbstractParamet
             params.time_limit
         end
     end
-    return states, kkt_passes, time_elapsed
+    return BenchmarkResult(; params, states, kkt_passes, time_elapsed)
 end
 
 function run_benchmark(solver::S, milps::Vector{<:MILP}, params_candidates::Vector{<:AbstractParameters}) where {S}
@@ -76,5 +88,3 @@ function run_benchmark(solver::S, milps::Vector{<:MILP}, params_candidates::Vect
     end
     return results
 end
-
-function plot_profiles end

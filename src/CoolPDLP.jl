@@ -11,6 +11,7 @@ using IterativeSolvers
 using KernelAbstractions
 using LinearAlgebra
 using Logging
+using OhMyThreads
 using Printf
 using ProgressMeter
 using QPSReader

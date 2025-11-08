@@ -3,7 +3,12 @@
 
 Read an optimization problem stored in a (possibly gzipped) MPS file stored at `path`, return an [`MILP`](@ref) object.
 """
-function read_milp(path::String; mpsformat = :free)
+function read_milp(
+        path::String;
+        mpsformat::Symbol = :free,
+        dataset::String = "",
+        name::String = "",
+    )
     if endswith(path, ".mps.gz")
         contents = GZip.open(path, "r") do f
             read(f, String)
@@ -46,7 +51,10 @@ function read_milp(path::String; mpsformat = :free)
 
     varname = varnames
 
-    milp = MILP(; c, G, h, A, b, l, u, intvar = binvar .| intvar, varname, path)
+    milp = MILP(;
+        c, G, h, A, b, l, u, intvar = binvar .| intvar, varname,
+        dataset, name, path
+    )
     return milp
 end
 

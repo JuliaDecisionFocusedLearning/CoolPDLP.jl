@@ -26,17 +26,10 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
 
-[weakdeps]
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-
-[extensions]
-CoolPDLPCairoMakieExt = "CairoMakie"
-
 [compat]
 Accessors = "0.1.42"
 Adapt = "4.4.0"
 Atomix = "1.1.2"
-CairoMakie = "0.15.6"
 DataDeps = "0.7.13"
 DocStringExtensions = "0.9.5"
 GPUArrays = "11.2.6"

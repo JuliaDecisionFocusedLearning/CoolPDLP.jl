@@ -46,8 +46,8 @@ Parse a particular [MIPLIB 2017](https://miplib.zib.de/) collection instance and
 function read_miplib2017_instance(name::String)
     name = lowercase(name)
     mps_gz_path = joinpath(datadep"miplib2017-collection", "$name.mps.gz")
-    milp = read_milp(mps_gz_path)
-    return milp, mps_gz_path
+    milp = read_milp(mps_gz_path; name, dataset = "MIPLIB2027")
+    return milp
 end
 
 """
@@ -55,7 +55,7 @@ end
 
 List all available [Netlib](https://www.netlib.org/lp/) instances.
 """
-function list_netlib_instances(; exclude_failing::Bool = false)
+function list_netlib_instances()
     netlib_path = fetch_netlib()
     valid_instances = filter(n -> endswith(n, ".SIF"), readdir(netlib_path))
     instances_nosuffix = map(n -> lowercase(chopsuffix(n, ".SIF")), valid_instances)
@@ -77,6 +77,6 @@ function read_netlib_instance(name::String)
     end
     netlib_path = fetch_netlib()
     sif_path = joinpath(netlib_path, "$name.SIF")
-    milp = read_milp(sif_path; mpsformat)
-    return milp, sif_path
+    milp = read_milp(sif_path; mpsformat, name, dataset = "Netlib")
+    return milp
 end

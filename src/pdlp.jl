@@ -45,6 +45,8 @@ $(TYPEDFIELDS)
     check_every::Int = 40
     "whether or not to record error evolution"
     record_error_history::Bool = false
+    "name of the parametrization for comparative benchmarks"
+    name::String = ""
 end
 
 """
