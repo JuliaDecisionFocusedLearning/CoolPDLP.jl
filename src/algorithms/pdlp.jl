@@ -25,7 +25,7 @@ $(TYPEDFIELDS)
     "norm parameter in the Chambolle-pock preconditioner"
     precond_cp_α::T = 1.0
     "iteration parameter in the Ruiz preconditioner"
-    precond_ruiz_iter::Int = 10 α
+    precond_ruiz_iter::Int = 10
     # restart parameters
     "restart criterion: sufficient decay in normalized duality gap"
     β_sufficient::T = 0.2

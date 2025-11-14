@@ -83,9 +83,9 @@ $(TYPEDFIELDS)
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int = 0
     "current KKT error"
-    err::KKTErrors{T}:KKTErrors(eltype(x))
+    err::KKTErrors{T} = KKTErrors(eltype(x))
     "termination reason (should be `STILL_RUNNING` until the algorithm actuall terminates)"
-    termination_reason::TerminationReason
+    termination_reason::TerminationReason = STILL_RUNNING
     "history of KKT errors, indexed by number of KKT passes"
     const error_history::Vector{Tuple{Int, KKTErrors{T}}} = Tuple{Int, KKTErrors{eltype(x)}}[]
 end
