@@ -16,7 +16,7 @@ milp = read_netlib_instance(netlib[1])[1]
 
 sad = SaddlePointProblem(milp)
 sad_32 = single_precision(sad)
-sad_32_csr = change_matrix_type(DeviceSparseMatrixCSR, sad_32)
+sad_32_csr = set_matrix_type(GPUSparseMatrixCSR, sad_32)
 sad_32_csr_metal = adapt(MetalBackend(), sad_32_csr)
 
 @time pdhg(sad_32, params; show_progress = true)

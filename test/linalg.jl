@@ -22,7 +22,7 @@ end
 @testset "Sort columns" begin
     for m in (10, 20, 30), n in (10, 20, 30), p in (0.01, 0.1, 0.3)
         A = sprand(n, n, p)
-        A_sorted, perm = sort_columns(A)
+        A_sorted, perm = CoolPDLP.sort_columns(A)
         @test A[:, perm] == A_sorted
     end
 end

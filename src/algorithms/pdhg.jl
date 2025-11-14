@@ -1,29 +1,59 @@
 """
     PDHGParameters
 
-Parameters for configuration of the baseline primal-dual hybrid gradient.
+Parameters for configuration of the PDHG algorithm.
     
 # Fields
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDHGParameters{T <: Number} <: AbstractParameters{T}
+struct PDHGParameters{
+        T <: AbstractFloat, Ti <: Integer, M <: AbstractMatrix, B <: Backend,
+    } <: AbstractParameters{T}
+    "CPU or GPU backend used for computations"
+    backend::B
     "scaling of the inverse spectral norm of `K` when defining the step size"
-    stepsize_scaling::T = 0.9
+    stepsize_scaling::T
     "norm parameter in the Chambolle-pock preconditioner"
-    preconditioner_chambollepock_alpha::T = 1.0
+    precond_cb_α::T
     # termination parameters
     "tolerance when checking KKT relative errors to decide termination"
-    termination_reltol::T = 1.0e-4
+    termination_reltol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
-    max_kkt_passes::Int = 100_000
+    max_kkt_passes::Int
     "time limit in seconds"
-    time_limit::Float64 = 100.0
+    time_limit::Float64
     # meta parameters
     "frequency of termination checks"
-    check_every::Int = 40
+    check_every::Int
     "whether or not to record error evolution"
-    record_error_history::Bool = false
+    record_error_history::Bool
+
+    function PDHGParameters(
+            ::Type{T} = Float64,
+            ::Type{Ti} = Int,
+            ::Type{M} = SparseMatrixCSC,
+            backend::B = CPU();
+            stepsize_scaling = 0.9,
+            precond_cb_α = 1.0,
+            termination_reltol = 1.0e-4,
+            max_kkt_passes = 100_000,
+            time_limit = 100.0,
+            check_every = 40,
+            record_error_history = false,
+        ) where {T, Ti, M, B}
+
+        return new{T, Ti, M, B}(
+            backend,
+            stepsize_scaling,
+            precond_cb_α,
+            termination_reltol,
+            max_kkt_passes,
+            time_limit,
+            check_every,
+            record_error_history,
+        )
+    end
 end
 
 """
@@ -53,26 +83,11 @@ $(TYPEDFIELDS)
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int = 0
     "current KKT error"
-    current_err::KKTErrors{T} = KKTErrors(eltype(x))
+    err::KKTErrors{T}:KKTErrors(eltype(x))
     "termination reason (should be `STILL_RUNNING` until the algorithm actuall terminates)"
-    termination_reason::TerminationReason = STILL_RUNNING
+    termination_reason::TerminationReason
     "history of KKT errors, indexed by number of KKT passes"
     const error_history::Vector{Tuple{Int, KKTErrors{T}}} = Tuple{Int, KKTErrors{eltype(x)}}[]
-end
-
-function Base.show(io::IO, state::PDHGState)
-    (; current_err, time_elapsed, kkt_passes, termination_reason) = state
-    return print(
-        io,
-        @sprintf(
-            "%s with termination reason %s: %.6e relative KKT error after %g seconds elapsed and %s KKT passes",
-            nameof(typeof(state)),
-            termination_reason,
-            current_err.max_rel_err,
-            time_elapsed,
-            kkt_passes,
-        )
-    )
 end
 
 """
@@ -86,7 +101,7 @@ end
 Apply the primal-dual hybrid gradient algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
 """
 function pdhg(
-        milp::MILP{T, V},
+        milp::MILP,
         params::PDHGParameters{T},
         x_init::V = zero(milp.c);
         show_progress::Bool = true
@@ -101,8 +116,8 @@ end
     pdhg(
         sad::SaddlePointProblems,
         params::PDHGParameters,
-        x_init::AbstractVector=zero(sad.c);
-        y_init::AbstractVector=zero(sad.q);
+        x_init::Vector=zero(sad.c);
+        y_init::Vector=zero(sad.q);
         show_progress::Bool=true
     )
     
@@ -111,36 +126,62 @@ Apply the primal-dual hybrid gradient algorithm to solve the saddle-point proble
 Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
 """
 function pdhg(
-        sad::SaddlePointProblem{T, V},
-        params::PDHGParameters{T},
-        x_init::V = zero(sad.c),
-        y_init::V = zero(sad.q);
+        sad_init::SaddlePointProblem,
+        params::PDHGParameters,
+        x_init::Vector = zero(sad_init.c),
+        y_init::Vector = zero(sad_init.q);
         show_progress::Bool = true,
         starting_time::Float64 = time()
-    ) where {T, V}
-    sad = precondition_chambolle_pock(sad; α = params.preconditioner_chambollepock_alpha)
-    x, y = preconditioned_solution(sad, x_init, y_init)
-    η = fixed_stepsize(sad, params)
-    state = PDHGState(; x, y, η, starting_time)
-    push!(state.error_history, (0, kkt_errors(state, sad)))
+    )
+    sad, state = initialize(sad_init, params, x_init, y_init; starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
         yield()
         for _ in 1:params.check_every
-            next!(prog; showvalues = (("relative_error", state.current_err.max_rel_err),))
-            pdhg_step!(state, sad)
+            step!(state, sad)
+            next!(prog; showvalues = (("relative_error", relative(state.err)),))
         end
-        if termination_check(state, sad, params)
+        prepare_check!(state, sad, params)
+        if termination_check!(state, params)
             break
         end
     end
     finish!(prog)
-    return unpreconditioned_solution(sad, state.x, state.y), state
+    return get_results(state, sad)
+end
+
+function initialize(
+        sad_init::SaddlePointProblem,
+        params::PDHGParameters{T, Ti, M},
+        x_init::Vector,
+        y_init::Vector;
+        starting_time::Float64
+    ) where {T, Ti, M}
+    (; backend) = params
+    preconditioner = compute_preconditioner(sad_init, params)
+    sad = apply(preconditioner, sad_init)
+    x, y = preconditioned_solution(preconditioner, x_init, y_init)
+    sad_gpu = adapt(backend, set_matrix_type(M, set_indtype(Ti, set_eltype(T, sad))))
+    x_gpu = adapt(backend, set_eltype(T, x))
+    y_gpu = adapt(backend, set_eltype(T, y))
+    η = fixed_stepsize(sad, params)
+    state = PDHGState(; x = x_gpu, y = y_gpu, η, starting_time)
+    return sad_gpu, state
+end
+
+function compute_preconditioner(
+        sad::SaddlePointProblem,
+        params::PDHGParameters
+    )
+    (; K, Kᵀ) = sad
+    (; precond_cb_α) = params
+    preconditioner = chambolle_pock_preconditioner(K, Kᵀ; α = precond_cb_α)
+    return preconditioner
 end
 
 function fixed_stepsize(
         sad::SaddlePointProblem{T},
-        params::PDHGParameters{T}
+        params::PDHGParameters
     ) where {T}
     (; K, Kᵀ) = sad
     (; stepsize_scaling) = params
@@ -148,19 +189,7 @@ function fixed_stepsize(
     return η
 end
 
-function proj_λ(λ::T, l::T, u::T) where {T <: Number}
-    if l == typemin(T) && u == typemax(T)
-        return zero(T)  # project on {0}
-    elseif l == typemin(T)
-        return -negative_part(λ)  # project on ℝ⁻
-    elseif u == typemax(T)
-        return positive_part(λ)  # project on ℝ⁺
-    else
-        return λ  # project on ℝ
-    end
-end
-
-function pdhg_step!(
+function step!(
         state::PDHGState{T, V},
         sad::SaddlePointProblem{T, V},
     ) where {T, V}
@@ -202,66 +231,62 @@ function kkt_errors(
     qᵀy = dot(q, y)
     cᵀx = dot(c, x)
 
-    err_primal = norm(
+    primal = norm(
         ifelse.(
             ineq_cons,
             positive_part.(q - K * x),
             q - K * x
         )
     )
-    err_primal_scale = one(T) + norm(q)
+    primal_scale = one(T) + norm(q)
 
-    err_dual = norm(c - Kᵀ * y - λ)
-    err_dual_scale = one(T) + norm(c)
+    dual = norm(c - Kᵀ * y - λ)
+    dual_scale = one(T) + norm(c)
 
-    err_gap = abs(qᵀy + lᵀλ⁺ - uᵀλ⁻ - cᵀx)
-    err_gap_scale = one(T) + abs(qᵀy + lᵀλ⁺ - uᵀλ⁻) + abs(cᵀx)
+    gap = abs(qᵀy + lᵀλ⁺ - uᵀλ⁻ - cᵀx)
+    gap_scale = one(T) + abs(qᵀy + lᵀλ⁺ - uᵀλ⁻) + abs(cᵀx)
 
-    weighted_aggregate_err = sqrt(ω^2 * err_primal^2 + inv(ω^2) * err_dual^2 + err_gap^2)
+    weighted_agg = sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
 
-    relative_error_primal = err_primal / err_primal_scale
-    relative_error_dual = err_dual / err_dual_scale
-    relative_error_gap = err_gap / err_gap_scale
+    rel_primal = primal / primal_scale
+    rel_dual = dual / dual_scale
+    rel_gap = gap / gap_scale
 
-    max_rel_err = max(relative_error_primal, relative_error_dual, relative_error_gap)
+    rel_max = max(rel_primal, rel_dual, rel_gap)
 
     return KKTErrors(;
-        err_primal,
-        err_dual,
-        err_gap,
-        err_primal_scale,
-        err_dual_scale,
-        err_gap_scale,
-        weighted_aggregate_err,
-        max_rel_err,
+        primal,
+        dual,
+        gap,
+        primal_scale,
+        dual_scale,
+        gap_scale,
+        rel_max,
+        weighted_agg,
     )
 end
 
-function termination_check(
+function prepare_check!(
         state::PDHGState,
         sad::SaddlePointProblem,
-        params::PDHGParameters,
+        params::PDHGParameters
     )
     (; starting_time) = state
-    (; termination_reltol, time_limit, max_kkt_passes, record_error_history) = params
+    (; record_error_history) = params
     state.time_elapsed = time() - starting_time
-    state.current_err = kkt_errors(state, sad)
-
+    state.err = kkt_errors(state, sad)
     if record_error_history
-        push!(state.error_history, (state.kkt_passes, state.current_err))
+        push!(state.error_history, (state.kkt_passes, state.err))
     end
+    return nothing
+end
 
-    if state.current_err.max_rel_err <= termination_reltol
-        state.termination_reason = CONVERGENCE
-        return true
-    elseif state.time_elapsed >= time_limit
-        state.termination_reason = TIME
-        return true
-    elseif state.kkt_passes >= max_kkt_passes
-        state.termination_reason = ITERATIONS
-        return true
-    else
-        state.termination_reason = STILL_RUNNING
-        return false
-    end
+function get_results(
+        state::PDHGState,
+        sad::SaddlePointProblem,
+    )
+    (; x, y) = state
+    (; preconditioner) = sad
+    x_cpu, y_cpu = Array(x), Array(y)
+    return unpreconditioned_solution(preconditioner, x_cpu, y_cpu), state
 end

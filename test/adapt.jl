@@ -7,10 +7,10 @@ using Test
 
 netlib = list_netlib_instances()
 
-milp, _ = read_netlib_instance(netlib[4])
+milp = read_netlib_instance(netlib[4])
 sad = SaddlePointProblem(milp)
 sad_32 = single_precision(sad)
-sad_device = change_matrix_type(DeviceSparseMatrixCSR, sad_32)
+sad_device = set_matrix_type(GPUSparseMatrixCSR, sad_32)
 sad_jl = adapt(JLBackend(), sad_device);
 
 @test get_backend(sad) isa CPU
@@ -29,7 +29,7 @@ sad_jl = adapt(JLBackend(), sad_device);
 @test sad_device isa SaddlePointProblem{
     Float32,
     Vector{Float32},
-    DeviceSparseMatrixCSR{
+    GPUSparseMatrixCSR{
         Float32, Int32,
         Vector{Float32}, Vector{Int32},
     },
@@ -37,7 +37,7 @@ sad_jl = adapt(JLBackend(), sad_device);
 @test sad_jl isa SaddlePointProblem{
     Float32,
     JLVector{Float32},
-    DeviceSparseMatrixCSR{
+    GPUSparseMatrixCSR{
         Float32, Int32,
         JLVector{Float32}, JLVector{Int32},
     },

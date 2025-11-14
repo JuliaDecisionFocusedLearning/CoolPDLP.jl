@@ -8,5 +8,5 @@ using Test
 end;
 
 @testset "JET" begin
-    # JET.test_package(CoolPDLP; target_modules = [CoolPDLP])
+    JET.test_package(CoolPDLP; target_modules = [CoolPDLP])
 end

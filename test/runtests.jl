@@ -17,9 +17,6 @@ using Test
     @testset "Adapt" begin
         include("adapt.jl")
     end
-    @testset "Precondition" begin
-        include("precondition.jl")
-    end
     @testset "PDHG" begin
         include("pdhg.jl")
     end

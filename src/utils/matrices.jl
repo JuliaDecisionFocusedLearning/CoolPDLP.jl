@@ -1,20 +1,20 @@
-abstract type AbstractDeviceSparseMatrix{T, Ti} <: AbstractMatrix{T} end
+abstract type AbstractGPUSparseMatrix{T, Ti} <: AbstractMatrix{T} end
 
-Base.size(A::AbstractDeviceSparseMatrix) = (A.m, A.n)
+Base.size(A::AbstractGPUSparseMatrix) = (A.m, A.n)
 
 """
-    DeviceSparseMatrixCOO
+    GPUSparseMatrixCOO
 
 # Fields
 
 $(TYPEDFIELDS)
 """
-struct DeviceSparseMatrixCOO{
+struct GPUSparseMatrixCOO{
         T <: Number,
         Ti <: Integer,
         Vv <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
-    } <: AbstractDeviceSparseMatrix{T, Ti}
+    } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowval::Vi
@@ -22,12 +22,12 @@ struct DeviceSparseMatrixCOO{
     nzval::Vv
 end
 
-function KernelAbstractions.get_backend(A::DeviceSparseMatrixCOO)
+function KernelAbstractions.get_backend(A::GPUSparseMatrixCOO)
     return common_backend(A.rowval, A.colval, A.nzval)
 end
 
-function Adapt.adapt_structure(to, A::DeviceSparseMatrixCOO)
-    return DeviceSparseMatrixCOO(
+function Adapt.adapt_structure(to, A::GPUSparseMatrixCOO)
+    return GPUSparseMatrixCOO(
         A.m,
         A.n,
         adapt(to, A.rowval),
@@ -36,12 +36,12 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixCOO)
     )
 end
 
-function DeviceSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     rowval, colval, nzval = findnz(A)
-    return DeviceSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
+    return GPUSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
 end
 
-function Base.getindex(A::DeviceSparseMatrixCOO{T}, i::Integer, j::Integer) where {T}
+function Base.getindex(A::GPUSparseMatrixCOO{T}, i::Integer, j::Integer) where {T}
     (; rowval, colval, nzval) = A
     for k in eachindex(rowval, colval, nzval)
         if rowval[k] == i && colval[k] == j
@@ -51,7 +51,7 @@ function Base.getindex(A::DeviceSparseMatrixCOO{T}, i::Integer, j::Integer) wher
     return zero(T)
 end
 
-SparseArrays.nnz(A::DeviceSparseMatrixCOO) = length(A.nzval)
+SparseArrays.nnz(A::GPUSparseMatrixCOO) = length(A.nzval)
 
 @kernel function spmv_coo!(
         c::AbstractVector{T},
@@ -68,7 +68,7 @@ end
 
 function LinearAlgebra.mul!(
         c::AbstractVector,
-        A::DeviceSparseMatrixCOO,
+        A::GPUSparseMatrixCOO,
         b::AbstractVector,
         α::Number,
         β::Number
@@ -82,18 +82,18 @@ end
 
 
 """
-    DeviceSparseMatrixCSR
+    GPUSparseMatrixCSR
 
 # Fields
 
 $(TYPEDFIELDS)
 """
-struct DeviceSparseMatrixCSR{
+struct GPUSparseMatrixCSR{
         T <: Number,
         Ti <: Integer,
         Vv <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
-    } <: AbstractDeviceSparseMatrix{T, Ti}
+    } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowptr::Vi
@@ -101,12 +101,12 @@ struct DeviceSparseMatrixCSR{
     nzval::Vv
 end
 
-function KernelAbstractions.get_backend(A::DeviceSparseMatrixCSR)
+function KernelAbstractions.get_backend(A::GPUSparseMatrixCSR)
     return common_backend(A.rowptr, A.colval, A.nzval)
 end
 
-function Adapt.adapt_structure(to, A::DeviceSparseMatrixCSR)
-    return DeviceSparseMatrixCSR(
+function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
+    return GPUSparseMatrixCSR(
         A.m,
         A.n,
         adapt(to, A.rowptr),
@@ -115,13 +115,13 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixCSR)
     )
 end
 
-function DeviceSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     At = sparse(transpose(A))
-    return DeviceSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
+    return GPUSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
 end
 
 function Base.getindex(
-        A::DeviceSparseMatrixCSR{T, Ti}, i::Integer, j::Integer
+        A::GPUSparseMatrixCSR{T, Ti}, i::Integer, j::Integer
     ) where {T, Ti}
     (; rowptr, colval, nzval) = A
     k1 = rowptr[i]
@@ -138,7 +138,7 @@ function Base.getindex(
     end
 end
 
-SparseArrays.nnz(A::DeviceSparseMatrixCSR) = length(A.nzval)
+SparseArrays.nnz(A::GPUSparseMatrixCSR) = length(A.nzval)
 
 @kernel function spmv_csr!(
         c::AbstractVector{T},
@@ -160,7 +160,7 @@ end
 
 function LinearAlgebra.mul!(
         c::AbstractVector,
-        A::DeviceSparseMatrixCSR,
+        A::GPUSparseMatrixCSR,
         b::AbstractVector,
         α::Number,
         β::Number
@@ -172,30 +172,30 @@ function LinearAlgebra.mul!(
 end
 
 """
-    DeviceSparseMatrixELL
+    GPUSparseMatrixELL
 
 # Fields
 
 $(TYPEDFIELDS)
 """
-struct DeviceSparseMatrixELL{
+struct GPUSparseMatrixELL{
         T <: Number,
         Ti <: Integer,
         Mv <: AbstractMatrix{T},
         Mi <: AbstractMatrix{Ti},
-    } <: AbstractDeviceSparseMatrix{T, Ti}
+    } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
     colval::Mi
     nzval::Mv
 end
 
-function KernelAbstractions.get_backend(A::DeviceSparseMatrixELL)
+function KernelAbstractions.get_backend(A::GPUSparseMatrixELL)
     return common_backend(A.colval, A.nzval)
 end
 
-function Adapt.adapt_structure(to, A::DeviceSparseMatrixELL)
-    return DeviceSparseMatrixELL(
+function Adapt.adapt_structure(to, A::GPUSparseMatrixELL)
+    return GPUSparseMatrixELL(
         A.m,
         A.n,
         adapt(to, A.colval),
@@ -203,9 +203,9 @@ function Adapt.adapt_structure(to, A::DeviceSparseMatrixELL)
     )
 end
 
-function DeviceSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     m, n = size(A)
-    A_csr = DeviceSparseMatrixCSR(A)
+    A_csr = GPUSparseMatrixCSR(A)
     d = maximum(diff(A_csr.rowptr))
     colval = similar(A.rowval, m, d)
     nzval = similar(A.nzval, m, d)
@@ -218,11 +218,11 @@ function DeviceSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
             nzval[i, k - k1 + 1] = A_csr.nzval[k]
         end
     end
-    return DeviceSparseMatrixELL(m, n, colval, nzval)
+    return GPUSparseMatrixELL(m, n, colval, nzval)
 end
 
 function Base.getindex(
-        A::DeviceSparseMatrixELL{T, Ti}, i::Integer, j::Integer
+        A::GPUSparseMatrixELL{T, Ti}, i::Integer, j::Integer
     ) where {T, Ti}
     (; colval, nzval) = A
     k2 = size(colval, 2)
@@ -238,7 +238,7 @@ function Base.getindex(
     end
 end
 
-SparseArrays.nnz(A::DeviceSparseMatrixELL) = sum(!==(0), A.colval)
+SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
 
 @kernel function spmv_ell!(
         c::AbstractVector{T},
@@ -261,7 +261,7 @@ end
 
 function LinearAlgebra.mul!(
         c::AbstractVector,
-        A::DeviceSparseMatrixELL,
+        A::GPUSparseMatrixELL,
         b::AbstractVector,
         α::Number,
         β::Number
