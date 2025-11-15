@@ -19,7 +19,6 @@ function PrimalDualSolution(
         sad::SaddlePointProblem{T, V},
         x::V,
         y::V,
-        ω::T
     ) where {T, V}
     (; c, K, Kᵀ, l, u) = sad
     Kx = K * x
@@ -58,12 +57,12 @@ function zero!(z::PrimalDualSolution{T}) where {T}
     return nothing
 end
 
-function Base.copyto!(z1::PrimalDualSolution, z2::PrimalDualSolution)
-    copyto!(z1.x, z2.x)
-    copyto!(z1.y, z2.y)
-    copyto!(z1.Kx, z2.Kx)
-    copyto!(z1.Kᵀy, z2.Kᵀy)
-    copyto!(z1.λ, z2.λ)
+function Base.copy!(z1::PrimalDualSolution, z2::PrimalDualSolution)
+    copy!(z1.x, z2.x)
+    copy!(z1.y, z2.y)
+    copy!(z1.Kx, z2.Kx)
+    copy!(z1.Kᵀy, z2.Kᵀy)
+    copy!(z1.λ, z2.λ)
     return z1
 end
 

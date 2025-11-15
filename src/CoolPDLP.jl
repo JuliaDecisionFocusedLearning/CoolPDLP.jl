@@ -13,7 +13,6 @@ using KernelAbstractions
 using LinearAlgebra
 using Logging
 using OhMyThreads
-using Printf
 using ProgressMeter
 using QPSReader
 using QPSReader: VTYPE_Binary, VTYPE_Integer

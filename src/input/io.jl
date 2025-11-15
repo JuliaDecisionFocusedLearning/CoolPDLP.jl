@@ -65,7 +65,7 @@ end
 Read a solution stored in a `.sol` file following the MIPLIB specification, return a vector of floating-point numbers.
 """
 function read_sol(path::String, milp::MILP)
-    T = eltype(milp)
+    T = Float64
     x = fill(convert(T, NaN), nbvar(milp))
     open(path, "r") do f
         obj = NaN

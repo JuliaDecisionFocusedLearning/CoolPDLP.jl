@@ -25,6 +25,11 @@ end
 
 sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 
+custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
+
+safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
+safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
+
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
     K::M
     Kᵀ::M

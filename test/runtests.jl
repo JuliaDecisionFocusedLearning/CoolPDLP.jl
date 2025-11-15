@@ -17,8 +17,8 @@ using Test
     @testset "Adapt" begin
         include("adapt.jl")
     end
-    @testset "PDHG" begin
-        include("pdhg.jl")
+    @testset "PDLP" begin
+        include("pdlp.jl")
     end
     @testset "Tutorial" begin
         include("tutorial.jl")

@@ -31,14 +31,10 @@ function Base.show(io::IO, state::AbstractState)
     (; err, time_elapsed, kkt_passes, termination_reason) = state
     return print(
         io,
-        @sprintf(
-            "%s with termination reason %s: %.6e relative KKT error after %g seconds elapsed and %s KKT passes",
-            nameof(typeof(state)),
-            termination_reason,
-            relative(err),
-            time_elapsed,
-            kkt_passes,
-        )
+        """$(nameof(typeof(state))) with termination reason $termination_reason:
+        - relative KKT error: $(relative(err))
+        - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
+        - KKT passes: $kkt_passes""",
     )
 end
 
@@ -81,9 +77,9 @@ end
 function Base.show(io::IO, err::KKTErrors)
     return print(
         io, """KKT errors:
-        - primal $(err.err_primal) (scale $(err.err_primal_scale))
-        - dual $(err.err_dual) (scale $(err.err_dual_scale))
-        - gap $(err.err_gap) (scale $(err.err_gap_scale))"""
+        - primal $(err.primal) (scale $(err.primal_scale))
+        - dual $(err.dual) (scale $(err.dual_scale))
+        - gap $(err.gap) (scale $(err.gap_scale))"""
     )
 end
 
@@ -105,7 +101,7 @@ absolute(err::KKTErrors) = err.weighted_agg
 
 function termination_check!(
         state::AbstractState,
-        params::AbstractParameters,
+        params,
     )
     (; err) = state
     (; termination_reltol, time_limit, max_kkt_passes) = params

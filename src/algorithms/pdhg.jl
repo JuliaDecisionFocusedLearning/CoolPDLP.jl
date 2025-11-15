@@ -30,13 +30,13 @@ struct PDHGParameters{
     record_error_history::Bool
 
     function PDHGParameters(
-            ::Type{T} = Float64,
+            _T::Type{T} = Float64,
             ::Type{Ti} = Int,
             ::Type{M} = SparseMatrixCSC,
             backend::B = CPU();
-            stepsize_scaling = 0.9,
-            precond_cb_α = 1.0,
-            termination_reltol = 1.0e-4,
+            stepsize_scaling = _T(0.9),
+            precond_cb_α = _T(1.0),
+            termination_reltol = _T(1.0e-4),
             max_kkt_passes = 100_000,
             time_limit = 100.0,
             check_every = 40,
@@ -59,7 +59,7 @@ end
 """
     PDHGState
 
-Current solution, step sizes and various buffers / metrics for the baseline primal-dual hybrid gradient.
+Current solution, step sizes and various buffers / metrics for the PDHG algorithm.
 
 # Fields
 
@@ -98,14 +98,14 @@ end
         show_progress::Bool=true
     )
     
-Apply the primal-dual hybrid gradient algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
+Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
 """
 function pdhg(
         milp::MILP,
-        params::PDHGParameters{T},
-        x_init::V = zero(milp.c);
+        params::PDHGParameters,
+        x_init::Vector = zero(milp.c);
         show_progress::Bool = true
-    ) where {T, V}
+    )
     starting_time = time()
     sad = SaddlePointProblem(milp)
     y_init = zero(sad.q)
@@ -161,10 +161,11 @@ function initialize(
     preconditioner = compute_preconditioner(sad_init, params)
     sad = apply(preconditioner, sad_init)
     x, y = preconditioned_solution(preconditioner, x_init, y_init)
-    sad_gpu = adapt(backend, set_matrix_type(M, set_indtype(Ti, set_eltype(T, sad))))
+    sad_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, sad)))
+    η = fixed_stepsize(sad_righttypes, params)
+    sad_gpu = adapt(backend, sad_righttypes)
     x_gpu = adapt(backend, set_eltype(T, x))
     y_gpu = adapt(backend, set_eltype(T, y))
-    η = fixed_stepsize(sad, params)
     state = PDHGState(; x = x_gpu, y = y_gpu, η, starting_time)
     return sad_gpu, state
 end
@@ -206,8 +207,8 @@ function step!(
     y_step = y + σ * (q - K * (2 * xp - x))
     yp = ifelse.(ineq_cons, positive_part.(y_step), y_step)
 
-    copyto!(x, xp)
-    copyto!(y, yp)
+    copy!(x, xp)
+    copy!(y, yp)
 
     state.kkt_passes += 1
     return nothing
@@ -288,5 +289,6 @@ function get_results(
     (; x, y) = state
     (; preconditioner) = sad
     x_cpu, y_cpu = Array(x), Array(y)
-    return unpreconditioned_solution(preconditioner, x_cpu, y_cpu), state
+    x_unprec, y_unprec = unpreconditioned_solution(preconditioner, x_cpu, y_cpu)
+    return (; x = x_unprec, y = y_unprec), state
 end
