@@ -1,7 +1,6 @@
 using Aqua
 using CoolPDLP
-# using JET
-using JuliaFormatter
+using JET
 using Test
 
 @testset "Aqua" begin
@@ -10,8 +9,4 @@ end;
 
 @testset "JET" begin
     # JET.test_package(CoolPDLP; target_modules = [CoolPDLP])
-end
-
-@testset "Code formatting (JuliaFormatter.jl)" begin
-    @test JuliaFormatter.format(CoolPDLP; verbose=false, overwrite=false)
 end

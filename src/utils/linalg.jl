@@ -5,7 +5,7 @@ zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 
 @inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
 
-function proj_λ(λ::T, l::T, u::T) where {T<:Number}
+function proj_λ(λ::T, l::T, u::T) where {T <: Number}
     lmin = l == typemin(T)
     umax = u == typemax(T)
     return ifelse(
@@ -18,13 +18,13 @@ sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
 function safeprod_rightpos(left, right)
-    ifelse(isinf(left), positive_part(right), left * positive_part(right))
+    return ifelse(isinf(left), positive_part(right), left * positive_part(right))
 end
 function safeprod_rightneg(left, right)
-    ifelse(isinf(left), negative_part(right), left * negative_part(right))
+    return ifelse(isinf(left), negative_part(right), left * negative_part(right))
 end
 
-struct Symmetrized{T<:Number,V<:AbstractVector{T},M<:AbstractMatrix{T}}
+struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
     K::M
     Kᵀ::M
     scratch::V

@@ -1,6 +1,6 @@
 struct Preconditioner
-    D1::Diagonal{Float64,Vector{Float64}}
-    D2::Diagonal{Float64,Vector{Float64}}
+    D1::Diagonal{Float64, Vector{Float64}}
+    D2::Diagonal{Float64, Vector{Float64}}
 end
 
 function Base.:*(pb::Preconditioner, pa::Preconditioner)
@@ -21,8 +21,8 @@ function identity_preconditioner(K::SparseMatrixCSC)
 end
 
 function diagonal_norm_preconditioner(
-    K::SparseMatrixCSC, Kᵀ::SparseMatrixCSC; p_row::Number, p_col::Number
-)
+        K::SparseMatrixCSC, Kᵀ::SparseMatrixCSC; p_row::Number, p_col::Number
+    )
     col_norms = map(j -> column_norm(K, j, p_col), axes(K, 2))
     row_norms = map(i -> column_norm(Kᵀ, i, p_row), axes(K, 1))
     d1 = map(rn -> iszero(rn) ? 1.0 : inv(sqrt(rn)), row_norms)
@@ -31,13 +31,13 @@ function diagonal_norm_preconditioner(
 end
 
 function chambolle_pock_preconditioner(K, Kᵀ; α::Number)
-    return diagonal_norm_preconditioner(K, Kᵀ; p_row=2 - α, p_col=α)
+    return diagonal_norm_preconditioner(K, Kᵀ; p_row = 2 - α, p_col = α)
 end
 
 function ruiz_preconditioner(K, Kᵀ; iterations::Integer)
     p_acc = identity_preconditioner(K)
     for _ in 1:iterations
-        p = diagonal_norm_preconditioner(K, Kᵀ; p_col=Inf, p_row=Inf)
+        p = diagonal_norm_preconditioner(K, Kᵀ; p_col = Inf, p_row = Inf)
         K, Kᵀ = apply(p, K, Kᵀ)
         p_acc = p * p_acc
     end

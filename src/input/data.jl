@@ -7,7 +7,7 @@ function __init__()
             Source: https://miplib.zib.de/index.html
             """,
             "https://miplib.zib.de/downloads/collection.zip";
-            post_fetch_method=unpack,
+            post_fetch_method = unpack,
         ),
     )
     return register(
@@ -27,7 +27,7 @@ end
 
 Return a list of all [MIPLIB 2017](https://miplib.zib.de/) collection instances used in the original [PDLP benchmark](https://arxiv.org/abs/2106.04756).
 """
-function list_pdlp_miplib2017_subset(; exclude_failing::Bool=true)
+function list_pdlp_miplib2017_subset(; exclude_failing::Bool = true)
     list_path = joinpath(datadep"pdlp-miplib2017-subset", "mip_relaxations_instance_list")
     lines = open(list_path, "r") do file
         readlines(file)
@@ -52,7 +52,7 @@ Parse a particular [MIPLIB 2017](https://miplib.zib.de/) collection instance and
 function read_miplib2017_instance(name::String)
     name = lowercase(name)
     mps_gz_path = joinpath(datadep"miplib2017-collection", "$name.mps.gz")
-    milp = read_milp(mps_gz_path; name, dataset="MIPLIB2027")
+    milp = read_milp(mps_gz_path; name, dataset = "MIPLIB2027")
     return milp
 end
 
@@ -83,6 +83,6 @@ function read_netlib_instance(name::String)
     end
     netlib_path = fetch_netlib()
     sif_path = joinpath(netlib_path, "$name.SIF")
-    milp = read_milp(sif_path; mpsformat, name, dataset="Netlib")
+    milp = read_milp(sif_path; mpsformat, name, dataset = "Netlib")
     return milp
 end

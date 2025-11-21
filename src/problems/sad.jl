@@ -12,12 +12,12 @@ Represent the saddle point problem
 $(TYPEDFIELDS)
 """
 struct SaddlePointProblem{
-    T<:Number,
-    V<:AbstractVector{T},
-    M<:AbstractMatrix{T},
-    Vb<:AbstractVector{Bool},
-    P<:Preconditioner,
-} <: AbstractProblem
+        T <: Number,
+        V <: AbstractVector{T},
+        M <: AbstractMatrix{T},
+        Vb <: AbstractVector{Bool},
+        P <: Preconditioner,
+    } <: AbstractProblem
     "objective vector"
     c::V
     "constraint right-hand side"
@@ -45,7 +45,7 @@ struct SaddlePointProblem{
         @assert isconcretetype(V)
         @assert isconcretetype(M)
         @assert isconcretetype(Vb)
-        return new{T,V,M,Vb,P}(c, q, K, Kᵀ, l, u, ineq_cons, preconditioner)
+        return new{T, V, M, Vb, P}(c, q, K, Kᵀ, l, u, ineq_cons, preconditioner)
     end
 end
 
@@ -79,10 +79,10 @@ function Base.show(io::IO, sad::SaddlePointProblem)
     return print(
         io,
         """
-    Saddle point problem
-    - variables: $(nbvar(sad))
-    - constraints $(nbcons(sad)) ($(nbcons_ineq(sad)) inequalities, $(nbcons_eq(sad)) equalities)
-    - nonzeros: $(nnz(sad.K))""",
+        Saddle point problem
+        - variables: $(nbvar(sad))
+        - constraints $(nbcons(sad)) ($(nbcons_ineq(sad)) inequalities, $(nbcons_eq(sad)) equalities)
+        - nonzeros: $(nnz(sad.K))""",
     )
 end
 
@@ -103,13 +103,13 @@ function apply(preconditioner::Preconditioner, sad::SaddlePointProblem)
     l̃ = D2 \ l
     ũ = D2 \ u
     return SaddlePointProblem(;
-        c=c̃,
-        q=q̃,
-        K=K̃,
-        Kᵀ=K̃ᵀ,
-        l=l̃,
-        u=ũ,
+        c = c̃,
+        q = q̃,
+        K = K̃,
+        Kᵀ = K̃ᵀ,
+        l = l̃,
+        u = ũ,
         ineq_cons,
-        preconditioner=preconditioner * sad.preconditioner,
+        preconditioner = preconditioner * sad.preconditioner,
     )
 end

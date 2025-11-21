@@ -5,7 +5,7 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PrimalDualSolution{T<:Number,V<:AbstractVector{T}}
+@kwdef mutable struct PrimalDualSolution{T <: Number, V <: AbstractVector{T}}
     const x::V
     const y::V
     const Kx::V
@@ -15,7 +15,7 @@ end
 
 Base.eltype(::PrimalDualSolution{T}) where {T} = T
 
-function PrimalDualSolution(sad::SaddlePointProblem{T,V}, x::V, y::V) where {T,V}
+function PrimalDualSolution(sad::SaddlePointProblem{T, V}, x::V, y::V) where {T, V}
     (; c, K, Kᵀ, l, u) = sad
     Kx = K * x
     Kᵀy = Kᵀ * y
@@ -51,8 +51,8 @@ function Base.copy!(z1::PrimalDualSolution, z2::PrimalDualSolution)
 end
 
 function LinearAlgebra.axpby!(
-    a::T, x::PrimalDualSolution{T,V}, b::T, y::PrimalDualSolution{T,V}
-) where {T,V}
+        a::T, x::PrimalDualSolution{T, V}, b::T, y::PrimalDualSolution{T, V}
+    ) where {T, V}
     axpby!(a, x.x, b, y.x)
     axpby!(a, x.y, b, y.y)
     axpby!(a, x.Kx, b, y.Kx)

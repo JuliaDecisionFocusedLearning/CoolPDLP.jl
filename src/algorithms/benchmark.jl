@@ -3,7 +3,7 @@
 
 Store the results of a solver over several instances.
 """
-@kwdef struct BenchmarkResult{P,S}
+@kwdef struct BenchmarkResult{P, S}
     params::P
     states::Vector{S}
     kkt_passes::Vector{Int}
@@ -13,12 +13,12 @@ Store the results of a solver over several instances.
 end
 
 function run_benchmark(
-    solver::S, milps::Vector{<:MILP}, params::AbstractParameters
-) where {S<:Function}
-    prog = Progress(length(milps); desc="Benchmarking $solver:")
+        solver::S, milps::Vector{<:MILP}, params::AbstractParameters
+    ) where {S <: Function}
+    prog = Progress(length(milps); desc = "Benchmarking $solver:")
     states = tmap(milps) do milp
         next!(prog)
-        solver(milp, params; show_progress=false)[end]
+        solver(milp, params; show_progress = false)[end]
     end
     kkt_passes = map(states) do state
         if state.termination_reason == CONVERGENCE
@@ -42,8 +42,8 @@ function run_benchmark(
 end
 
 function run_benchmark(
-    solver::S, milps::Vector{<:MILP}, params_candidates::Vector{<:AbstractParameters}
-) where {S}
+        solver::S, milps::Vector{<:MILP}, params_candidates::Vector{<:AbstractParameters}
+    ) where {S}
     results = map(params_candidates) do params
         @info "Benchmarking" params
         run_benchmark(solver, milps, params)

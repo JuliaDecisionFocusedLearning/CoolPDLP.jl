@@ -13,11 +13,11 @@ struct MILP <: AbstractProblem
     "objective vector"
     c::Vector{Float64}
     "inequality constraint matrix"
-    G::SparseMatrixCSC{Float64,Int}
+    G::SparseMatrixCSC{Float64, Int}
     "inequality constraint right-hand side"
     h::Vector{Float64}
     "equality constraint matrix"
-    A::SparseMatrixCSC{Float64,Int}
+    A::SparseMatrixCSC{Float64, Int}
     "equality constraint right-hand side"
     b::Vector{Float64}
     "variable lower bound"
@@ -37,19 +37,19 @@ struct MILP <: AbstractProblem
 end
 
 function MILP(;
-    c,
-    G,
-    h,
-    A,
-    b,
-    l,
-    u,
-    intvar=fill(false, length(c)),
-    varname=map(string, eachindex(c)),
-    dataset="",
-    name="",
-    path="",
-)
+        c,
+        G,
+        h,
+        A,
+        b,
+        l,
+        u,
+        intvar = fill(false, length(c)),
+        varname = map(string, eachindex(c)),
+        dataset = "",
+        name = "",
+        path = "",
+    )
     n = length(c)
     m₁ = length(h)
     m₂ = length(b)
@@ -74,10 +74,10 @@ function Base.show(io::IO, milp::MILP)
     return print(
         io,
         """
-    MILP instance $(milp.name)
-    - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
-    - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
-    - nonzeros: $(nnz(milp.G) + nnz(milp.A))""",
+        MILP instance $(milp.name)
+        - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
+        - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
+        - nonzeros: $(nnz(milp.G) + nnz(milp.A))""",
     )
 end
 
