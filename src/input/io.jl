@@ -13,7 +13,7 @@ function read_milp(
         contents = GZip.open(path, "r") do f
             read(f, String)
         end
-        mps_path = tempname(; suffix = ".mps")
+        mps_path = string(tempname(), ".mps")
         open(mps_path, "w") do f
             write(f, contents)
         end
