@@ -22,7 +22,6 @@ using StableRNGs
 using Statistics
 
 @stable begin
-
     include("utils/matrices.jl")
     include("utils/linalg.jl")
 
@@ -42,7 +41,6 @@ using Statistics
     include("input/data.jl")
     include("input/io.jl")
     include("input/adapt.jl")
-
 end
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL

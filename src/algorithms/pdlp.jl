@@ -5,7 +5,7 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPRestartParameters{T <: Number}
+@kwdef struct PDLPRestartParameters{T<:Number}
     restart_enabled::Bool = true
     "restart criterion: sufficient decay in normalized duality gap"
     β_sufficient::T = 0.2
@@ -17,7 +17,10 @@ end
 
 function Base.show(io::IO, params::PDLPRestartParameters)
     (; restart_enabled, β_sufficient, β_necessary, β_artificial) = params
-    return print(io, "Restart ($restart_enabled): β_sufficient=$β_sufficient, β_necessary=$β_necessary, β_artificial=$β_artificial")
+    return print(
+        io,
+        "Restart ($restart_enabled): β_sufficient=$β_sufficient, β_necessary=$β_necessary, β_artificial=$β_artificial",
+    )
 end
 
 """
@@ -27,7 +30,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPPreconditioningParameters{T <: Number}
+@kwdef struct PDLPPreconditioningParameters{T<:Number}
     scaling_enabled::Bool = true
     "norm parameter in the Chambolle-pock preconditioner"
     cp_α::T = 1.0
@@ -47,7 +50,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPPrimalWeightParameters{T <: Number}
+@kwdef struct PDLPPrimalWeightParameters{T<:Number}
     primal_weight_enabled::Bool = true
     "scaling of the inverse spectral norm of `K` when defining the step size"
     θ::T = 0.5
@@ -65,7 +68,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPStepSizeParameters{T <: Number}
+@kwdef struct PDLPStepSizeParameters{T<:Number}
     adaptive_steps_enabled::Bool = true
     "scaling of the inverse spectral norm of `K` when defining the non-adaptive step size"
     invnorm_scaling::T = 0.9
@@ -73,7 +76,9 @@ end
 
 function Base.show(io::IO, params::PDLPStepSizeParameters)
     (; adaptive_steps_enabled, invnorm_scaling) = params
-    return print(io, "Step size ($adaptive_steps_enabled): invnorm_scaling=$invnorm_scaling")
+    return print(
+        io, "Step size ($adaptive_steps_enabled): invnorm_scaling=$invnorm_scaling"
+    )
 end
 
 """
@@ -83,7 +88,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPTerminationParameters{T <: Number}
+@kwdef struct PDLPTerminationParameters{T<:Number}
     "tolerance on KKT relative errors to decide termination"
     termination_reltol::T = 1.0e-4
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
@@ -94,7 +99,10 @@ end
 
 function Base.show(io::IO, params::PDLPTerminationParameters)
     (; termination_reltol, max_kkt_passes, time_limit) = params
-    return print(io, "Termination: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit")
+    return print(
+        io,
+        "Termination: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit",
+    )
 end
 
 """
@@ -104,7 +112,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDLPGenericParameters{T <: Number}
+@kwdef struct PDLPGenericParameters{T<:Number}
     "tolerance in absolute comparisons to zero"
     zero_tol::T = 1.0e-8
     "frequency of restart or termination checks"
@@ -115,7 +123,10 @@ end
 
 function Base.show(io::IO, params::PDLPGenericParameters)
     (; zero_tol, check_every, record_error_history) = params
-    return print(io, "Generic: zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history")
+    return print(
+        io,
+        "Generic: zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history",
+    )
 end
 
 """
@@ -127,9 +138,8 @@ Parameters for configuration of the PDLP algorithm.
 
 $(TYPEDFIELDS)
 """
-struct PDLPParameters{
-        T <: AbstractFloat, Ti <: Integer, M <: AbstractMatrix, B <: Backend,
-    } <: AbstractParameters{T}
+struct PDLPParameters{T<:AbstractFloat,Ti<:Integer,M<:AbstractMatrix,B<:Backend} <:
+       AbstractParameters{T}
     backend::B
     restart::PDLPRestartParameters{T}
     preconditioning::PDLPPreconditioningParameters{T}
@@ -139,8 +149,9 @@ struct PDLPParameters{
     generic::PDLPGenericParameters{T}
 end
 
-function Base.show(io::IO, params::PDLPParameters{T, Ti, M}) where {T, Ti, M}
-    (; backend, restart, preconditioning, primal_weight, step_size, termination, generic) = params
+function Base.show(io::IO, params::PDLPParameters{T,Ti,M}) where {T,Ti,M}
+    (; backend, restart, preconditioning, primal_weight, step_size, termination, generic) =
+        params
     return print(
         io,
         """PDLP with types ($T, $Ti, $M) on $backend:
@@ -150,52 +161,44 @@ function Base.show(io::IO, params::PDLPParameters{T, Ti, M}) where {T, Ti, M}
         - $step_size
         - $termination
         - $generic
-        """
+        """,
     )
 end
 
 function PDLPParameters(
-        _T::Type{T} = Float64,
-        ::Type{Ti} = Int,
-        ::Type{M} = SparseMatrixCSC,
-        backend::B = CPU();
-        restart_enabled::Bool = true,
-        scaling_enabled::Bool = true,
-        primal_weight_enabled = true,
-        adaptive_steps_enabled = true,
-        β_sufficient = _T(0.2),
-        β_necessary = _T(0.8),
-        β_artificial = _T(0.36),
-        cp_α = _T(1.0),
-        ruiz_iter = 10,
-        θ = _T(0.5),
-        invnorm_scaling = _T(0.9),
-        termination_reltol = _T(1.0e-4),
-        max_kkt_passes = 100_000,
-        time_limit = 100.0,
-        zero_tol = _T(1.0e-8),
-        check_every = 40,
-        record_error_history = false
-    ) where {T, Ti, M, B}
+    _T::Type{T}=Float64,
+    (::Type{Ti})=Int,
+    (::Type{M})=SparseMatrixCSC,
+    backend::B=CPU();
+    restart_enabled::Bool=true,
+    scaling_enabled::Bool=true,
+    primal_weight_enabled=true,
+    adaptive_steps_enabled=true,
+    β_sufficient=_T(0.2),
+    β_necessary=_T(0.8),
+    β_artificial=_T(0.36),
+    cp_α=_T(1.0),
+    ruiz_iter=10,
+    θ=_T(0.5),
+    invnorm_scaling=_T(0.9),
+    termination_reltol=_T(1.0e-4),
+    max_kkt_passes=100_000,
+    time_limit=100.0,
+    zero_tol=_T(1.0e-8),
+    check_every=40,
+    record_error_history=false,
+) where {T,Ti,M,B}
     restart = PDLPRestartParameters(
         restart_enabled, _T(β_sufficient), _T(β_necessary), _T(β_artificial)
     )
-    preconditioning = PDLPPreconditioningParameters(
-        scaling_enabled, _T(cp_α), ruiz_iter
-    )
-    primal_weight = PDLPPrimalWeightParameters(
-        primal_weight_enabled, _T(θ)
-    )
-    step_size = PDLPStepSizeParameters(
-        adaptive_steps_enabled, _T(invnorm_scaling)
-    )
+    preconditioning = PDLPPreconditioningParameters(scaling_enabled, _T(cp_α), ruiz_iter)
+    primal_weight = PDLPPrimalWeightParameters(primal_weight_enabled, _T(θ))
+    step_size = PDLPStepSizeParameters(adaptive_steps_enabled, _T(invnorm_scaling))
     termination = PDLPTerminationParameters(
         _T(termination_reltol), max_kkt_passes, time_limit
     )
-    generic = PDLPGenericParameters(
-        _T(zero_tol), check_every, record_error_history
-    )
-    return PDLPParameters{T, Ti, M, B}(
+    generic = PDLPGenericParameters(_T(zero_tol), check_every, record_error_history)
+    return PDLPParameters{T,Ti,M,B}(
         backend, restart, preconditioning, primal_weight, step_size, termination, generic
     )
 end
@@ -209,17 +212,15 @@ Current solution, step sizes and various buffers / metrics in the PDLP algorithm
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PDLPState{
-        T <: Number, V <: AbstractVector{T},
-    } <: AbstractState{T, V}
+@kwdef mutable struct PDLPState{T<:Number,V<:AbstractVector{T}} <: AbstractState{T,V}
     # solutions
-    const z::PrimalDualSolution{T, V}
-    const z_avg::PrimalDualSolution{T, V} = zero(z)
-    const z_last::PrimalDualSolution{T, V} = copy(z)
-    const z_avg_last::PrimalDualSolution{T, V} = copy(z_avg)
-    const z_previous_restart::PrimalDualSolution{T, V} = copy(z)
-    z_restart_candidate::PrimalDualSolution{T, V} = z
-    z_restart_candidate_last::PrimalDualSolution{T, V} = z_last
+    const z::PrimalDualSolution{T,V}
+    const z_avg::PrimalDualSolution{T,V} = zero(z)
+    const z_last::PrimalDualSolution{T,V} = copy(z)
+    const z_avg_last::PrimalDualSolution{T,V} = copy(z_avg)
+    const z_previous_restart::PrimalDualSolution{T,V} = copy(z)
+    z_restart_candidate::PrimalDualSolution{T,V} = z
+    z_restart_candidate_last::PrimalDualSolution{T,V} = z_last
     # errors
     err::KKTErrors{T} = KKTErrors(eltype(z))
     err_avg::KKTErrors{T} = KKTErrors(eltype(z))
@@ -262,7 +263,7 @@ $(TYPEDFIELDS)
     "termination reason (should be `STILL_RUNNING` until the algorithm actually terminates)"
     termination_reason::TerminationReason = STILL_RUNNING
     "history of KKT errors, indexed by number of KKT passes"
-    const error_history::Vector{Tuple{Int, KKTErrors{T}}} = Tuple{Int, KKTErrors{eltype(z)}}[]
+    const error_history::Vector{Tuple{Int,KKTErrors{T}}} = Tuple{Int,KKTErrors{eltype(z)}}[]
 end
 
 """
@@ -276,11 +277,11 @@ end
 Apply the PDLP algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
 """
 function pdlp(
-        milp::MILP,
-        params::PDLPParameters,
-        x_init::Vector = zero(milp.c);
-        show_progress::Bool = true
-    )
+    milp::MILP,
+    params::PDLPParameters,
+    x_init::Vector=zero(milp.c);
+    show_progress::Bool=true,
+)
     starting_time = time()
     sad = SaddlePointProblem(milp)
     y_init = zero(sad.q)
@@ -299,15 +300,15 @@ end
 Apply the PDLP algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `z_init = (x_init, y_init)`.
 """
 function pdlp(
-        sad_init::SaddlePointProblem,
-        params::PDLPParameters,
-        x_init::Vector = zero(sad_init.c),
-        y_init::Vector = zero(sad_init.q);
-        starting_time::Float64 = time(),
-        show_progress::Bool = true,
-    )
+    sad_init::SaddlePointProblem,
+    params::PDLPParameters,
+    x_init::Vector=zero(sad_init.c),
+    y_init::Vector=zero(sad_init.q);
+    starting_time::Float64=time(),
+    show_progress::Bool=true,
+)
     sad, state = initialize(sad_init, params, x_init, y_init; starting_time)
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = show_progress)
+    prog = ProgressUnknown(; desc="PDLP iterations:", enabled=show_progress)
     try
         while true
             must_terminate = false
@@ -318,10 +319,7 @@ function pdlp(
                     update_average!(state, sad)
                     state.inner_iterations += 1
                     state.total_iterations += 1
-                    next!(
-                        prog;
-                        showvalues = (("relative_error", relative(state.err)),)
-                    )
+                    next!(prog; showvalues=(("relative_error", relative(state.err)),))
                 end
                 prepare_check!(state, sad, params)
                 must_restart = restart_check(state, params)
@@ -349,12 +347,12 @@ function pdlp(
 end
 
 function initialize(
-        sad_init::SaddlePointProblem,
-        params::PDLPParameters{T, Ti, M},
-        x_init::Vector,
-        y_init::Vector;
-        starting_time::Float64
-    ) where {T, Ti, M}
+    sad_init::SaddlePointProblem,
+    params::PDLPParameters{T,Ti,M},
+    x_init::Vector,
+    y_init::Vector;
+    starting_time::Float64,
+) where {T,Ti,M}
     (; backend) = params
     preconditioner = compute_preconditioner(sad_init, params)
     sad = apply(preconditioner, sad_init)
@@ -371,25 +369,20 @@ function initialize(
     return sad_gpu, state
 end
 
-function compute_preconditioner(
-        sad::SaddlePointProblem, params::PDLPParameters,
-    )
+function compute_preconditioner(sad::SaddlePointProblem, params::PDLPParameters)
     (; K, Kᵀ) = sad
     (; scaling_enabled, ruiz_iter, cp_α) = params.preconditioning
     if scaling_enabled
-        p1 = ruiz_preconditioner(K, Kᵀ; iterations = ruiz_iter)
+        p1 = ruiz_preconditioner(K, Kᵀ; iterations=ruiz_iter)
         K, Kᵀ = apply(p1, K, Kᵀ)
     else
         p1 = identity_preconditioner(K)
     end
-    p2 = chambolle_pock_preconditioner(K, Kᵀ; α = cp_α)
+    p2 = chambolle_pock_preconditioner(K, Kᵀ; α=cp_α)
     return p2 * p1
 end
 
-function initial_stepsize(
-        sad::SaddlePointProblem{T},
-        params::PDLPParameters{T}
-    ) where {T}
+function initial_stepsize(sad::SaddlePointProblem{T}, params::PDLPParameters{T}) where {T}
     (; K, Kᵀ) = sad
     (; adaptive_steps_enabled, invnorm_scaling) = params.step_size
     if adaptive_steps_enabled
@@ -401,8 +394,8 @@ function initial_stepsize(
 end
 
 function initialize_primal_weight(
-        sad::SaddlePointProblem{T}, params::PDLPParameters
-    ) where {T}
+    sad::SaddlePointProblem{T}, params::PDLPParameters
+) where {T}
     (; c, q) = sad
     (; primal_weight_enabled) = params.primal_weight
     (; zero_tol) = params.generic
@@ -422,9 +415,8 @@ function error_scales(sad::SaddlePointProblem{T}) where {T}
 end
 
 function step!(
-        state::PDLPState{T, V},
-        sad::SaddlePointProblem{T, V}, params::PDLPParameters{T}
-    ) where {T, V}
+    state::PDLPState{T,V}, sad::SaddlePointProblem{T,V}, params::PDLPParameters{T}
+) where {T,V}
     (; z, z_last) = state
     (; adaptive_steps_enabled) = params.step_size
     copy!(z_last, z)
@@ -435,10 +427,7 @@ function step!(
     end
 end
 
-function fixed_pdlp_step!(
-        state::PDLPState{T, V},
-        sad::SaddlePointProblem{T, V}
-    ) where {T, V}
+function fixed_pdlp_step!(state::PDLPState{T,V}, sad::SaddlePointProblem{T,V}) where {T,V}
     (; z, η, ω) = state
     (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
     (; x, y, Kx, Kᵀy, λ) = z
@@ -464,15 +453,9 @@ function fixed_pdlp_step!(
 end
 
 function adaptive_pdlp_step!(
-        state::PDLPState{T, V},
-        sad::SaddlePointProblem{T, V},
-        params::PDLPParameters{T}
-    ) where {T, V}
-    (;
-        z, ω, η_init, total_iterations,
-        primal_scratch, dual_scratch,
-        dual_scratch2,
-    ) = state
+    state::PDLPState{T,V}, sad::SaddlePointProblem{T,V}, params::PDLPParameters{T}
+) where {T,V}
+    (; z, ω, η_init, total_iterations, primal_scratch, dual_scratch, dual_scratch2) = state
     (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
     (; x, y, Kx, Kᵀy, λ) = z
     (; zero_tol) = params.generic
@@ -510,10 +493,7 @@ function adaptive_pdlp_step!(
 
         state.kkt_passes += 1
 
-        ηp = min(
-            (1 - (k + 2)^T(-0.3)) * η_bar,
-            (1 + (k + 2)^T(-0.6)) * η
-        )
+        ηp = min((1 - (k + 2)^T(-0.3)) * η_bar, (1 + (k + 2)^T(-0.6)) * η)
 
         if η <= η_bar
             break
@@ -547,10 +527,8 @@ function update_average!(state::PDLPState, sad::SaddlePointProblem)
 end
 
 function kkt_errors!(
-        state::PDLPState{T, V},
-        sad::SaddlePointProblem{T, V},
-        z::PrimalDualSolution{T, V},
-    ) where {T, V}
+    state::PDLPState{T,V}, sad::SaddlePointProblem{T,V}, z::PrimalDualSolution{T,V}
+) where {T,V}
     (; ω, err_primal_scale, err_dual_scale, primal_scratch, dual_scratch) = state
     (; x, y, Kx, Kᵀy, λ) = z
     (; c, q, l, u, ineq_cons) = sad
@@ -580,8 +558,8 @@ function kkt_errors!(
         primal,
         dual,
         gap,
-        primal_scale = err_primal_scale,
-        dual_scale = err_dual_scale,
+        primal_scale=err_primal_scale,
+        dual_scale=err_dual_scale,
         gap_scale,
         weighted_agg,
         rel_max,
@@ -618,18 +596,23 @@ end
 function restart_check(state::PDLPState, params::PDLPParameters)
     (; restart_enabled, β_sufficient, β_necessary, β_artificial) = params.restart
     (;
-        err_restart_candidate, err_restart_candidate_last, err_previous_restart,
-        inner_iterations, total_iterations,
+        err_restart_candidate,
+        err_restart_candidate_last,
+        err_previous_restart,
+        inner_iterations,
+        total_iterations,
     ) = state
 
-    sufficient_decay = absolute(err_restart_candidate) <= β_sufficient * absolute(err_previous_restart)
-    necessary_decay = absolute(err_restart_candidate) <= β_necessary * absolute(err_previous_restart)
-    no_local_progress = absolute(err_restart_candidate) > absolute(err_restart_candidate_last)
+    sufficient_decay =
+        absolute(err_restart_candidate) <= β_sufficient * absolute(err_previous_restart)
+    necessary_decay =
+        absolute(err_restart_candidate) <= β_necessary * absolute(err_previous_restart)
+    no_local_progress =
+        absolute(err_restart_candidate) > absolute(err_restart_candidate_last)
     long_inner_loop = inner_iterations >= β_artificial * total_iterations
 
-    restart_criterion = sufficient_decay ||
-        (necessary_decay && no_local_progress) ||
-        long_inner_loop
+    restart_criterion =
+        sufficient_decay || (necessary_decay && no_local_progress) || long_inner_loop
     return restart_enabled && restart_criterion
 end
 
@@ -643,9 +626,7 @@ function restart!(state::PDLPState{T}) where {T}
     return nothing
 end
 
-function primal_weight_update!(
-        state::PDLPState{T}, params::PDLPParameters,
-    ) where {T}
+function primal_weight_update!(state::PDLPState{T}, params::PDLPParameters) where {T}
     (; ω, z_restart_candidate, z_previous_restart, primal_scratch, dual_scratch) = state
     (; primal_weight_enabled, θ) = params.primal_weight
     (; zero_tol) = params.generic
@@ -661,13 +642,10 @@ function primal_weight_update!(
     return nothing
 end
 
-function get_results(
-        sad::SaddlePointProblem,
-        state::PDLPState
-    )
+function get_results(sad::SaddlePointProblem, state::PDLPState)
     (; preconditioner) = sad
     (; x, y) = state.z
     x_cpu, y_cpu = Array(x), Array(y)
     x_unprec, y_unprec = unpreconditioned_solution(preconditioner, x_cpu, y_cpu)
-    return (; x = x_unprec, y = y_unprec), state
+    return (; x=x_unprec, y=y_unprec), state
 end

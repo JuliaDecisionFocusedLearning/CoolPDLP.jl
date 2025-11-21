@@ -25,7 +25,7 @@ Algorithm state supertype.
 - `err`
 - `termination_reason`
 """
-abstract type AbstractState{T <: Number, V <: AbstractVector{T}} end
+abstract type AbstractState{T<:Number,V<:AbstractVector{T}} end
 
 function Base.show(io::IO, state::AbstractState)
     (; err, time_elapsed, kkt_passes, termination_reason) = state
@@ -53,8 +53,7 @@ Algorithm parameter supertype.
 - `max_kkt_passes`
 - `record_error_history`
 """
-abstract type AbstractParameters{T <: Number} end
-
+abstract type AbstractParameters{T<:Number} end
 
 """
     KKTErrors
@@ -63,7 +62,7 @@ abstract type AbstractParameters{T <: Number} end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct KKTErrors{T <: Number}
+@kwdef struct KKTErrors{T<:Number}
     primal::T
     dual::T
     gap::T
@@ -76,10 +75,11 @@ end
 
 function Base.show(io::IO, err::KKTErrors)
     return print(
-        io, """KKT errors:
-        - primal $(err.primal) (scale $(err.primal_scale))
-        - dual $(err.dual) (scale $(err.dual_scale))
-        - gap $(err.gap) (scale $(err.gap_scale))"""
+        io,
+        """KKT errors:
+    - primal $(err.primal) (scale $(err.primal_scale))
+    - dual $(err.dual) (scale $(err.dual_scale))
+    - gap $(err.gap) (scale $(err.gap_scale))""",
     )
 end
 
@@ -99,10 +99,7 @@ end
 relative(err::KKTErrors) = err.rel_max
 absolute(err::KKTErrors) = err.weighted_agg
 
-function termination_check!(
-        state::AbstractState,
-        params,
-    )
+function termination_check!(state::AbstractState, params)
     (; err) = state
     (; termination_reltol, time_limit, max_kkt_passes) = params
 

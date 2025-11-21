@@ -26,9 +26,9 @@ end
     @testset for instance_name in netlib
         milp = read_netlib_instance(instance_name)
         if instance_name in ["agg", "blend", "dfl001", "forplan", "gfrd-pnc", "sierra"]
-            @test_skip JuMP.read_from_file(milp.path; format = MOI.FileFormats.FORMAT_MPS)
+            @test_skip JuMP.read_from_file(milp.path; format=MOI.FileFormats.FORMAT_MPS)
         else
-            jump_model = JuMP.read_from_file(milp.path; format = MOI.FileFormats.FORMAT_MPS)
+            jump_model = JuMP.read_from_file(milp.path; format=MOI.FileFormats.FORMAT_MPS)
             @test nbvar(milp) == JuMP.num_variables(jump_model)
             @test nbcons_eq(milp) == jump_nbcons(jump_model).eq
             @test nbcons_ineq(milp) == jump_nbcons(jump_model).ineq

@@ -1,4 +1,4 @@
-abstract type AbstractGPUSparseMatrix{T, Ti} <: AbstractMatrix{T} end
+abstract type AbstractGPUSparseMatrix{T,Ti} <: AbstractMatrix{T} end
 
 Base.size(A::AbstractGPUSparseMatrix) = (A.m, A.n)
 
@@ -10,11 +10,8 @@ Base.size(A::AbstractGPUSparseMatrix) = (A.m, A.n)
 $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCOO{
-        T <: Number,
-        Ti <: Integer,
-        Vv <: AbstractVector{T},
-        Vi <: AbstractVector{Ti},
-    } <: AbstractGPUSparseMatrix{T, Ti}
+    T<:Number,Ti<:Integer,Vv<:AbstractVector{T},Vi<:AbstractVector{Ti}
+} <: AbstractGPUSparseMatrix{T,Ti}
     m::Int
     n::Int
     rowval::Vi
@@ -28,15 +25,11 @@ end
 
 function Adapt.adapt_structure(to, A::GPUSparseMatrixCOO)
     return GPUSparseMatrixCOO(
-        A.m,
-        A.n,
-        adapt(to, A.rowval),
-        adapt(to, A.colval),
-        adapt(to, A.nzval)
+        A.m, A.n, adapt(to, A.rowval), adapt(to, A.colval), adapt(to, A.nzval)
     )
 end
 
-function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixCOO(A::SparseMatrixCSC{T,Ti}) where {T,Ti}
     rowval, colval, nzval = findnz(A)
     return GPUSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
 end
@@ -54,32 +47,27 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixCOO) = length(A.nzval)
 
 @kernel function spmv_coo!(
-        c::AbstractVector{T},
-        A_rowval::AbstractVector{Ti},
-        A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
-        α::Number,
-    ) where {T, Ti}
+    c::AbstractVector{T},
+    A_rowval::AbstractVector{Ti},
+    A_colval::AbstractVector{Ti},
+    A_nzval::AbstractVector{T},
+    b::AbstractVector{T},
+    α::Number,
+) where {T,Ti}
     k = @index(Global, Linear)
     i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
     Atomix.@atomic c[i] += α * v * b[j]
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixCOO,
-        b::AbstractVector,
-        α::Number,
-        β::Number
-    )
+    c::AbstractVector, A::GPUSparseMatrixCOO, b::AbstractVector, α::Number, β::Number
+)
     c .*= β
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
-    kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange = length(A.nzval))
+    kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange=length(A.nzval))
     return c
 end
-
 
 """
     GPUSparseMatrixCSR
@@ -89,11 +77,8 @@ end
 $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCSR{
-        T <: Number,
-        Ti <: Integer,
-        Vv <: AbstractVector{T},
-        Vi <: AbstractVector{Ti},
-    } <: AbstractGPUSparseMatrix{T, Ti}
+    T<:Number,Ti<:Integer,Vv<:AbstractVector{T},Vi<:AbstractVector{Ti}
+} <: AbstractGPUSparseMatrix{T,Ti}
     m::Int
     n::Int
     rowptr::Vi
@@ -107,22 +92,16 @@ end
 
 function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
     return GPUSparseMatrixCSR(
-        A.m,
-        A.n,
-        adapt(to, A.rowptr),
-        adapt(to, A.colval),
-        adapt(to, A.nzval)
+        A.m, A.n, adapt(to, A.rowptr), adapt(to, A.colval), adapt(to, A.nzval)
     )
 end
 
-function GPUSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixCSR(A::SparseMatrixCSC{T,Ti}) where {T,Ti}
     At = sparse(transpose(A))
     return GPUSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
 end
 
-function Base.getindex(
-        A::GPUSparseMatrixCSR{T, Ti}, i::Integer, j::Integer
-    ) where {T, Ti}
+function Base.getindex(A::GPUSparseMatrixCSR{T,Ti}, i::Integer, j::Integer) where {T,Ti}
     (; rowptr, colval, nzval) = A
     k1 = rowptr[i]
     k2 = rowptr[i + 1] - 1
@@ -141,14 +120,14 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixCSR) = length(A.nzval)
 
 @kernel function spmv_csr!(
-        c::AbstractVector{T},
-        A_rowptr::AbstractVector{Ti},
-        A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
-        α::Number,
-        β::Number
-    ) where {T, Ti}
+    c::AbstractVector{T},
+    A_rowptr::AbstractVector{Ti},
+    A_colval::AbstractVector{Ti},
+    A_nzval::AbstractVector{T},
+    b::AbstractVector{T},
+    α::Number,
+    β::Number,
+) where {T,Ti}
     i = @index(Global, Linear)
     s = zero(T)
     for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
@@ -159,15 +138,11 @@ SparseArrays.nnz(A::GPUSparseMatrixCSR) = length(A.nzval)
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixCSR,
-        b::AbstractVector,
-        α::Number,
-        β::Number
-    )
+    c::AbstractVector, A::GPUSparseMatrixCSR, b::AbstractVector, α::Number, β::Number
+)
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
+    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange=size(A, 1))
     return c
 end
 
@@ -179,11 +154,8 @@ end
 $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixELL{
-        T <: Number,
-        Ti <: Integer,
-        Mv <: AbstractMatrix{T},
-        Mi <: AbstractMatrix{Ti},
-    } <: AbstractGPUSparseMatrix{T, Ti}
+    T<:Number,Ti<:Integer,Mv<:AbstractMatrix{T},Mi<:AbstractMatrix{Ti}
+} <: AbstractGPUSparseMatrix{T,Ti}
     m::Int
     n::Int
     colval::Mi
@@ -195,15 +167,10 @@ function KernelAbstractions.get_backend(A::GPUSparseMatrixELL)
 end
 
 function Adapt.adapt_structure(to, A::GPUSparseMatrixELL)
-    return GPUSparseMatrixELL(
-        A.m,
-        A.n,
-        adapt(to, A.colval),
-        adapt(to, A.nzval)
-    )
+    return GPUSparseMatrixELL(A.m, A.n, adapt(to, A.colval), adapt(to, A.nzval))
 end
 
-function GPUSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
+function GPUSparseMatrixELL(A::SparseMatrixCSC{T,Ti}) where {T,Ti}
     m, n = size(A)
     A_csr = GPUSparseMatrixCSR(A)
     d = maximum(diff(A_csr.rowptr))
@@ -221,9 +188,7 @@ function GPUSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     return GPUSparseMatrixELL(m, n, colval, nzval)
 end
 
-function Base.getindex(
-        A::GPUSparseMatrixELL{T, Ti}, i::Integer, j::Integer
-    ) where {T, Ti}
+function Base.getindex(A::GPUSparseMatrixELL{T,Ti}, i::Integer, j::Integer) where {T,Ti}
     (; colval, nzval) = A
     k2 = size(colval, 2)
     colval_row = view(colval, i, :)
@@ -241,13 +206,13 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
 
 @kernel function spmv_ell!(
-        c::AbstractVector{T},
-        A_colval::AbstractMatrix{Ti},
-        A_nzval::AbstractMatrix{T},
-        b::AbstractVector{T},
-        α::Number,
-        β::Number
-    ) where {T, Ti}
+    c::AbstractVector{T},
+    A_colval::AbstractMatrix{Ti},
+    A_nzval::AbstractMatrix{T},
+    b::AbstractVector{T},
+    α::Number,
+    β::Number,
+) where {T,Ti}
     i = @index(Global, Linear)
     s = zero(T)
     for k in axes(A_colval, 2)
@@ -260,14 +225,10 @@ SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixELL,
-        b::AbstractVector,
-        α::Number,
-        β::Number
-    )
+    c::AbstractVector, A::GPUSparseMatrixELL, b::AbstractVector, α::Number, β::Number
+)
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
-    kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
+    kernel!(c, A.colval, A.nzval, b, α, β; ndrange=size(A, 1))
     return c
 end

@@ -4,16 +4,13 @@
 Read an optimization problem stored in a (possibly gzipped) MPS file stored at `path`, return an [`MILP`](@ref) object.
 """
 function read_milp(
-        path::String;
-        mpsformat::Symbol = :free,
-        dataset::String = "",
-        name::String = "",
-    )
+    path::String; mpsformat::Symbol=:free, dataset::String="", name::String=""
+)
     if endswith(path, ".mps.gz")
         contents = GZip.open(path, "r") do f
             read(f, String)
         end
-        mps_path = tempname(; suffix = ".mps")
+        mps_path = tempname() #; suffix = ".mps") (only work on Julia 1.12+)
         open(mps_path, "w") do f
             write(f, contents)
         end
@@ -52,12 +49,10 @@ function read_milp(
     varname = varnames
 
     milp = MILP(;
-        c, G, h, A, b, l, u, intvar = binvar .| intvar, varname,
-        dataset, name, path
+        c, G, h, A, b, l, u, intvar=binvar .| intvar, varname, dataset, name, path
     )
     return milp
 end
-
 
 """
     read_sol(path::String, milp::MILP)
@@ -86,7 +81,6 @@ function read_sol(path::String, milp::MILP)
     return x
 end
 
-
 """
     write_sol(path::String, x::AbstractVector, milp::MILP)
 
@@ -104,5 +98,5 @@ function write_sol(path::String, x::AbstractVector{<:Number}, milp::MILP)
             print(f, ret, milp.varname[i], space, x[i])
         end
     end
-    return
+    return nothing
 end
