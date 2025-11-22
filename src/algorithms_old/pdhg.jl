@@ -98,70 +98,93 @@ end
         show_progress::Bool=true
     )
     
-Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init` and dual variable `y_init`.
-
-Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
+Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
 """
 function pdhg(
         milp::MILP,
         params::PDHGParameters,
-        x_init::V = zero(milp.c);
-        y_init::V = zero(milp_init.q);
+        x_init::Vector = zero(milp.c);
+        show_progress::Bool = true
+    )
+    starting_time = time()
+    sad = SaddlePointProblem(milp)
+    y_init = zero(sad.q)
+    return pdhg(sad, params, x_init, y_init; show_progress, starting_time)
+end
+
+"""
+    pdhg(
+        sad::SaddlePointProblems,
+        params::PDHGParameters,
+        x_init::Vector=zero(sad.c);
+        y_init::Vector=zero(sad.q);
+        show_progress::Bool=true
+    )
+    
+Apply the primal-dual hybrid gradient algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `(x_init, y_init)`.
+
+Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
+"""
+function pdhg(
+        sad_init::SaddlePointProblem,
+        params::PDHGParameters,
+        x_init::Vector = zero(sad_init.c),
+        y_init::Vector = zero(sad_init.q);
         show_progress::Bool = true,
         starting_time::Float64 = time()
     )
-    milp, state = initialize(milp_init, params, x_init, y_init; starting_time)
+    sad, state = initialize(sad_init, params, x_init, y_init; starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
         yield()
         for _ in 1:params.check_every
-            step!(state, milp)
+            step!(state, sad)
             next!(prog; showvalues = (("relative_error", relative(state.err)),))
         end
-        prepare_check!(state, milp, params)
+        prepare_check!(state, sad, params)
         if termination_check!(state, params)
             break
         end
     end
     finish!(prog)
-    return get_results(state, milp)
+    return get_results(state, sad)
 end
 
 function initialize(
-        milp_init::MILP,
+        sad_init::SaddlePointProblem,
         params::PDHGParameters{T, Ti, M},
         x_init::Vector,
         y_init::Vector;
         starting_time::Float64
     ) where {T, Ti, M}
     (; backend) = params
-    preconditioner = compute_preconditioner(milp_init, params)
-    milp = apply(preconditioner, milp_init)
+    preconditioner = compute_preconditioner(sad_init, params)
+    sad = apply(preconditioner, sad_init)
     x, y = preconditioned_solution(preconditioner, x_init, y_init)
-    milp_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp)))
-    η = fixed_stepsize(milp_righttypes, params)
-    milp_gpu = adapt(backend, milp_righttypes)
+    sad_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, sad)))
+    η = fixed_stepsize(sad_righttypes, params)
+    sad_gpu = adapt(backend, sad_righttypes)
     x_gpu = adapt(backend, set_eltype(T, x))
     y_gpu = adapt(backend, set_eltype(T, y))
     state = PDHGState(; x = x_gpu, y = y_gpu, η, starting_time)
-    return milp_gpu, state
+    return sad_gpu, state
 end
 
 function compute_preconditioner(
-        milp::MILP,
+        sad::SaddlePointProblem,
         params::PDHGParameters
     )
-    (; K, Kᵀ) = milp
+    (; K, Kᵀ) = sad
     (; precond_cb_α) = params
     preconditioner = chambolle_pock_preconditioner(K, Kᵀ; α = precond_cb_α)
     return preconditioner
 end
 
 function fixed_stepsize(
-        milp::MILP{T},
+        sad::SaddlePointProblem{T},
         params::PDHGParameters
     ) where {T}
-    (; K, Kᵀ) = milp
+    (; K, Kᵀ) = sad
     (; stepsize_scaling) = params
     η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
     return η
@@ -169,10 +192,10 @@ end
 
 function step!(
         state::PDHGState{T, V},
-        milp::MILP{T, V},
+        sad::SaddlePointProblem{T, V},
     ) where {T, V}
     (; x, y, η, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = milp
+    (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
 
     τ, σ = η / ω, η * ω
 
@@ -193,10 +216,10 @@ end
 
 function kkt_errors(
         state::PDHGState,
-        milp::MILP{T, V},
+        sad::SaddlePointProblem{T, V},
     ) where {T, V}
     (; x, y, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = milp
+    (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
 
     λ = proj_λ.(c - Kᵀ * y, l, u)
     λ⁺ = positive_part.(λ)
@@ -246,13 +269,13 @@ end
 
 function prepare_check!(
         state::PDHGState,
-        milp::MILP,
+        sad::SaddlePointProblem,
         params::PDHGParameters
     )
     (; starting_time) = state
     (; record_error_history) = params
     state.time_elapsed = time() - starting_time
-    state.err = kkt_errors(state, milp)
+    state.err = kkt_errors(state, sad)
     if record_error_history
         push!(state.error_history, (state.kkt_passes, state.err))
     end
@@ -261,10 +284,10 @@ end
 
 function get_results(
         state::PDHGState,
-        milp::MILP,
+        sad::SaddlePointProblem,
     )
     (; x, y) = state
-    (; preconditioner) = milp
+    (; preconditioner) = sad
     x_cpu, y_cpu = Array(x), Array(y)
     x_unprec, y_unprec = unpreconditioned_solution(preconditioner, x_cpu, y_cpu)
     return (; x = x_unprec, y = y_unprec), state

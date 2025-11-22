@@ -1,33 +1,42 @@
 """
     MILP
 
-Represent a Mixed Integer Linear Program in "PDLP form":
+Represent a Mixed Integer Linear Program in "cuPDLPx form":
 
-    min cᵀx   s.t.   Gx ≥ h, Ax = b, l ≤ x ≤ u
+    min cᵀx   s.t.   lv ≤ x ≤ uv, lc <= A * x <= uc
 
 # Fields
 
 $(TYPEDFIELDS)
 """
-struct MILP <: AbstractProblem
+struct MILP{
+        T <: Number,
+        V <: AbstractVector{T},
+        M <: AbstractMatrix{T},
+        Vb <: AbstractVector{Bool},
+    }
     "objective vector"
-    c::Vector{Float64}
-    "inequality constraint matrix"
-    G::SparseMatrixCSC{Float64, Int}
-    "inequality constraint right-hand side"
-    h::Vector{Float64}
-    "equality constraint matrix"
-    A::SparseMatrixCSC{Float64, Int}
-    "equality constraint right-hand side"
-    b::Vector{Float64}
+    c::V
     "variable lower bound"
-    l::Vector{Float64}
+    lv::V
     "variable upper bound"
-    u::Vector{Float64}
-    "specify which variables must be integers"
-    intvar::Vector{Bool}
-    "list of variable names"
-    varname::Vector{String}
+    uv::V
+    "constraint matrix"
+    A::M
+    "transposed constraint matrix"
+    At::M
+    "constraint lower bound"
+    lc::V
+    "constraint upper bound"
+    uc::V
+    "left preconditioner"
+    D1::Diagonal{T, V}
+    "right preconditioner"
+    D2::Diagonal{T, V}
+    "which variables must be integers"
+    int_var::Vb
+    "variable names"
+    var_names::Vector{String}
     "source dataset"
     dataset::String
     "instance name (last part of the path)"
@@ -36,34 +45,69 @@ struct MILP <: AbstractProblem
     path::String
 
     function MILP(;
-            c, G, h, A, b, l, u,
-            intvar = fill(false, length(c)),
-            varname = map(string, eachindex(c)),
-            dataset = "",
-            name = "",
-            path = ""
+            c,
+            lv,
+            uv,
+            A,
+            lc,
+            uc,
+            D1,
+            D2,
+            int_var,
+            var_names,
+            dataset,
+            name,
+            path
         )
-        n = length(c)
-        m₁ = length(h)
-        m₂ = length(b)
-        @assert n == length(l) == length(u)
-        @assert n == length(intvar) == length(varname)
-        @assert n == size(G, 2) == size(A, 2)
-        @assert m₁ == size(G, 1)
-        @assert m₂ == size(A, 1)
+        n, m = size(A)
+        @assert n == length(c) == length(lv) == length(uv)
+        @assert m == length(lc) == length(uc)
 
-        @assert all(isfinite, c)
-        @assert all(isfinite, h)
-        @assert all(isfinite, b)
+        At = convert(typeof(A), transpose(A))
+
+        T = Base.promote_eltype(c, lv, uv, A, lc, uc, D1, D2)
+        V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
+        M = typeof(A)
+        Vb = typeof(int_var)
+
+        backends = map(get_backend, (c, lv, uv, A, lc, uc, D1, D2))
+        @assert all(==(backends[1]), backends)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
         end
 
-        return new(
-            c, G, h, A, b, l, u, intvar, varname, dataset, name, path
+        return new{T, V, M, Vb}(
+            c,
+            lv,
+            uv,
+            A,
+            At,
+            lc,
+            uc,
+            D1,
+            D2,
+            int_var,
+            var_names,
+            dataset,
+            name,
+            path
         )
     end
+end
+
+function MILP(qps::QPSData; kwargs...)
+    return MILP(;
+        c = qps.c,
+        lv = qps.lvar,
+        uv = qps.uvar,
+        A = sparse(qps.arows, qps.acols, qps.avals, length(qps.lcon), length(qps.lvar)),
+        lc = qps.lcon,
+        uc = qps.ucon,
+        int_var = (qps.vartypes .== VTYPE_Binary) .| (qps.vartypes .== VTYPE_Integer),
+        var_names = qps.varnames,
+        kwargs...
+    )
 end
 
 function Base.show(io::IO, milp::MILP)
@@ -76,17 +120,46 @@ function Base.show(io::IO, milp::MILP)
     )
 end
 
+KernelAbstractions.get_backend(milp::MILP) = get_backend(milp.c)
+
+"""
+    nbvar(milp)
+
+Return the number of variables in `milp`.
+"""
 nbvar(milp::MILP) = length(milp.c)
-nbvar_int(milp::MILP) = sum(milp.intvar)
+
+"""
+    nbvar_int(milp)
+
+Return the number of integer variables in `milp`.
+"""
+nbvar_int(milp::MILP) = sum(milp.int_var)
+
+"""
+    nbvar_cont(milp)
+
+Return the number of integer variables in `milp`.
+"""
 nbvar_cont(milp::MILP) = nbvar(milp) - nbvar_int(milp)
 
-nbcons(milp::MILP) = nbcons_eq(milp) + nbcons_ineq(milp)
-nbcons_eq(milp::MILP) = length(milp.b)
-nbcons_ineq(milp::MILP) = length(milp.h)
+"""
+    nbcons(milp)
+
+Return the number of constraints in `milp`, not including variable bounds or integrality requirements.
+"""
+nbcons(milp::MILP) = size(milp.A, 1)
 
 """
-    relax(milp)
+    nbcons_eq(milp)
 
-Return a new `MILP` identical to `milp` but without integrality requirements.
+Return the number of equality constraints in `milp`.
 """
-relax(milp::MILP) = @set milp.intvar = zero(milp.intvar)
+nbcons_eq(milp::MILP) = mapreduce((l, u) -> (l == u), +, milp.lc, milp.uc)
+
+"""
+    nbcons_ineq(milp)
+
+Return the number of inequality constraints in `milp`, not including variable bounds.
+"""
+nbcons_ineq(milp::MILP) = nbcons(milp) - nbcons_eq(milp)
