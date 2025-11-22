@@ -6,7 +6,6 @@ using Atomix
 using DispatchDoctor
 using DocStringExtensions
 using GPUArrays
-using GZip
 using IterativeSolvers
 using KernelAbstractions
 using LinearAlgebra
@@ -25,6 +24,7 @@ using Statistics
     include("utils/linalg.jl")
 
     include("problems/milp.jl")
+    include("problems/modify.jl")
     include("problems/solution.jl")
 
     include("algorithms/types.jl")

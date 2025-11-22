@@ -7,6 +7,8 @@ relax(milp::MILP) = @set milp.int_var = zero(milp.int_var)
 
 """
     precondition(milp, D1, D2)
+
+Return a new `MILP` to which `D1` has been applied as a left preconditioner and `D2` as a right preconditioner.
 """
 function precondition(milp::MILP, D1::Diagonal, D2::Diagonal)
     (;
@@ -15,8 +17,8 @@ function precondition(milp::MILP, D1::Diagonal, D2::Diagonal)
     ) = milp
     return MILP(;
         c = D2 * c,
-        lv = D2 * lv,
-        uv = D2 * uv,
+        lv = D2 \ lv,
+        uv = D2 \ uv,
         A = D1 * A * D2,
         At = D2 * At * D1,
         lc = D1 * lc,
@@ -33,6 +35,8 @@ end
 
 """
     sort_rows_columns(milp)
+
+Return a new `MILP` where the constraint matrix has been permuted by order of increasing column and row density.
 """
 function sort_rows_columns(milp::MILP)
     (;
@@ -144,7 +148,7 @@ single_precision(x) = set_eltype(Float32, set_indtype(Int32, x))
 
 Convert the sparse matrices inside `milp` using constructor `M`.
 """
-function set_indtype(::Type{M}, milp::MILP) where {M}
+function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, dataset, name, path,

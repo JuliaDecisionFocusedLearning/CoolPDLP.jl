@@ -1,63 +1,39 @@
-struct Preconditioner
-    D1::Diagonal{Float64, Vector{Float64}}
-    D2::Diagonal{Float64, Vector{Float64}}
-end
-
-function Base.:*(pb::Preconditioner, pa::Preconditioner)
-    return Preconditioner(pb.D1 * pa.D1, pa.D2 * pb.D2)
-end
-
-function apply(preconditioner::Preconditioner, K, Kᵀ)
-    (; D1, D2) = preconditioner
-    K̃ = D1 * K * D2
-    K̃ᵀ = D2 * Kᵀ * D1
-    return K̃, K̃ᵀ
+function precondition(A::AbstractMatrix, At::AbstractMatrix, D1::Diagonal, D2::Diagonal)
+    A_precond = D1 * A * D2
+    At_precond = D2 * At * D1
+    return A_precond, At_precond
 end
 
 function identity_preconditioner(
-        K::SparseMatrixCSC
+        A::AbstractMatrix, At::AbstractMatrix
     )
-    d1 = ones(size(K, 1))
-    d2 = ones(size(K, 2))
-    return Preconditioner(Diagonal(d1), Diagonal(d2))
+    d1 = ones(size(A, 1))
+    d2 = ones(size(A, 2))
+    return Diagonal(d1), Diagonal(d2)
 end
 
 function diagonal_norm_preconditioner(
-        K::SparseMatrixCSC, Kᵀ::SparseMatrixCSC; p_row::Number, p_col::Number
-    )
-    col_norms = map(j -> column_norm(K, j, p_col), axes(K, 2))
-    row_norms = map(i -> column_norm(Kᵀ, i, p_row), axes(K, 1))
-    d1 = map(rn -> iszero(rn) ? 1.0 : inv(sqrt(rn)), row_norms)
-    d2 = map(cn -> iszero(cn) ? 1.0 : inv(sqrt(cn)), col_norms)
-    return Preconditioner(Diagonal(d1), Diagonal(d2))
+        A::SparseMatrixCSC{T}, At::SparseMatrixCSC{T};
+        p_row::Number, p_col::Number
+    ) where {T}
+    col_norms = map(j -> column_norm(A, j, p_col), axes(A, 2))
+    row_norms = map(i -> column_norm(At, i, p_row), axes(A, 1))
+    d1 = map(rn -> iszero(rn) ? one(T) : inv(sqrt(rn)), row_norms)
+    d2 = map(cn -> iszero(cn) ? one(T) : inv(sqrt(cn)), col_norms)
+    return Diagonal(d1), Diagonal(d2)
 end
 
-function chambolle_pock_preconditioner(K, Kᵀ; α::Number)
-    return diagonal_norm_preconditioner(K, Kᵀ; p_row = 2 - α, p_col = α)
+function chambolle_pock_preconditioner(A, At; alpha::Number)
+    return diagonal_norm_preconditioner(A, At; p_row = 2 - alpha, p_col = alpha)
 end
 
-function ruiz_preconditioner(K, Kᵀ; iterations::Integer)
-    p_acc = identity_preconditioner(K)
+function ruiz_preconditioner(A, At; iterations::Integer)
+    D1, D2 = identity_preconditioner(A, At)
     for _ in 1:iterations
-        p = diagonal_norm_preconditioner(K, Kᵀ; p_col = Inf, p_row = Inf)
-        K, Kᵀ = apply(p, K, Kᵀ)
-        p_acc = p * p_acc
+        D1_next, D2_next = diagonal_norm_preconditioner(A, At; p_col = Inf, p_row = Inf)
+        A, At = precondition(A, At, D1, D2)
+        D1 = D1_next * D1
+        D2 = D2 * D2_next
     end
-    return p_acc
-end
-
-function preconditioned_solution(
-        preconditioner::Preconditioner,
-        x::Vector, y::Vector,
-    )
-    (; D1, D2) = preconditioner
-    return D2 \ x, D1 * y
-end
-
-function unpreconditioned_solution(
-        preconditioner::Preconditioner,
-        x::Vector, y::Vector,
-    )
-    (; D1, D2) = preconditioner
-    return D2 * x, D1 \ y
+    return D1, D2
 end

@@ -3,7 +3,8 @@
 
 Represent a Mixed Integer Linear Program in "cuPDLPx form":
 
-    min cᵀx   s.t.   lv ≤ x ≤ uv, lc <= A * x <= uc
+    min cᵀx   s.t.   lv ≤ x ≤ uv
+                     lc ≤ A * x ≤ uc
 
 # Fields
 
@@ -49,6 +50,7 @@ struct MILP{
             lv,
             uv,
             A,
+            At = convert(typeof(A), transpose(A)),
             lc,
             uc,
             D1,
@@ -59,15 +61,13 @@ struct MILP{
             name,
             path
         )
-        n, m = size(A)
-        @assert n == length(c) == length(lv) == length(uv)
-        @assert m == length(lc) == length(uc)
+        m, n = size(A)
+        @assert n == length(c) == length(lv) == length(uv) == size(D2, 1)
+        @assert m == length(lc) == length(uc) == size(D1, 2)
 
-        At = convert(typeof(A), transpose(A))
-
-        T = Base.promote_eltype(c, lv, uv, A, lc, uc, D1, D2)
+        T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
         V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
-        M = typeof(A)
+        M = promote_type(typeof(A), typeof(At))
         Vb = typeof(int_var)
 
         backends = map(get_backend, (c, lv, uv, A, lc, uc, D1, D2))
@@ -104,19 +104,21 @@ function MILP(qps::QPSData; kwargs...)
         A = sparse(qps.arows, qps.acols, qps.avals, length(qps.lcon), length(qps.lvar)),
         lc = qps.lcon,
         uc = qps.ucon,
-        int_var = (qps.vartypes .== VTYPE_Binary) .| (qps.vartypes .== VTYPE_Integer),
+        D1 = Diagonal(ones(length(qps.lcon))),
+        D2 = Diagonal(ones(length(qps.lvar))),
+        int_var = convert(Vector{Bool}, (qps.vartypes .== VTYPE_Binary) .| (qps.vartypes .== VTYPE_Integer)),
         var_names = qps.varnames,
         kwargs...
     )
 end
 
-function Base.show(io::IO, milp::MILP)
+function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
     return print(
         io, """
-        MILP instance $(milp.name) 
+        MILP{$T, $V, $M} instance $(milp.name) 
         - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
         - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
-        - nonzeros: $(nnz(milp.G) + nnz(milp.A))"""
+        - nonzeros: $(nnz(milp.A))"""
     )
 end
 

@@ -5,7 +5,7 @@ zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 
 @inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
 
-function proj_λ(λ::T, l::T, u::T) where {T <: Number}
+@inline function proj_multiplier(λ::T, l::T, u::T) where {T <: Number}
     lmin = l == typemin(T)
     umax = u == typemax(T)
     return ifelse(
@@ -29,6 +29,23 @@ custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
 safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
 safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
+
+function p(y::V, l::V, u::V) where {V <: AbstractVector}
+    return mapreduce(safeprod_rightpos, +, u, y) - mapreduce(safeprod_rightneg, +, l, y)
+end
+
+function bound_scale(l::Number, u::Number)
+    if l == u
+        return abs2(l)
+    elseif isfinite(l)
+        return abs2(l)
+    elseif isfinite(u)
+        return abs2(u)
+    else
+        return zero(T)
+    end
+end
+
 
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
     K::M
@@ -92,4 +109,10 @@ function permute_rows(A::SparseMatrixCSC, row_perm::Vector{Int})
     At = sparse(transpose(A))
     At_sorted_col = permute_columns(At, row_perm)
     return sparse(transpose(At_sorted_col))
+end
+
+function common_backend(args::Vararg{Any, N}) where {N}
+    backends = map(get_backend, args)
+    @assert all(==(backends[1]), backends)
+    return backends[1]
 end

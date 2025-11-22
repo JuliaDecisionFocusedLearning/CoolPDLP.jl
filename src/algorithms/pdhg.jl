@@ -15,7 +15,7 @@ struct PDHGParameters{
     "scaling of the inverse spectral norm of `K` when defining the step size"
     stepsize_scaling::T
     "norm parameter in the Chambolle-pock preconditioner"
-    precond_cb_α::T
+    precond_cb_alpha::T
     # termination parameters
     "tolerance when checking KKT relative errors to decide termination"
     termination_reltol::T
@@ -35,18 +35,17 @@ struct PDHGParameters{
             ::Type{M} = SparseMatrixCSC,
             backend::B = CPU();
             stepsize_scaling = _T(0.9),
-            precond_cb_α = _T(1.0),
+            precond_cb_alpha = _T(1.0),
             termination_reltol = _T(1.0e-4),
             max_kkt_passes = 100_000,
             time_limit = 100.0,
-            check_every = 40,
+            check_every = 100,
             record_error_history = false,
         ) where {T, Ti, M, B}
-
         return new{T, Ti, M, B}(
             backend,
             stepsize_scaling,
-            precond_cb_α,
+            precond_cb_alpha,
             termination_reltol,
             max_kkt_passes,
             time_limit,
@@ -94,7 +93,8 @@ end
     pdhg(
         milp::MILP,
         params::PDHGParameters,
-        x_init::AbstractVector=zero(milp.c);
+        x_init=zero(milp.lv),
+        y_init=zero(milp.lc);
         show_progress::Bool=true
     )
     
@@ -103,14 +103,61 @@ Apply the PDHG algorithm to solve the continuous relaxation of `milp` using conf
 Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
 """
 function pdhg(
-        milp::MILP,
+        milp_init::MILP,
         params::PDHGParameters,
-        x_init::V = zero(milp.c);
-        y_init::V = zero(milp_init.q);
+        x_init::AbstractVector = zero(milp_init.lv),
+        y_init::AbstractVector = zero(milp_init.lc);
         show_progress::Bool = true,
         starting_time::Float64 = time()
     )
-    milp, state = initialize(milp_init, params, x_init, y_init; starting_time)
+    milp, x, y = preprocess(milp_init, params, x_init, y_init)
+    state = pdhg_preprocessed(milp, params, x, y; show_progress, starting_time)
+    return get_solution(state, milp), state
+end
+
+function preprocess(
+        milp_init::MILP,
+        params::PDHGParameters{T, Ti, M},
+        x_init::AbstractVector,
+        y_init::AbstractVector,
+    ) where {T, Ti, M}
+    (; backend) = params
+    D1, D2 = compute_preconditioner(milp_init, params)
+
+    milp_precond = precondition(milp_init, D1, D2)
+    milp_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp_precond)))
+    milp_adapted = adapt(backend, milp_righttypes)
+
+    x_precond = D2 \ x_init
+    x_righttype = set_eltype(T, x_precond)
+    x_adapted = adapt(backend, x_righttype)
+
+    y_precond = D1 * y_init
+    y_righttype = set_eltype(T, y_precond)
+    y_adapted = adapt(backend, y_righttype)
+
+    return milp_adapted, x_adapted, y_adapted
+end
+
+function compute_preconditioner(
+        milp::MILP,
+        params::PDHGParameters
+    )
+    (; A, At) = milp
+    (; precond_cb_alpha) = params
+    D1, D2 = chambolle_pock_preconditioner(A, At; alpha = precond_cb_alpha)
+    return D1, D2
+end
+
+function pdhg_preprocessed(
+        milp::MILP{T, V},
+        params::PDHGParameters{T},
+        x::V,
+        y::V;
+        show_progress::Bool,
+        starting_time::Float64
+    ) where {T, V}
+    state = initialize(milp, params, x, y; starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
         yield()
@@ -124,46 +171,28 @@ function pdhg(
         end
     end
     finish!(prog)
-    return get_results(state, milp)
+    return state
 end
 
 function initialize(
-        milp_init::MILP,
+        milp::MILP{T, V},
         params::PDHGParameters{T, Ti, M},
-        x_init::Vector,
-        y_init::Vector;
+        x::V,
+        y::V;
         starting_time::Float64
-    ) where {T, Ti, M}
-    (; backend) = params
-    preconditioner = compute_preconditioner(milp_init, params)
-    milp = apply(preconditioner, milp_init)
-    x, y = preconditioned_solution(preconditioner, x_init, y_init)
-    milp_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp)))
-    η = fixed_stepsize(milp_righttypes, params)
-    milp_gpu = adapt(backend, milp_righttypes)
-    x_gpu = adapt(backend, set_eltype(T, x))
-    y_gpu = adapt(backend, set_eltype(T, y))
-    state = PDHGState(; x = x_gpu, y = y_gpu, η, starting_time)
-    return milp_gpu, state
-end
-
-function compute_preconditioner(
-        milp::MILP,
-        params::PDHGParameters
-    )
-    (; K, Kᵀ) = milp
-    (; precond_cb_α) = params
-    preconditioner = chambolle_pock_preconditioner(K, Kᵀ; α = precond_cb_α)
-    return preconditioner
+    ) where {T, Ti, V, M}
+    η = fixed_stepsize(milp, params)
+    state = PDHGState(; x, y, η, starting_time)
+    return state
 end
 
 function fixed_stepsize(
         milp::MILP{T},
-        params::PDHGParameters
+        params::PDHGParameters{T}
     ) where {T}
-    (; K, Kᵀ) = milp
+    (; A, At) = milp
     (; stepsize_scaling) = params
-    η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
+    η = T(stepsize_scaling) * inv(spectral_norm(A, At))
     return η
 end
 
@@ -172,20 +201,19 @@ function step!(
         milp::MILP{T, V},
     ) where {T, V}
     (; x, y, η, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = milp
+    (; c, lv, uv, A, At, lc, uc) = milp
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_X(x - τ * (c - Kᵀ * y))
-    x_step = x - τ * (c - Kᵀ * y)
-    xp = proj_box.(x_step, l, u)
+    # xp = proj_X(x - τ * (c - At * y))
+    x_next = proj_box.(x - τ * (c - At * y), lv, uv)
 
     # yp = proj_Y(y + σ * (q - K * (2 * xp - x)))
-    y_step = y + σ * (q - K * (2 * xp - x))
-    yp = ifelse.(ineq_cons, positive_part.(y_step), y_step)
+    Axdiff = A * (2 * x_next - x)
+    y_next = y - σ * Axdiff - σ * proj_box.(inv(σ) * y - Axdiff, -uc, -lc)
 
-    copy!(x, xp)
-    copy!(y, yp)
+    copy!(x, x_next)
+    copy!(y, y_next)
 
     state.kkt_passes += 1
     return nothing
@@ -195,34 +223,24 @@ function kkt_errors(
         state::PDHGState,
         milp::MILP{T, V},
     ) where {T, V}
+    # TODO: go back to initial problem
     (; x, y, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = milp
+    (; c, lv, uv, A, At, lc, uc) = milp
 
-    λ = proj_λ.(c - Kᵀ * y, l, u)
-    λ⁺ = positive_part.(λ)
-    λ⁻ = negative_part.(λ)
-    l_noinf = max.(nextfloat(typemin(T)), l)
-    u_noinf = min.(prevfloat(typemax(T)), u)
+    Ax = A * x
+    r = proj_multiplier.(c - At * y, lv, uv)
 
-    lᵀλ⁺ = dot(l_noinf, λ⁺)
-    uᵀλ⁻ = dot(u_noinf, λ⁻)
-    qᵀy = dot(q, y)
-    cᵀx = dot(c, x)
+    pc = p(-y, lc, uc)
+    pv = p(-r, lv, uv)
 
-    primal = norm(
-        ifelse.(
-            ineq_cons,
-            positive_part.(q - K * x),
-            q - K * x
-        )
-    )
-    primal_scale = one(T) + norm(q)
+    primal = norm(Ax - proj_box.(Ax, lc, uc))
+    primal_scale = one(T) + norm(bound_scale.(lc, uc))
 
-    dual = norm(c - Kᵀ * y - λ)
+    dual = norm(c - At * y - r)
     dual_scale = one(T) + norm(c)
 
-    gap = abs(qᵀy + lᵀλ⁺ - uᵀλ⁻ - cᵀx)
-    gap_scale = one(T) + abs(qᵀy + lᵀλ⁺ - uᵀλ⁻) + abs(cᵀx)
+    gap = abs(dot(c, x) + pc + pv)
+    gap_scale = one(T) + abs(pc + pv) + abs(dot(c, x))
 
     weighted_agg = sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
 
@@ -259,13 +277,11 @@ function prepare_check!(
     return nothing
 end
 
-function get_results(
+function get_solution(
         state::PDHGState,
         milp::MILP,
     )
     (; x, y) = state
-    (; preconditioner) = milp
-    x_cpu, y_cpu = Array(x), Array(y)
-    x_unprec, y_unprec = unpreconditioned_solution(preconditioner, x_cpu, y_cpu)
-    return (; x = x_unprec, y = y_unprec), state
+    (; D1, D2) = milp
+    return D2 * x, D1 \ y
 end
