@@ -22,7 +22,6 @@ struct PDHGParameters{
             ::Type{Ti} = Int,
             ::Type{M} = SparseMatrixCSC,
             backend::B = CPU();
-            zero_tol = _T(1.0e-8),
             check_every = 100,
             record_error_history = true,
             chambolle_pock_alpha = _T(1.0),
@@ -34,16 +33,16 @@ struct PDHGParameters{
 
         generic = GenericParameters(
             T, Ti, M, backend;
-            zero_tol, check_every, record_error_history
+            zero_tol = _T(NaN), check_every, record_error_history
         )
         preconditioning = PreconditioningParameters(;
-            chambolle_pock_alpha, ruiz_iter = 0
+            chambolle_pock_alpha = _T(chambolle_pock_alpha), ruiz_iter = 0
         )
         step_size = StepSizeParameters(;
-            invnorm_scaling
+            invnorm_scaling = _T(invnorm_scaling)
         )
         termination = TerminationParameters(;
-            termination_reltol, max_kkt_passes, time_limit
+            termination_reltol = _T(termination_reltol), max_kkt_passes, time_limit
         )
 
         return new{T, typeof(generic), typeof(preconditioning), typeof(step_size), typeof(termination)}(
@@ -55,6 +54,12 @@ struct PDHGParameters{
     end
 end
 
+@kwdef struct PDHGScratch{T <: Number, V <: AbstractVector{T}}
+    x::V
+    y::V
+    r::V
+end
+
 
 """
     PDHGState
@@ -63,21 +68,21 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PDHGState{
+@kwdef struct PDHGState{
         T <: Number, V <: AbstractVector{T},
     }
     "current primal solution"
-    const x::V
+    x::V
     "current dual solution"
-    const y::V
+    y::V
     "step size"
-    const η::T
+    η::T
     "primal weight"
-    const ω::T
-    "scale of the primal feasibility error"
-    primal_scale::T
-    "scale of the dual feasibility error"
-    dual_scale::T
+    ω::T
+    "scratch space"
+    scratch::PDHGScratch{T, V}
+    "scales of the feasibility errors"
+    scales::FeasibilityErrorScales{T}
     "convergence stats"
     stats::ConvergenceStats{T}
 end
@@ -130,9 +135,10 @@ function initialize(
     ) where {T}
     η = fixed_stepsize(milp, params.step_size)
     ω = one(η)
-    (; primal_scale, dual_scale) = feasibility_error_scales(milp)
+    scratch = PDHGScratch(; x = similar(x), y = similar(y), r = similar(x))
+    scales = FeasibilityErrorScales(milp)
     stats = ConvergenceStats(T; starting_time)
-    state = PDHGState(; x, y, η, ω, primal_scale, dual_scale, stats)
+    state = PDHGState(; x, y, η, ω, scratch, scales, stats)
     return state
 end
 
@@ -162,52 +168,55 @@ function step!(
         state::PDHGState{T, V},
         milp::MILP{T, V},
     ) where {T, V}
-    (; x, y, η, ω) = state
+    (; x, y, η, ω, scratch) = state
     (; c, lv, uv, A, At, lc, uc) = milp
 
     τ, σ = η / ω, η * ω
 
     # xp = proj_X(x - τ * (c - At * y))
-    xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    At_y = mul!(scratch.x, At, y)
+    xdiff = @. scratch.x = 2 * proj_box(x - τ * (c - At_y), lv, uv) - x
 
     # yp = y - σ * A * (2xp - x) - σ proj_{-Y}(y / σ - A * (2xp - x)))
-    Axdiff = A * (2 * xp - x)
-    yp = y - σ * Axdiff - σ * proj_box.(inv(σ) * y - Axdiff, -uc, -lc)
+    A_xdiff = mul!(scratch.y, A, xdiff)
+    @. y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
 
-    copy!(x, xp)
-    copy!(y, yp)
+    @. x = (xdiff + x) / 2  # TODO: ditch this one
 
     state.stats.kkt_passes += 1
     return nothing
 end
 
-function kkt_errors(
+function kkt_errors!(
         state::PDHGState,
         milp::MILP{T, V},
     ) where {T, V}
     # TODO: go back to initial problem
-    (; x, y, primal_scale, dual_scale) = state
+    (; x, y, scratch, scales) = state
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    Ax = A * x
-    r = proj_multiplier.(c - At * y, lv, uv)
+    A_x = mul!(scratch.y, A, x)
+    At_y = mul!(scratch.x, At, y)
+    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
 
-    pc = p(-y, lc, uc)
-    pv = p(-r, lv, uv)
-
-    primal = norm(Ax - proj_box.(Ax, lc, uc))
-
-    dual = norm(c - At * y - r)
+    pc = pm(y, lc, uc)
+    pv = pm(r, lv, uv)
 
     gap = abs(dot(c, x) + pc + pv)
     gap_scale = one(T) + abs(pc + pv) + abs(dot(c, x))
+
+    primal_diff = @. scratch.y = A_x - proj_box(A_x, lc, uc)
+    primal = norm(primal_diff)
+
+    dual_diff = @. scratch.x = c - At_y - r
+    dual = norm(dual_diff)
 
     return KKTErrors(;
         primal,
         dual,
         gap,
-        primal_scale,
-        dual_scale,
+        primal_scale = scales.primal,
+        dual_scale = scales.dual,
         gap_scale,
     )
 end
@@ -219,7 +228,7 @@ function termination_check!(
     )
     (; stats) = state
     stats.time_elapsed = time() - stats.starting_time
-    stats.err = kkt_errors(state, milp)
+    stats.err = kkt_errors!(state, milp)
     if params.generic.record_error_history
         push!(stats.error_history, (stats.kkt_passes, stats.err))
     end

@@ -1,3 +1,15 @@
+@kwdef struct FeasibilityErrorScales{T <: Number}
+    primal::T
+    dual::T
+end
+
+function FeasibilityErrorScales(milp::MILP{T}) where {T}
+    (; lc, uc, c) = milp
+    primal = one(T) + norm(bound_scale.(lc, uc))
+    dual = one(T) + norm(c)
+    return FeasibilityErrorScales(; primal, dual)
+end
+
 """
     KKTErrors
 
@@ -38,12 +50,6 @@ function KKTErrors(::Type{T}) where {T}
     )
 end
 
-function feasibility_error_scales(milp::MILP{T}) where {T}
-    (; lc, uc, c) = milp
-    primal_scale = one(T) + norm(bound_scale.(lc, uc))
-    dual_scale = one(T) + norm(c)
-    return (; primal_scale, dual_scale)
-end
 
 function relative(err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err

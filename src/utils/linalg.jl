@@ -27,11 +27,13 @@ sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 
 custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
-safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
-safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
+safeprod_rightposflip(left, right) = ifelse(isinf(left), positive_part(-right), left * positive_part(-right))
+safeprod_rightnegflip(left, right) = ifelse(isinf(left), negative_part(-right), left * negative_part(-right))
 
-function p(y::V, l::V, u::V) where {V <: AbstractVector}
-    return mapreduce(safeprod_rightpos, +, u, y) - mapreduce(safeprod_rightneg, +, l, y)
+function pm(y::V, l::V, u::V) where {V <: AbstractVector}
+    uᵀmy = mapreduce(safeprod_rightposflip, +, u, y)
+    lᵀmy = mapreduce(safeprod_rightnegflip, +, l, y)
+    return uᵀmy - lᵀmy
 end
 
 function bound_scale(l::Number, u::Number)
