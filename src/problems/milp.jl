@@ -50,7 +50,7 @@ struct MILP{
             lv,
             uv,
             A,
-            At = convert(typeof(A), transpose(A)),
+            At,
             lc,
             uc,
             D1,
@@ -102,6 +102,7 @@ function MILP(qps::QPSData; kwargs...)
         lv = qps.lvar,
         uv = qps.uvar,
         A = sparse(qps.arows, qps.acols, qps.avals, length(qps.lcon), length(qps.lvar)),
+        At = sparse(qps.acols, qps.arows, qps.avals, length(qps.lvar), length(qps.lcon)),
         lc = qps.lcon,
         uc = qps.ucon,
         D1 = Diagonal(ones(length(qps.lcon))),
@@ -115,7 +116,8 @@ end
 function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
     return print(
         io, """
-        MILP{$T, $V, $M} instance $(milp.name) 
+        MILP instance $(milp.name) 
+        - types: values $T, vectors $V, matrices $M
         - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
         - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
         - nonzeros: $(nnz(milp.A))"""

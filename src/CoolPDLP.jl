@@ -9,6 +9,7 @@ using GPUArrays
 using IterativeSolvers
 using KernelAbstractions
 using LinearAlgebra
+using MathOptInterface: TerminationStatusCode, ITERATION_LIMIT, OPTIMAL, TIME_LIMIT
 using OhMyThreads
 using ProgressMeter
 using QPSReader
@@ -19,16 +20,21 @@ using StableRNGs
 using Statistics
 
 @stable begin
-
     include("utils/matrices.jl")
     include("utils/linalg.jl")
+    include("utils/device.jl")
 
     include("problems/milp.jl")
     include("problems/modify.jl")
     include("problems/solution.jl")
 
-    include("algorithms/types.jl")
-    include("algorithms/preconditioner.jl")
+    include("components/errors.jl")
+    include("components/termination.jl")
+    include("components/restart.jl")
+    include("components/preconditioning.jl")
+    include("components/step_size.jl")
+    include("components/generic.jl")
+
     include("algorithms/pdhg.jl")
 end
 

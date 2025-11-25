@@ -35,8 +35,12 @@ function p(y::V, l::V, u::V) where {V <: AbstractVector}
 end
 
 function bound_scale(l::Number, u::Number)
-    if l == u
-        return abs2(l)
+    if isfinite(l) && isfinite(u)
+        if l == u
+            return abs2(l)
+        else
+            return abs2(l) + abs2(u)
+        end
     elseif isfinite(l)
         return abs2(l)
     elseif isfinite(u)
@@ -45,7 +49,6 @@ function bound_scale(l::Number, u::Number)
         return zero(T)
     end
 end
-
 
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
     K::M
@@ -81,38 +84,3 @@ function spectral_norm(
 end
 
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
-
-function increasing_column_order(A::SparseMatrixCSC)
-    col_lengths = diff(A.colptr)
-    return sortperm(col_lengths)
-end
-
-function permute_columns(A::SparseMatrixCSC, col_perm::Vector{Int})
-    (; colptr, rowval, nzval) = A
-    new_colptr = similar(colptr)
-    new_rowval = similar(rowval)
-    new_nzval = similar(nzval)
-    k = 1
-    for (new_j, j) in enumerate(col_perm)
-        new_colptr[new_j] = k
-        for l in colptr[j]:(colptr[j + 1] - 1)
-            new_rowval[k] = rowval[l]
-            new_nzval[k] = nzval[l]
-            k += 1
-        end
-    end
-    new_colptr[end] = nnz(A) + 1
-    return SparseMatrixCSC(A.m, A.n, new_colptr, new_rowval, new_nzval), col_perm
-end
-
-function permute_rows(A::SparseMatrixCSC, row_perm::Vector{Int})
-    At = sparse(transpose(A))
-    At_sorted_col = permute_columns(At, row_perm)
-    return sparse(transpose(At_sorted_col))
-end
-
-function common_backend(args::Vararg{Any, N}) where {N}
-    backends = map(get_backend, args)
-    @assert all(==(backends[1]), backends)
-    return backends[1]
-end
