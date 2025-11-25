@@ -48,19 +48,20 @@ end
 
 function to_device(
         milp::MILP,
-        x::AbstractVector,
-        y::AbstractVector,
         params::GenericParameters{T, Ti, M},
     ) where {T, Ti, M}
     (; backend) = params
     milp_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp)))
     milp_adapted = adapt(backend, milp_righttypes)
+    return milp_adapted
+end
 
+function to_device(
+        x::AbstractVector,
+        params::GenericParameters{T, Ti, M},
+    ) where {T, Ti, M}
+    (; backend) = params
     x_righttype = set_eltype(T, x)
     x_adapted = adapt(backend, x_righttype)
-
-    y_righttype = set_eltype(T, y)
-    y_adapted = adapt(backend, y_righttype)
-
-    return milp_adapted, x_adapted, y_adapted
+    return x_adapted
 end

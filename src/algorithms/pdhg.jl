@@ -81,8 +81,6 @@ $(TYPEDFIELDS)
     ω::T
     "scratch space"
     scratch::PDHGScratch{T, V}
-    "scales of the feasibility errors"
-    scales::FeasibilityErrorScales{T}
     "convergence stats"
     stats::ConvergenceStats{T}
 end
@@ -108,10 +106,10 @@ function pdhg(
         show_progress::Bool = true,
     )
     starting_time = time()
-    milp, x, y = preprocess(milp_init, x_init, y_init, params)
+    (; milp_init, milp, x, y) = preprocess(milp_init, x_init, y_init, params)
     state = initialize(milp, x, y, params; starting_time)
-    pdhg!(state, milp, params; show_progress)
-    return get_solution(state, milp), state.stats
+    pdhg!(state, milp, milp_init, params; show_progress)
+    return get_solution(state, milp), state
 end
 
 function preprocess(
@@ -120,10 +118,17 @@ function preprocess(
         y_init::AbstractVector,
         params::PDHGParameters,
     )
+    # return (; milp_init, milp = milp_init, x = x_init, y = y_init)
     p = pdlp_preconditioner(milp_init, params.preconditioning)
-    milp_precond, x_precond, y_precond = precondition(milp_init, x_init, y_init, p)
-    milp, x, y = to_device(milp_precond, x_precond, y_precond, params.generic)
-    return milp, x, y
+    milp = precondition_problem(milp_init, p)
+    x, y = precondition_variables(x_init, y_init, p)
+
+    return (;
+        milp_init = to_device(milp_init, params.generic),
+        milp = to_device(milp, params.generic),
+        x = to_device(x, params.generic),
+        y = to_device(y, params.generic),
+    )
 end
 
 function initialize(
@@ -136,15 +141,15 @@ function initialize(
     η = fixed_stepsize(milp, params.step_size)
     ω = one(η)
     scratch = PDHGScratch(; x = similar(x), y = similar(y), r = similar(x))
-    scales = FeasibilityErrorScales(milp)
     stats = ConvergenceStats(T; starting_time)
-    state = PDHGState(; x, y, η, ω, scratch, scales, stats)
+    state = PDHGState(; x, y, η, ω, scratch, stats)
     return state
 end
 
 function pdhg!(
         state::PDHGState,
         milp::MILP,
+        milp_init::MILP,
         params::PDHGParameters;
         show_progress::Bool,
     )
@@ -155,7 +160,7 @@ function pdhg!(
             step!(state, milp)
             next!(prog; showvalues = (("relative_error", relative(state.stats.err)),))
         end
-        termination_check!(state, milp, params)
+        termination_check!(state, milp, milp_init, params)
         if !isnothing(state.stats.termination_status)
             break
         end
@@ -173,14 +178,13 @@ function step!(
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_X(x - τ * (c - At * y))
+    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
     xdiff = @. scratch.x = 2 * proj_box(x - τ * (c - At_y), lv, uv) - x
 
-    # yp = y - σ * A * (2xp - x) - σ proj_{-Y}(y / σ - A * (2xp - x)))
+    # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
     @. y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
-
     @. x = (xdiff + x) / 2  # TODO: ditch this one
 
     state.stats.kkt_passes += 1
@@ -189,46 +193,54 @@ end
 
 function kkt_errors!(
         state::PDHGState,
-        milp::MILP{T, V},
-    ) where {T, V}
+        milp::MILP{T},
+        milp_init::MILP
+    ) where {T}
     # TODO: go back to initial problem
-    (; x, y, scratch, scales) = state
-    (; c, lv, uv, A, At, lc, uc) = milp
+    (; scratch) = state
+    x, y = unprecondition_variables(state.x, state.y, Preconditioner(milp.D1, milp.D2))
+    # x, y = state.x, state.y
+    (; c, lv, uv, A, At, lc, uc) = milp_init
 
     A_x = mul!(scratch.y, A, x)
     At_y = mul!(scratch.x, At, y)
     r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
 
-    pc = pm(y, lc, uc)
-    pv = pm(r, lv, uv)
+    primal_diff = @. scratch.y = A_x - proj_box(A_x, lc, uc)
+    primal = norm(primal_diff)
+    primal_scale = one(T) + sqrt(mapreduce(squared_bound_scale, +, lc, uc))
+
+    dual_diff = @. scratch.x = c - At_y - r
+    dual = norm(dual_diff)
+    @show dual
+    dual_scale = one(T) + norm(c)
+
+    pc = p(-y, lc, uc)
+    pv = p(-r, lv, uv)
 
     gap = abs(dot(c, x) + pc + pv)
     gap_scale = one(T) + abs(pc + pv) + abs(dot(c, x))
 
-    primal_diff = @. scratch.y = A_x - proj_box(A_x, lc, uc)
-    primal = norm(primal_diff)
-
-    dual_diff = @. scratch.x = c - At_y - r
-    dual = norm(dual_diff)
-
-    return KKTErrors(;
+    err = KKTErrors(;
         primal,
         dual,
         gap,
-        primal_scale = scales.primal,
-        dual_scale = scales.dual,
+        primal_scale,
+        dual_scale,
         gap_scale,
     )
+    return err
 end
 
 function termination_check!(
         state::PDHGState,
         milp::MILP,
+        milp_init::MILP,
         params::PDHGParameters
     )
     (; stats) = state
     stats.time_elapsed = time() - stats.starting_time
-    stats.err = kkt_errors!(state, milp)
+    stats.err = kkt_errors!(state, milp, milp_init)
     if params.generic.record_error_history
         push!(stats.error_history, (stats.kkt_passes, stats.err))
     end

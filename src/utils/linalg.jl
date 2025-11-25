@@ -27,16 +27,16 @@ sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
 
 custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
-safeprod_rightposflip(left, right) = ifelse(isinf(left), positive_part(-right), left * positive_part(-right))
-safeprod_rightnegflip(left, right) = ifelse(isinf(left), negative_part(-right), left * negative_part(-right))
+safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
+safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
 
-function pm(y::V, l::V, u::V) where {V <: AbstractVector}
-    uᵀmy = mapreduce(safeprod_rightposflip, +, u, y)
-    lᵀmy = mapreduce(safeprod_rightnegflip, +, l, y)
-    return uᵀmy - lᵀmy
+function p(y::V, l::V, u::V) where {V <: AbstractVector}
+    uᵀy⁺ = mapreduce(safeprod_rightpos, +, u, y)
+    lᵀy⁻ = mapreduce(safeprod_rightneg, +, l, y)
+    return uᵀy⁺ - lᵀy⁻
 end
 
-function bound_scale(l::Number, u::Number)
+function squared_bound_scale(l::Number, u::Number)
     if isfinite(l) && isfinite(u)
         if l == u
             return abs2(l)

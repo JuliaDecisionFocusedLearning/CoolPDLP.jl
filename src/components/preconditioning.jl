@@ -73,8 +73,8 @@ function unprecondition_variables(
     return unprecondition_primal(x, p), unprecondition_dual(y, p)
 end
 
-function precondition(
-        milp::MILP, x::AbstractVector, y::AbstractVector, p::Preconditioner
+function precondition_problem(
+        milp::MILP, p::Preconditioner
     )
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
@@ -103,8 +103,7 @@ function precondition(
         name,
         path
     )
-    x_precond, y_precond = precondition_variables(x, y, p)
-    return milp_precond, x_precond, y_precond
+    return milp_precond
 end
 
 # Preconditioner construction
