@@ -34,6 +34,7 @@ using Statistics
     include("components/preconditioning.jl")
     include("components/step_size.jl")
     include("components/generic.jl")
+    include("components/parameters.jl")
 
     include("algorithms/pdhg.jl")
 end
@@ -44,10 +45,7 @@ export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
 export relax, set_eltype, set_indtype, single_precision, set_matrix_type
 export PrimalDualSolution
 
-export TerminationReason
 export PDHGParameters, PDHGState, pdhg
 export is_feasible, objective_value
-
-export read_milp, write_sol, read_sol
 
 end # module CoolPDLP

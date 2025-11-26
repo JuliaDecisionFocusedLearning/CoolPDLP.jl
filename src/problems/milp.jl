@@ -167,3 +167,22 @@ nbcons_eq(milp::MILP) = mapreduce((l, u) -> (l == u), +, milp.lc, milp.uc)
 Return the number of inequality constraints in `milp`, not including variable bounds.
 """
 nbcons_ineq(milp::MILP) = nbcons(milp) - nbcons_eq(milp)
+
+function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
+    return (
+        isapprox(m1.c, m2.c; kwargs...) &&
+            isapprox(m1.lv, m2.lv; kwargs...) &&
+            isapprox(m1.uv, m2.uv; kwargs...) &&
+            isapprox(m1.A, m2.A; kwargs...) &&
+            isapprox(m1.At, m2.At; kwargs...) &&
+            isapprox(m1.lc, m2.lc; kwargs...) &&
+            isapprox(m1.uc, m2.uc; kwargs...) &&
+            isapprox(m1.D1, m2.D1; kwargs...) &&
+            isapprox(m1.D2, m2.D2; kwargs...) &&
+            m1.int_var == m2.int_var &&
+            m1.var_names == m2.var_names &&
+            m1.dataset == m2.dataset &&
+            m1.name == m2.name &&
+            m1.path == m2.path
+    )
+end

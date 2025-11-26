@@ -12,7 +12,7 @@ end
 
 function Base.show(io::IO, params::StepSizeParameters)
     (; invnorm_scaling) = params
-    return print(io, "Step size: invnorm_scaling=$invnorm_scaling")
+    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling")
 end
 
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}

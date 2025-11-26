@@ -43,7 +43,7 @@ end
 
 function Base.show(io::IO, params::GenericParameters)
     (; backend, zero_tol, check_every, record_error_history) = params
-    return print(io, "Generic: backend=$backend, zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history")
+    return print(io, "GenericParameters: backend=$backend, zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history")
 end
 
 function to_device(

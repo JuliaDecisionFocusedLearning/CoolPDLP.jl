@@ -16,7 +16,7 @@ end
 
 function Base.show(io::IO, params::RestartParameters)
     (; β_sufficient, β_necessary, β_artificial) = params
-    return print(io, "Restart: β_sufficient=$β_sufficient, β_necessary=$β_necessary, β_artificial=$β_artificial")
+    return print(io, "RestartParameters: β_sufficient=$β_sufficient, β_necessary=$β_necessary, β_artificial=$β_artificial")
 end
 
 """

@@ -16,7 +16,7 @@ end
 
 function Base.show(io::IO, params::TerminationParameters)
     (; termination_reltol, max_kkt_passes, time_limit) = params
-    return print(io, "Termination: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit")
+    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit")
 end
 
 
