@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  pull_request:
 
 # needed to allow julia-actions/cache to delete old caches that it has created
 permissions:
@@ -14,7 +15,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
           version: 1

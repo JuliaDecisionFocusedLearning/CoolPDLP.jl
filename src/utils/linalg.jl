@@ -1,11 +1,12 @@
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
+one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 
 @inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
 
-function proj_λ(λ::T, l::T, u::T) where {T <: Number}
+@inline function proj_multiplier(λ::T, l::T, u::T) where {T <: Number}
     lmin = l == typemin(T)
     umax = u == typemax(T)
     return ifelse(
@@ -29,6 +30,28 @@ custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
 safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
 safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
+
+function p(y::V, l::V, u::V) where {V <: AbstractVector}
+    uᵀy⁺ = mapreduce(safeprod_rightpos, +, u, y)
+    lᵀy⁻ = mapreduce(safeprod_rightneg, +, l, y)
+    return uᵀy⁺ - lᵀy⁻
+end
+
+function squared_bound_scale(l::Number, u::Number)
+    if isfinite(l) && isfinite(u)
+        if l == u
+            return abs2(l)
+        else
+            return abs2(l) + abs2(u)
+        end
+    elseif isfinite(l)
+        return abs2(l)
+    elseif isfinite(u)
+        return abs2(u)
+    else
+        return zero(l)
+    end
+end
 
 struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
     K::M
@@ -64,3 +87,6 @@ function spectral_norm(
 end
 
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
+
+mynnz(A::AbstractSparseArray) = nnz(A)
+mynnz(A::AbstractArray) = prod(size(A))

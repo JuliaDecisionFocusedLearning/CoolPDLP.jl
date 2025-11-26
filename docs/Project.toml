@@ -2,6 +2,12 @@
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
+JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
+MathProgBenchmarks = "f7f8d0a1-fd34-491e-a7ac-a4cf52f91fe5"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
+
+[sources]
+CoolPDLP = {path = ".."}
+MathProgBenchmarks = {rev = "main", url = "https://github.com/JuliaDecisionFocusedLearning/MathProgBenchmarks.jl"}

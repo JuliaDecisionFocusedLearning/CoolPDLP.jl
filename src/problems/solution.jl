@@ -1,4 +1,45 @@
 """
+    is_feasible(x, milp[; cons_tol=1e-6, int_tol=1e-5, verbose=true])
+
+Check whether solution vector `x` is feasible for `milp`.
+
+# Keyword arguments
+
+- `cons_tol`: tolerance for constraint satisfaction
+- `int_tol`: tolerance for integrality requirements
+- `verbose`: whether to display warnings
+"""
+function is_feasible(
+        x, milp::MILP;
+        cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
+    )
+    (; lv, uv, A, lc, uc, int_var) = milp
+    bounds_err = max(maximum(x - uv), maximum(lv - x))
+    cons_err = max(maximum(A * x - uc), maximum(lc - A * x))
+    xint = x[int_var]
+    int_err = maximum(abs, xint .- round.(Int, xint))
+    if bounds_err > cons_tol
+        verbose && @warn "Variable bounds not satisfied" bounds_err cons_tol
+        return false
+    elseif cons_err > cons_tol
+        verbose && @warn "Constraints not satisfied" cons_err cons_tol
+        return false
+    elseif int_err > int_tol
+        verbose && @warn "Integrality not satisfied" int_err cons_tol
+        return false
+    else
+        return true
+    end
+end
+
+"""
+    objective_value(x, milp)
+
+Compute the value of the linear objective of `milp` at solution vector `x`.
+"""
+objective_value(x, milp::MILP) = dot(x, milp.c)
+
+"""
     PrimalDualSolution
 
 # Fields
@@ -8,33 +49,14 @@ $(TYPEDFIELDS)
 @kwdef mutable struct PrimalDualSolution{T <: Number, V <: AbstractVector{T}}
     const x::V
     const y::V
-    const Kx::V
-    const Kᵀy::V
-    const λ::V
 end
 
 Base.eltype(::PrimalDualSolution{T}) where {T} = T
-
-function PrimalDualSolution(
-        sad::SaddlePointProblem{T, V},
-        x::V,
-        y::V,
-    ) where {T, V}
-    (; c, K, Kᵀ, l, u) = sad
-    Kx = K * x
-    Kᵀy = Kᵀ * y
-    λ = proj_λ.(c - Kᵀy, l, u)
-    z = PrimalDualSolution(; x, y, Kx, Kᵀy, λ)
-    return z
-end
 
 function Base.copy(z::PrimalDualSolution)
     return PrimalDualSolution(
         copy(z.x),
         copy(z.y),
-        copy(z.Kx),
-        copy(z.Kᵀy),
-        copy(z.λ),
     )
 end
 
@@ -42,27 +64,18 @@ function Base.zero(z::PrimalDualSolution{T}) where {T}
     return PrimalDualSolution(
         zero(z.x),
         zero(z.y),
-        zero(z.Kx),
-        zero(z.Kᵀy),
-        zero(z.λ),
     )
 end
 
 function zero!(z::PrimalDualSolution{T}) where {T}
     zero!(z.x)
     zero!(z.y)
-    zero!(z.Kx)
-    zero!(z.Kᵀy)
-    zero!(z.λ)
     return nothing
 end
 
 function Base.copy!(z1::PrimalDualSolution, z2::PrimalDualSolution)
     copy!(z1.x, z2.x)
     copy!(z1.y, z2.y)
-    copy!(z1.Kx, z2.Kx)
-    copy!(z1.Kᵀy, z2.Kᵀy)
-    copy!(z1.λ, z2.λ)
     return z1
 end
 
@@ -71,8 +84,5 @@ function LinearAlgebra.axpby!(
     ) where {T, V}
     axpby!(a, x.x, b, y.x)
     axpby!(a, x.y, b, y.y)
-    axpby!(a, x.Kx, b, y.Kx)
-    axpby!(a, x.Kᵀy, b, y.Kᵀy)
-    axpby!(a, x.λ, b, y.λ)
     return y
 end

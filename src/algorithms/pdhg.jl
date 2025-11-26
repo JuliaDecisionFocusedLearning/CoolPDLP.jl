@@ -1,294 +1,239 @@
 """
-    PDHGParameters
-
-Parameters for configuration of the PDHG algorithm.
-    
-# Fields
-
-$(TYPEDFIELDS)
+    $(TYPEDSIGNATURES)
 """
-struct PDHGParameters{
-        T <: AbstractFloat, Ti <: Integer, M <: AbstractMatrix, B <: Backend,
-    } <: AbstractParameters{T}
-    "CPU or GPU backend used for computations"
-    backend::B
-    "scaling of the inverse spectral norm of `K` when defining the step size"
-    stepsize_scaling::T
-    "norm parameter in the Chambolle-pock preconditioner"
-    precond_cb_α::T
-    # termination parameters
-    "tolerance when checking KKT relative errors to decide termination"
-    termination_reltol::T
-    "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
-    max_kkt_passes::Int
-    "time limit in seconds"
-    time_limit::Float64
-    # meta parameters
-    "frequency of termination checks"
-    check_every::Int
-    "whether or not to record error evolution"
-    record_error_history::Bool
+function PDHGParameters(
+        _T::Type{T} = Float64,
+        ::Type{Ti} = Int,
+        ::Type{M} = SparseMatrixCSC,
+        backend::B = CPU();
+        check_every = 100,
+        record_error_history = true,
+        chambolle_pock_alpha = _T(1.0),
+        invnorm_scaling = _T(0.9),
+        termination_reltol = _T(1.0e-4),
+        max_kkt_passes = 100_000,
+        time_limit = 100.0,
+    ) where {T, Ti, M, B}
 
-    function PDHGParameters(
-            _T::Type{T} = Float64,
-            ::Type{Ti} = Int,
-            ::Type{M} = SparseMatrixCSC,
-            backend::B = CPU();
-            stepsize_scaling = _T(0.9),
-            precond_cb_α = _T(1.0),
-            termination_reltol = _T(1.0e-4),
-            max_kkt_passes = 100_000,
-            time_limit = 100.0,
-            check_every = 40,
-            record_error_history = false,
-        ) where {T, Ti, M, B}
+    generic = GenericParameters(
+        T, Ti, M, backend;
+        zero_tol = _T(NaN), check_every, record_error_history
+    )
+    preconditioning = PreconditioningParameters(;
+        chambolle_pock_alpha = _T(chambolle_pock_alpha), ruiz_iter = 0
+    )
+    step_size = StepSizeParameters(;
+        invnorm_scaling = _T(invnorm_scaling)
+    )
+    termination = TerminationParameters(;
+        termination_reltol = _T(termination_reltol), max_kkt_passes, time_limit
+    )
 
-        return new{T, Ti, M, B}(
-            backend,
-            stepsize_scaling,
-            precond_cb_α,
-            termination_reltol,
-            max_kkt_passes,
-            time_limit,
-            check_every,
-            record_error_history,
-        )
-    end
+    return AlgorithmParameters(
+        :PDHG,
+        generic,
+        preconditioning,
+        step_size,
+        termination
+    )
 end
+
+@kwdef struct PDHGScratch{T <: Number, V <: AbstractVector{T}}
+    x::V
+    y::V
+    r::V
+end
+
 
 """
     PDHGState
 
-Current solution, step sizes and various buffers / metrics for the PDHG algorithm.
-
 # Fields
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PDHGState{
+@kwdef struct PDHGState{
         T <: Number, V <: AbstractVector{T},
-    } <: AbstractState{T, V}
+    }
     "current primal solution"
-    const x::V
+    x::V
     "current dual solution"
-    const y::V
+    y::V
     "step size"
     η::T
     "primal weight"
-    ω::T = one(η)
-    "time at which the algorithm started, in seconds"
-    starting_time::Float64 = time()
-    "time elapsed since the algorithm started, in seconds"
-    time_elapsed::Float64 = 0.0
-    "number of multiplications by both the KKT matrix and its transpose"
-    kkt_passes::Int = 0
-    "current KKT error"
-    err::KKTErrors{T} = KKTErrors(eltype(x))
-    "termination reason (should be `STILL_RUNNING` until the algorithm actuall terminates)"
-    termination_reason::TerminationReason = STILL_RUNNING
-    "history of KKT errors, indexed by number of KKT passes"
-    const error_history::Vector{Tuple{Int, KKTErrors{T}}} = Tuple{Int, KKTErrors{eltype(x)}}[]
+    ω::T
+    "scratch space"
+    scratch::PDHGScratch{T, V}
+    "convergence stats"
+    stats::ConvergenceStats{T}
 end
 
 """
     pdhg(
         milp::MILP,
-        params::PDHGParameters,
-        x_init::AbstractVector=zero(milp.c);
+        params::AlgorithmParameters,
+        x_init=zero(milp.lv),
+        y_init=zero(milp.lc);
         show_progress::Bool=true
     )
     
-Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init`.
+Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init` and dual variable `y_init`.
+
+Return a couple `(x, y), stats` where `x` is the primal solution, `y` is the dual solution and `stats` contains convergence information.
 """
 function pdhg(
-        milp::MILP,
-        params::PDHGParameters,
-        x_init::Vector = zero(milp.c);
-        show_progress::Bool = true
+        milp_init_cpu::MILP,
+        params::AlgorithmParameters,
+        x_init_cpu::AbstractVector = zero(milp_init_cpu.lv),
+        y_init_cpu::AbstractVector = zero(milp_init_cpu.lc);
+        show_progress::Bool = true,
     )
     starting_time = time()
-    sad = SaddlePointProblem(milp)
-    y_init = zero(sad.q)
-    return pdhg(sad, params, x_init, y_init; show_progress, starting_time)
+    milp, x, y = preprocess(milp_init_cpu, x_init_cpu, y_init_cpu, params)
+    milp_init = to_device(milp_init_cpu, params.generic)
+    state = initialize(milp, x, y, params; starting_time)
+    pdhg!(state, milp, milp_init, params; show_progress)
+    return get_solution(state, milp), state.stats
 end
 
-"""
-    pdhg(
-        sad::SaddlePointProblems,
-        params::PDHGParameters,
-        x_init::Vector=zero(sad.c);
-        y_init::Vector=zero(sad.q);
-        show_progress::Bool=true
+function preprocess(
+        milp_init_cpu::MILP,
+        x_init_cpu::AbstractVector,
+        y_init_cpu::AbstractVector,
+        params::AlgorithmParameters,
     )
-    
-Apply the primal-dual hybrid gradient algorithm to solve the saddle-point problem `sad` using configuration `params`, starting from `(x_init, y_init)`.
+    # on CPU
+    p = pdlp_preconditioner(milp_init_cpu, params.preconditioning)
+    milp = precondition_problem(milp_init_cpu, p)
+    x, y = precondition_variables(x_init_cpu, y_init_cpu, p)
 
-Return a triplet `(x, y, state)` where `x` is the primal solution, `y` is the dual solution and `state` is the algorithm's final state, including convergence information.
-"""
-function pdhg(
-        sad_init::SaddlePointProblem,
-        params::PDHGParameters,
-        x_init::Vector = zero(sad_init.c),
-        y_init::Vector = zero(sad_init.q);
-        show_progress::Bool = true,
-        starting_time::Float64 = time()
+    # moving to GPU
+    milp = to_device(milp, params.generic)
+    x = to_device(x, params.generic)
+    y = to_device(y, params.generic)
+
+    return milp, x, y
+end
+
+function initialize(
+        milp::MILP{T},
+        x::AbstractVector,
+        y::AbstractVector,
+        params::AlgorithmParameters;
+        starting_time::Float64
+    ) where {T}
+    η = fixed_stepsize(milp, params.step_size)
+    ω = one(η)
+    scratch = PDHGScratch(; x = similar(x), y = similar(y), r = similar(x))
+    stats = ConvergenceStats(T; starting_time)
+    state = PDHGState(; x, y, η, ω, scratch, stats)
+    return state
+end
+
+function pdhg!(
+        state::PDHGState,
+        milp::MILP,
+        milp_init::MILP,
+        params::AlgorithmParameters;
+        show_progress::Bool,
     )
-    sad, state = initialize(sad_init, params, x_init, y_init; starting_time)
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
     while true
         yield()
-        for _ in 1:params.check_every
-            step!(state, sad)
-            next!(prog; showvalues = (("relative_error", relative(state.err)),))
+        for _ in 1:params.generic.check_every
+            step!(state, milp)
+            next!(prog; showvalues = (("relative_error", relative(state.stats.err)),))
         end
-        prepare_check!(state, sad, params)
-        if termination_check!(state, params)
+        termination_check!(state, milp, milp_init, params)
+        if !isnothing(state.stats.termination_status)
             break
         end
     end
     finish!(prog)
-    return get_results(state, sad)
-end
-
-function initialize(
-        sad_init::SaddlePointProblem,
-        params::PDHGParameters{T, Ti, M},
-        x_init::Vector,
-        y_init::Vector;
-        starting_time::Float64
-    ) where {T, Ti, M}
-    (; backend) = params
-    preconditioner = compute_preconditioner(sad_init, params)
-    sad = apply(preconditioner, sad_init)
-    x, y = preconditioned_solution(preconditioner, x_init, y_init)
-    sad_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, sad)))
-    η = fixed_stepsize(sad_righttypes, params)
-    sad_gpu = adapt(backend, sad_righttypes)
-    x_gpu = adapt(backend, set_eltype(T, x))
-    y_gpu = adapt(backend, set_eltype(T, y))
-    state = PDHGState(; x = x_gpu, y = y_gpu, η, starting_time)
-    return sad_gpu, state
-end
-
-function compute_preconditioner(
-        sad::SaddlePointProblem,
-        params::PDHGParameters
-    )
-    (; K, Kᵀ) = sad
-    (; precond_cb_α) = params
-    preconditioner = chambolle_pock_preconditioner(K, Kᵀ; α = precond_cb_α)
-    return preconditioner
-end
-
-function fixed_stepsize(
-        sad::SaddlePointProblem{T},
-        params::PDHGParameters
-    ) where {T}
-    (; K, Kᵀ) = sad
-    (; stepsize_scaling) = params
-    η = T(stepsize_scaling) * inv(spectral_norm(K, Kᵀ))
-    return η
+    return state
 end
 
 function step!(
         state::PDHGState{T, V},
-        sad::SaddlePointProblem{T, V},
+        milp::MILP{T, V},
     ) where {T, V}
-    (; x, y, η, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
+    (; x, y, η, ω, scratch) = state
+    (; c, lv, uv, A, At, lc, uc) = milp
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_X(x - τ * (c - Kᵀ * y))
-    x_step = x - τ * (c - Kᵀ * y)
-    xp = proj_box.(x_step, l, u)
+    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    At_y = mul!(scratch.x, At, y)
+    xdiff = @. scratch.x = 2 * proj_box(x - τ * (c - At_y), lv, uv) - x
 
-    # yp = proj_Y(y + σ * (q - K * (2 * xp - x)))
-    y_step = y + σ * (q - K * (2 * xp - x))
-    yp = ifelse.(ineq_cons, positive_part.(y_step), y_step)
+    # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
+    A_xdiff = mul!(scratch.y, A, xdiff)
+    @. y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
+    @. x = (xdiff + x) / 2  # TODO: ditch this one
 
-    copy!(x, xp)
-    copy!(y, yp)
-
-    state.kkt_passes += 1
+    state.stats.kkt_passes += 1
     return nothing
 end
 
-function kkt_errors(
+function kkt_errors!(
         state::PDHGState,
-        sad::SaddlePointProblem{T, V},
-    ) where {T, V}
-    (; x, y, ω) = state
-    (; c, q, K, Kᵀ, l, u, ineq_cons) = sad
+        milp::MILP{T},
+        milp_init::MILP
+    ) where {T}
+    # TODO: go back to initial problem
+    (; scratch) = state
+    prec = Preconditioner(milp.D1, milp.D2)
+    x, y = unprecondition_variables(state.x, state.y, prec)
+    (; c, lv, uv, A, At, lc, uc) = milp_init
 
-    λ = proj_λ.(c - Kᵀ * y, l, u)
-    λ⁺ = positive_part.(λ)
-    λ⁻ = negative_part.(λ)
-    l_noinf = max.(nextfloat(typemin(T)), l)
-    u_noinf = min.(prevfloat(typemax(T)), u)
+    A_x = mul!(scratch.y, A, x)
+    At_y = mul!(scratch.x, At, y)
+    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
 
-    lᵀλ⁺ = dot(l_noinf, λ⁺)
-    uᵀλ⁻ = dot(u_noinf, λ⁻)
-    qᵀy = dot(q, y)
-    cᵀx = dot(c, x)
+    primal_diff = @. scratch.y = A_x - proj_box(A_x, lc, uc)
+    primal = norm(primal_diff)
+    primal_scale = one(T) + sqrt(mapreduce(squared_bound_scale, +, lc, uc))
 
-    primal = norm(
-        ifelse.(
-            ineq_cons,
-            positive_part.(q - K * x),
-            q - K * x
-        )
-    )
-    primal_scale = one(T) + norm(q)
-
-    dual = norm(c - Kᵀ * y - λ)
+    dual_diff = @. scratch.x = c - At_y - r
+    dual = norm(dual_diff)
     dual_scale = one(T) + norm(c)
 
-    gap = abs(qᵀy + lᵀλ⁺ - uᵀλ⁻ - cᵀx)
-    gap_scale = one(T) + abs(qᵀy + lᵀλ⁺ - uᵀλ⁻) + abs(cᵀx)
+    pc = p(-y, lc, uc)
+    pv = p(-r, lv, uv)
 
-    weighted_agg = sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+    gap = abs(dot(c, x) + pc + pv)
+    gap_scale = one(T) + abs(pc + pv) + abs(dot(c, x))
 
-    rel_primal = primal / primal_scale
-    rel_dual = dual / dual_scale
-    rel_gap = gap / gap_scale
-
-    rel_max = max(rel_primal, rel_dual, rel_gap)
-
-    return KKTErrors(;
+    err = KKTErrors(;
         primal,
         dual,
         gap,
         primal_scale,
         dual_scale,
         gap_scale,
-        rel_max,
-        weighted_agg,
     )
+    return err
 end
 
-function prepare_check!(
+function termination_check!(
         state::PDHGState,
-        sad::SaddlePointProblem,
-        params::PDHGParameters
+        milp::MILP,
+        milp_init::MILP,
+        params::AlgorithmParameters
     )
-    (; starting_time) = state
-    (; record_error_history) = params
-    state.time_elapsed = time() - starting_time
-    state.err = kkt_errors(state, sad)
-    if record_error_history
-        push!(state.error_history, (state.kkt_passes, state.err))
+    (; stats) = state
+    stats.time_elapsed = time() - stats.starting_time
+    stats.err = kkt_errors!(state, milp, milp_init)
+    if params.generic.record_error_history
+        push!(stats.error_history, (stats.kkt_passes, stats.err))
     end
+    stats.termination_status = termination_status(stats, params.termination)
     return nothing
 end
 
-function get_results(
-        state::PDHGState,
-        sad::SaddlePointProblem,
-    )
+function get_solution(state::PDHGState, milp::MILP)
     (; x, y) = state
-    (; preconditioner) = sad
-    x_cpu, y_cpu = Array(x), Array(y)
-    x_unprec, y_unprec = unpreconditioned_solution(preconditioner, x_cpu, y_cpu)
-    return (; x = x_unprec, y = y_unprec), state
+    (; D1, D2) = milp
+    return unprecondition_variables(x, y, Preconditioner(D1, D2))
 end

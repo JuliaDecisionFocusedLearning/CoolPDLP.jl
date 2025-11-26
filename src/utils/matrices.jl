@@ -12,14 +12,14 @@ $(TYPEDFIELDS)
 struct GPUSparseMatrixCOO{
         T <: Number,
         Ti <: Integer,
-        Vv <: AbstractVector{T},
+        V <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
     } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowval::Vi
     colval::Vi
-    nzval::Vv
+    nzval::V
 end
 
 function KernelAbstractions.get_backend(A::GPUSparseMatrixCOO)
@@ -67,12 +67,12 @@ SparseArrays.nnz(A::GPUSparseMatrixCOO) = length(A.nzval)
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixCOO,
-        b::AbstractVector,
+        c::V,
+        A::GPUSparseMatrixCOO{T, Ti, V},
+        b::V,
         α::Number,
         β::Number
-    )
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     c .*= β
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -91,14 +91,14 @@ $(TYPEDFIELDS)
 struct GPUSparseMatrixCSR{
         T <: Number,
         Ti <: Integer,
-        Vv <: AbstractVector{T},
+        V <: AbstractVector{T},
         Vi <: AbstractVector{Ti},
     } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
     rowptr::Vi
     colval::Vi
-    nzval::Vv
+    nzval::V
 end
 
 function KernelAbstractions.get_backend(A::GPUSparseMatrixCSR)
@@ -159,12 +159,12 @@ SparseArrays.nnz(A::GPUSparseMatrixCSR) = length(A.nzval)
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixCSR,
-        b::AbstractVector,
+        c::V,
+        A::GPUSparseMatrixCSR{T, Ti, V},
+        b::V,
         α::Number,
         β::Number
-    )
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
@@ -260,12 +260,12 @@ SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector,
-        A::GPUSparseMatrixELL,
-        b::AbstractVector,
+        c::V,
+        A::GPUSparseMatrixELL{T, Ti},
+        b::V,
         α::Number,
         β::Number
-    )
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
     kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
