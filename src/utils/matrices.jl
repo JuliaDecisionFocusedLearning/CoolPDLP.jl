@@ -70,8 +70,8 @@ function LinearAlgebra.mul!(
         c::V,
         A::GPUSparseMatrixCOO{T, Ti, V},
         b::V,
-        α::T,
-        β::T
+        α::Number,
+        β::Number
     ) where {T <: Number, Ti, V <: AbstractVector{T}}
     c .*= β
     backend = common_backend(c, A, b)
@@ -162,8 +162,8 @@ function LinearAlgebra.mul!(
         c::V,
         A::GPUSparseMatrixCSR{T, Ti, V},
         b::V,
-        α::T,
-        β::T
+        α::Number,
+        β::Number
     ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
@@ -263,8 +263,8 @@ function LinearAlgebra.mul!(
         c::V,
         A::GPUSparseMatrixELL{T, Ti},
         b::V,
-        α::T,
-        β::T
+        α::Number,
+        β::Number
     ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)

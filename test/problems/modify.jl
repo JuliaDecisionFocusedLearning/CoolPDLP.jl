@@ -1,3 +1,4 @@
+using Adapt
 using CoolPDLP
 using JLArrays
 using Test

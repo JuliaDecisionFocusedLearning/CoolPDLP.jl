@@ -1,3 +1,6 @@
+"""
+    $(TYPEDSIGNATURES)
+"""
 function PDHGParameters(
         _T::Type{T} = Float64,
         ::Type{Ti} = Int,
@@ -91,7 +94,7 @@ function pdhg(
     milp_init = to_device(milp_init_cpu, params.generic)
     state = initialize(milp, x, y, params; starting_time)
     pdhg!(state, milp, milp_init, params; show_progress)
-    return get_solution(state, milp), state, milp
+    return get_solution(state, milp), state.stats
 end
 
 function preprocess(
@@ -181,7 +184,7 @@ function kkt_errors!(
     # TODO: go back to initial problem
     (; scratch) = state
     prec = Preconditioner(milp.D1, milp.D2)
-    x, y = precondition_variables(state.x, state.y, inv(prec))
+    x, y = unprecondition_variables(state.x, state.y, prec)
     (; c, lv, uv, A, At, lc, uc) = milp_init
 
     A_x = mul!(scratch.y, A, x)
@@ -232,5 +235,5 @@ end
 function get_solution(state::PDHGState, milp::MILP)
     (; x, y) = state
     (; D1, D2) = milp
-    return precondition_variables(x, y, inv(Preconditioner(D1, D2)))
+    return unprecondition_variables(x, y, Preconditioner(D1, D2))
 end

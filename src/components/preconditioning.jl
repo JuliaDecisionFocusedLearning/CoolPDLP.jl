@@ -62,6 +62,15 @@ function precondition_variables(
     return (x_p, y_p)
 end
 
+function unprecondition_variables(
+        x_p::AbstractVector, y_p::AbstractVector, prec::Preconditioner
+    )
+    (; D1, D2) = prec
+    x = D2 * x_p
+    y = D1 * y_p
+    return (x, y)
+end
+
 function precondition_problem(
         milp::MILP, prec::Preconditioner
     )

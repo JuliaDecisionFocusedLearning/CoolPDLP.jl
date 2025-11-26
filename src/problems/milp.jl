@@ -57,9 +57,9 @@ struct MILP{
             D2 = Diagonal(one!(similar(lv))),
             int_var = zero!(similar(c, Bool)),
             var_names = map(string, eachindex(c)),
-            dataset = "Unknown dataset",
-            name = "Unknown name",
-            path = "Unknown path"
+            dataset = "",
+            name = "",
+            path = ""
         )
         m, n = size(A)
         if !(n == length(c) == length(lv) == length(uv) == size(D2, 1) == length(int_var) == length(var_names))
@@ -95,9 +95,9 @@ struct MILP{
             D2,
             int_var,
             var_names,
-            dataset,
-            name,
-            path
+            string(dataset),
+            string(name),
+            string(path)
         )
     end
 end
@@ -122,7 +122,7 @@ end
 function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
     return print(
         io, """
-        MILP instance $(milp.name) 
+        MILP instance $(milp.name) from dataset $(milp.dataset):
         - types: values $T, vectors $V, matrices $M
         - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
         - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
