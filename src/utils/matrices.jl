@@ -72,7 +72,7 @@ function LinearAlgebra.mul!(
         b::V,
         α::T,
         β::T
-    ) where {T, Ti, V}
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     c .*= β
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -164,7 +164,7 @@ function LinearAlgebra.mul!(
         b::V,
         α::T,
         β::T
-    ) where {T, Ti, V}
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
@@ -261,11 +261,11 @@ end
 
 function LinearAlgebra.mul!(
         c::V,
-        A::GPUSparseMatrixELL{T, Ti, V},
+        A::GPUSparseMatrixELL{T, Ti},
         b::V,
         α::T,
         β::T
-    ) where {T, Ti, V}
+    ) where {T <: Number, Ti, V <: AbstractVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
     kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))

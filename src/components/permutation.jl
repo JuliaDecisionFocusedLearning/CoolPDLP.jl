@@ -27,7 +27,6 @@ function permute_rows(A::SparseMatrixCSC, row_perm::Vector{Int})
     return sparse(transpose(At_sorted_col))
 end
 
-
 """
     sort_rows_columns(milp)
 

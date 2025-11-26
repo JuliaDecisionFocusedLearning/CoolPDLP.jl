@@ -180,12 +180,9 @@ function kkt_errors!(
     ) where {T}
     # TODO: go back to initial problem
     (; scratch) = state
-    (; D1, D2) = milp
-    prec = Preconditioner(D1, D2)
-    # x, y = precondition_variables(state.x, state.y, inv(prec))
-    x, y = state.x, state.y
-    # (; c, lv, uv, A, At, lc, uc) = precondition_problem(milp, inv(prec))
-    (; c, lv, uv, A, At, lc, uc) = milp
+    prec = Preconditioner(milp.D1, milp.D2)
+    x, y = precondition_variables(state.x, state.y, inv(prec))
+    (; c, lv, uv, A, At, lc, uc) = milp_init
 
     A_x = mul!(scratch.y, A, x)
     At_y = mul!(scratch.x, At, y)

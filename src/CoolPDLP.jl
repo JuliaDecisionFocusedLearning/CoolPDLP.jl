@@ -1,6 +1,5 @@
 module CoolPDLP
 
-using Accessors: @set
 using Adapt
 using Atomix
 using DispatchDoctor
@@ -32,6 +31,7 @@ using Statistics
     include("components/termination.jl")
     include("components/restart.jl")
     include("components/preconditioning.jl")
+    include("components/permutation.jl")
     include("components/step_size.jl")
     include("components/generic.jl")
     include("components/parameters.jl")
@@ -42,7 +42,7 @@ end
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
-export relax, set_eltype, set_indtype, single_precision, set_matrix_type
+export set_eltype, set_indtype, single_precision, set_matrix_type
 export PrimalDualSolution
 
 export PDHGParameters, PDHGState, pdhg

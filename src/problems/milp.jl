@@ -50,28 +50,34 @@ struct MILP{
             lv,
             uv,
             A,
-            At,
+            At = convert(typeof(A), transpose(A)),
             lc,
             uc,
-            D1,
-            D2,
-            int_var,
-            var_names,
-            dataset,
-            name,
-            path
+            D1 = Diagonal(one!(similar(lc))),
+            D2 = Diagonal(one!(similar(lv))),
+            int_var = zero!(similar(c, Bool)),
+            var_names = map(string, eachindex(c)),
+            dataset = "Unknown dataset",
+            name = "Unknown name",
+            path = "Unknown path"
         )
         m, n = size(A)
-        @assert n == length(c) == length(lv) == length(uv) == size(D2, 1)
-        @assert m == length(lc) == length(uc) == size(D1, 2)
+        if !(n == length(c) == length(lv) == length(uv) == size(D2, 1) == length(int_var) == length(var_names))
+            throw(DimensionMismatch("Variable size not consistent"))
+        elseif !(m == length(lc) == length(uc) == size(D1, 2))
+            throw(DimensionMismatch("Constraint size not consistent"))
+        end
 
         T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
         V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
         M = promote_type(typeof(A), typeof(At))
         Vb = typeof(int_var)
 
-        backends = map(get_backend, (c, lv, uv, A, lc, uc, D1, D2))
-        @assert all(==(backends[1]), backends)
+        if !isconcretetype(T) || !isconcretetype(V) || ! isconcretetype(M) || !isconcretetype(Vb)
+            throw(ArgumentError("Abstract type parameter"))
+        end
+
+        backends = common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
@@ -120,7 +126,7 @@ function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
         - types: values $T, vectors $V, matrices $M
         - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
         - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
-        - nonzeros: $(nnz(milp.A))"""
+        - nonzeros: $(mynnz(milp.A))"""
     )
 end
 

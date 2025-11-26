@@ -1,11 +1,4 @@
 """
-    relax(milp)
-
-Return a new `MILP` identical to `milp` but without integrality requirements.
-"""
-relax(milp::MILP) = @set milp.int_var = zero(milp.int_var)
-
-"""
     set_eltype(T, milp)
 
 Change the element type of floating-point containers inside `milp` to `T`.

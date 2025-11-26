@@ -1,4 +1,5 @@
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
+one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
@@ -48,7 +49,7 @@ function squared_bound_scale(l::Number, u::Number)
     elseif isfinite(u)
         return abs2(u)
     else
-        return zero(T)
+        return zero(l)
     end
 end
 
@@ -86,3 +87,6 @@ function spectral_norm(
 end
 
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
+
+mynnz(A::AbstractSparseArray) = nnz(A)
+mynnz(A::AbstractArray) = prod(size(A))
