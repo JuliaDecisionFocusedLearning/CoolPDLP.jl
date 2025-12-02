@@ -30,23 +30,6 @@ end
     end
 end
 
-@testset "Weird dot product" begin
-    n = 1000
-    a = randn(n)
-    u = a .+ rand(n)
-    l = a .- rand(n)
-    inf_ub = rand(n) .> 0.9
-    inf_lb = rand(n) .< 0.1
-    u[inf_ub] .= Inf
-    l[inf_lb] .= -Inf
-    y = randn(n)
-    y[inf_ub] .= min.(y[inf_ub], 0)
-    y[inf_lb] .= max.(y[inf_lb], 0)
-    u_safe = min.(u, prevfloat(Inf))
-    l_safe = max.(l, nextfloat(-Inf))
-    @test CoolPDLP.p(y, l, u) ≈ dot(u_safe, CoolPDLP.positive_part.(y)) - dot(l_safe, CoolPDLP.negative_part.(y))
-end
-
 @testset "Bound scale" begin
     @test CoolPDLP.squared_bound_scale(1, 2) == 5
     @test CoolPDLP.squared_bound_scale(3, 3) == 9

@@ -18,8 +18,6 @@ milp = MILP(; c, lv, uv, A, lc, uc, int_var)
     @test milp_f32 isa MILP{Float32, Vector{Float32}, SparseMatrixCSC{Float32, Int}}
     milp_i32 = CoolPDLP.set_indtype(Int32, milp)
     @test milp_i32 isa MILP{Float64, Vector{Float64}, SparseMatrixCSC{Float64, Int32}}
-    milp_32 = CoolPDLP.single_precision(milp)
-    @test milp_32 isa MILP{Float32, Vector{Float32}, SparseMatrixCSC{Float32, Int32}}
     milp_dense = CoolPDLP.set_matrix_type(Matrix, milp)
     @test milp_dense isa MILP{Float64, Vector{Float64}, Matrix{Float64}}
 end

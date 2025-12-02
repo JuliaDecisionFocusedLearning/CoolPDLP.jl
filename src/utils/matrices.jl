@@ -12,8 +12,8 @@ $(TYPEDFIELDS)
 struct GPUSparseMatrixCOO{
         T <: Number,
         Ti <: Integer,
-        V <: AbstractVector{T},
-        Vi <: AbstractVector{Ti},
+        V <: DenseVector{T},
+        Vi <: DenseVector{Ti},
     } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
@@ -54,11 +54,11 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixCOO) = length(A.nzval)
 
 @kernel function spmv_coo!(
-        c::AbstractVector{T},
-        A_rowval::AbstractVector{Ti},
-        A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
+        c::DenseVector{T},
+        A_rowval::DenseVector{Ti},
+        A_colval::DenseVector{Ti},
+        A_nzval::DenseVector{T},
+        b::DenseVector{T},
         α::Number,
     ) where {T, Ti}
     k = @index(Global, Linear)
@@ -72,7 +72,7 @@ function LinearAlgebra.mul!(
         b::V,
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: AbstractVector{T}}
+    ) where {T <: Number, Ti, V <: DenseVector{T}}
     c .*= β
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -91,8 +91,8 @@ $(TYPEDFIELDS)
 struct GPUSparseMatrixCSR{
         T <: Number,
         Ti <: Integer,
-        V <: AbstractVector{T},
-        Vi <: AbstractVector{Ti},
+        V <: DenseVector{T},
+        Vi <: DenseVector{Ti},
     } <: AbstractGPUSparseMatrix{T, Ti}
     m::Int
     n::Int
@@ -141,11 +141,11 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixCSR) = length(A.nzval)
 
 @kernel function spmv_csr!(
-        c::AbstractVector{T},
-        A_rowptr::AbstractVector{Ti},
-        A_colval::AbstractVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
+        c::DenseVector{T},
+        A_rowptr::DenseVector{Ti},
+        A_colval::DenseVector{Ti},
+        A_nzval::DenseVector{T},
+        b::DenseVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -164,7 +164,7 @@ function LinearAlgebra.mul!(
         b::V,
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: AbstractVector{T}}
+    ) where {T <: Number, Ti, V <: DenseVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
@@ -241,10 +241,10 @@ end
 SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
 
 @kernel function spmv_ell!(
-        c::AbstractVector{T},
+        c::DenseVector{T},
         A_colval::AbstractMatrix{Ti},
         A_nzval::AbstractMatrix{T},
-        b::AbstractVector{T},
+        b::DenseVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -265,7 +265,7 @@ function LinearAlgebra.mul!(
         b::V,
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: AbstractVector{T}}
+    ) where {T <: Number, Ti, V <: DenseVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
     kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))

@@ -12,9 +12,9 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        V <: AbstractVector{T},
+        V <: DenseVector{T},
         M <: AbstractMatrix{T},
-        Vb <: AbstractVector{Bool},
+        Vb <: DenseVector{Bool},
     }
     "objective vector"
     c::V
@@ -73,7 +73,12 @@ struct MILP{
         M = promote_type(typeof(A), typeof(At))
         Vb = typeof(int_var)
 
-        if !isconcretetype(T) || !isconcretetype(V) || ! isconcretetype(M) || !isconcretetype(Vb)
+        if (
+                !isconcretetype(T) ||
+                    !isconcretetype(V) ||
+                    !isconcretetype(M) ||
+                    !isconcretetype(Vb)
+            )
             throw(ArgumentError("Abstract type parameter"))
         end
 
@@ -123,9 +128,16 @@ function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
     return print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
-        - types: values $T, vectors $V, matrices $M
-        - variables: $(nbvar(milp)) ($(nbvar_cont(milp)) continuous, $(nbvar_int(milp)) integer)
-        - constraints: $(nbcons(milp)) ($(nbcons_ineq(milp)) inequalities, $(nbcons_eq(milp)) equalities)
+        - types:
+          - values $T
+          - vectors $V
+          - matrices $M
+        - variables: $(nbvar(milp))
+          - $(nbvar_cont(milp)) continuous
+          - $(nbvar_int(milp)) integer
+        - constraints: $(nbcons(milp))
+          - $(nbcons_ineq(milp)) inequalities
+          - $(nbcons_eq(milp)) equalities
         - nonzeros: $(mynnz(milp.A))"""
     )
 end

@@ -29,21 +29,13 @@ function PDHGParameters(
         termination_reltol = _T(termination_reltol), max_kkt_passes, time_limit
     )
 
-    return AlgorithmParameters(
-        :PDHG,
+    return Parameters{PDHG}(
         generic,
         preconditioning,
         step_size,
         termination
     )
 end
-
-@kwdef struct PDHGScratch{T <: Number, V <: AbstractVector{T}}
-    x::V
-    y::V
-    r::V
-end
-
 
 """
     PDHGState
@@ -52,90 +44,41 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PDHGState{
-        T <: Number, V <: AbstractVector{T},
-    }
-    "current primal solution"
-    x::V
-    "current dual solution"
-    y::V
-    "step size"
-    η::T
-    "primal weight"
-    ω::T
+@kwdef mutable struct PDHGState{
+        T <: Number, V <: DenseVector{T},
+    } <: AbstractState{T, V}
+    "current solution"
+    sol::PrimalDualSolution{T, V}
+    "next solution"
+    sol_next::PrimalDualSolution{T, V}
+    "step sizes"
+    step_sizes::StepSizes{T}
     "scratch space"
-    scratch::PDHGScratch{T, V}
+    scratch::Scratch{T, V}
     "convergence stats"
     stats::ConvergenceStats{T}
 end
 
-"""
-    pdhg(
-        milp::MILP,
-        params::AlgorithmParameters,
-        x_init=zero(milp.lv),
-        y_init=zero(milp.lc);
-        show_progress::Bool=true
-    )
-    
-Apply the PDHG algorithm to solve the continuous relaxation of `milp` using configuration `params`, starting from primal variable `x_init` and dual variable `y_init`.
-
-Return a couple `(x, y), stats` where `x` is the primal solution, `y` is the dual solution and `stats` contains convergence information.
-"""
-function pdhg(
-        milp_init_cpu::MILP,
-        params::AlgorithmParameters,
-        x_init_cpu::AbstractVector = zero(milp_init_cpu.lv),
-        y_init_cpu::AbstractVector = zero(milp_init_cpu.lc);
-        show_progress::Bool = true,
-    )
-    starting_time = time()
-    milp, x, y = preprocess(milp_init_cpu, x_init_cpu, y_init_cpu, params)
-    milp_init = to_device(milp_init_cpu, params.generic)
-    state = initialize(milp, x, y, params; starting_time)
-    pdhg!(state, milp, milp_init, params; show_progress)
-    return get_solution(state, milp), state.stats
-end
-
-function preprocess(
-        milp_init_cpu::MILP,
-        x_init_cpu::AbstractVector,
-        y_init_cpu::AbstractVector,
-        params::AlgorithmParameters,
-    )
-    # on CPU
-    p = pdlp_preconditioner(milp_init_cpu, params.preconditioning)
-    milp = precondition_problem(milp_init_cpu, p)
-    x, y = precondition_variables(x_init_cpu, y_init_cpu, p)
-
-    # moving to GPU
-    milp = to_device(milp, params.generic)
-    x = to_device(x, params.generic)
-    y = to_device(y, params.generic)
-
-    return milp, x, y
-end
-
 function initialize(
-        milp::MILP{T},
-        x::AbstractVector,
-        y::AbstractVector,
-        params::AlgorithmParameters;
+        milp::MILP{T, V},
+        sol::PrimalDualSolution{T, V},
+        params::Parameters{PDHG, T};
         starting_time::Float64
-    ) where {T}
+    ) where {T, V}
+    sol_next = zero(sol)
     η = fixed_stepsize(milp, params.step_size)
     ω = one(η)
-    scratch = PDHGScratch(; x = similar(x), y = similar(y), r = similar(x))
+    step_sizes = StepSizes(; η, ω)
+    scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
     stats = ConvergenceStats(T; starting_time)
-    state = PDHGState(; x, y, η, ω, scratch, stats)
+    state = PDHGState(; sol, sol_next, step_sizes, scratch, stats)
     return state
 end
 
-function pdhg!(
+function solve!(
         state::PDHGState,
         milp::MILP,
-        milp_init::MILP,
-        params::AlgorithmParameters;
+        params::Parameters;
         show_progress::Bool,
     )
     prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
@@ -145,7 +88,7 @@ function pdhg!(
             step!(state, milp)
             next!(prog; showvalues = (("relative_error", relative(state.stats.err)),))
         end
-        termination_check!(state, milp, milp_init, params)
+        termination_check!(state, milp, params)
         if !isnothing(state.stats.termination_status)
             break
         end
@@ -158,82 +101,23 @@ function step!(
         state::PDHGState{T, V},
         milp::MILP{T, V},
     ) where {T, V}
-    (; x, y, η, ω, scratch) = state
+    (; sol, sol_next, step_sizes, scratch) = state
+    (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
     τ, σ = η / ω, η * ω
 
     # xp = proj_box.(x - τ * (c - At * y), lv, uv)
-    At_y = mul!(scratch.x, At, y)
-    xdiff = @. scratch.x = 2 * proj_box(x - τ * (c - At_y), lv, uv) - x
+    At_y = mul!(scratch.x, At, sol.y)
+    @. sol_next.x = proj_box(sol.x - τ * (c - At_y), lv, uv)
+    xdiff = @. scratch.x = 2sol_next.x - sol.x
 
     # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
-    @. x = (xdiff + x) / 2  # TODO: ditch this one
+    @. sol_next.y = sol.y - σ * A_xdiff - σ * proj_box(inv(σ) * sol.y - A_xdiff, -uc, -lc)
+
+    state.sol, state.sol_next = state.sol_next, state.sol
 
     state.stats.kkt_passes += 1
     return nothing
-end
-
-function kkt_errors!(
-        state::PDHGState,
-        milp::MILP{T},
-        milp_init::MILP
-    ) where {T}
-    # TODO: go back to initial problem
-    (; scratch) = state
-    prec = Preconditioner(milp.D1, milp.D2)
-    x, y = unprecondition_variables(state.x, state.y, prec)
-    (; c, lv, uv, A, At, lc, uc) = milp_init
-
-    A_x = mul!(scratch.y, A, x)
-    At_y = mul!(scratch.x, At, y)
-    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
-
-    primal_diff = @. scratch.y = A_x - proj_box(A_x, lc, uc)
-    primal = norm(primal_diff)
-    primal_scale = one(T) + sqrt(mapreduce(squared_bound_scale, +, lc, uc))
-
-    dual_diff = @. scratch.x = c - At_y - r
-    dual = norm(dual_diff)
-    dual_scale = one(T) + norm(c)
-
-    pc = p(-y, lc, uc)
-    pv = p(-r, lv, uv)
-
-    gap = abs(dot(c, x) + pc + pv)
-    gap_scale = one(T) + abs(pc + pv) + abs(dot(c, x))
-
-    err = KKTErrors(;
-        primal,
-        dual,
-        gap,
-        primal_scale,
-        dual_scale,
-        gap_scale,
-    )
-    return err
-end
-
-function termination_check!(
-        state::PDHGState,
-        milp::MILP,
-        milp_init::MILP,
-        params::AlgorithmParameters
-    )
-    (; stats) = state
-    stats.time_elapsed = time() - stats.starting_time
-    stats.err = kkt_errors!(state, milp, milp_init)
-    if params.generic.record_error_history
-        push!(stats.error_history, (stats.kkt_passes, stats.err))
-    end
-    stats.termination_status = termination_status(stats, params.termination)
-    return nothing
-end
-
-function get_solution(state::PDHGState, milp::MILP)
-    (; x, y) = state
-    (; D1, D2) = milp
-    return unprecondition_variables(x, y, Preconditioner(D1, D2))
 end
