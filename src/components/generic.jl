@@ -5,7 +5,7 @@
 
 - `T`: floating point type to convert to
 - `Ti`: integer index type to convert to
-- `M`: sparse matrix type to convert to
+- `M`: sparse matrix constructor to use
 
 # Fields
 
@@ -41,9 +41,9 @@ struct GenericParameters{
     end
 end
 
-function Base.show(io::IO, params::GenericParameters)
+function Base.show(io::IO, params::GenericParameters{T, Ti, M}) where {T, Ti, M}
     (; backend, zero_tol, check_every, record_error_history) = params
-    return print(io, "GenericParameters: backend=$backend, zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history")
+    return print(io, "GenericParameters: types=($T, $Ti, $M), backend=$backend, zero_tol=$zero_tol, check_every=$check_every, record_error_history=$record_error_history")
 end
 
 function to_device(
@@ -57,11 +57,9 @@ function to_device(
 end
 
 function to_device(
-        x::AbstractVector,
-        params::GenericParameters{T, Ti, M},
-    ) where {T, Ti, M}
+        sol::PrimalDualSolution,
+        params::GenericParameters{T},
+    ) where {T}
     (; backend) = params
-    x_righttype = set_eltype(T, x)
-    x_adapted = adapt(backend, x_righttype)
-    return x_adapted
+    return adapt(backend, set_eltype(T, sol))
 end

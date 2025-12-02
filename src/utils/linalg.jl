@@ -4,6 +4,8 @@ one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 
+@inline safeprod_left(left, right) = ifelse(isinf(left), right, left * right)
+
 @inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
 
 @inline function proj_multiplier(λ::T, l::T, u::T) where {T <: Number}
@@ -24,18 +26,9 @@ one!(x::AbstractArray) = fill!(x, one(eltype(x)))
     )
 end
 
-sqnorm(v::AbstractVector{<:Number}) = dot(v, v)
+sqnorm(v::DenseVector{<:Number}) = dot(v, v)
 
 custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
-
-safeprod_rightpos(left, right) = ifelse(isinf(left), positive_part(right), left * positive_part(right))
-safeprod_rightneg(left, right) = ifelse(isinf(left), negative_part(right), left * negative_part(right))
-
-function p(y::V, l::V, u::V) where {V <: AbstractVector}
-    uᵀy⁺ = mapreduce(safeprod_rightpos, +, u, y)
-    lᵀy⁻ = mapreduce(safeprod_rightneg, +, l, y)
-    return uᵀy⁺ - lᵀy⁻
-end
 
 function squared_bound_scale(l::Number, u::Number)
     if isfinite(l) && isfinite(u)
@@ -53,7 +46,7 @@ function squared_bound_scale(l::Number, u::Number)
     end
 end
 
-struct Symmetrized{T <: Number, V <: AbstractVector{T}, M <: AbstractMatrix{T}}
+struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}}
     K::M
     Kᵀ::M
     scratch::V
@@ -86,7 +79,10 @@ function spectral_norm(
     return sqrt(λ)
 end
 
+column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
 
 mynnz(A::AbstractSparseArray) = nnz(A)
 mynnz(A::AbstractArray) = prod(size(A))
+
+indtype(::AbstractSparseArray{T, Ti}) where {T, Ti} = Ti

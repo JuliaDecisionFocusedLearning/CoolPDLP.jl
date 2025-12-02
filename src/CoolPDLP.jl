@@ -24,9 +24,11 @@ using Statistics
     include("utils/device.jl")
 
     include("problems/milp.jl")
-    include("problems/modify.jl")
     include("problems/solution.jl")
+    include("problems/modify.jl")
+    include("problems/constraints.jl")
 
+    include("components/scratch.jl")
     include("components/errors.jl")
     include("components/termination.jl")
     include("components/restart.jl")
@@ -36,16 +38,17 @@ using Statistics
     include("components/generic.jl")
     include("components/parameters.jl")
 
+    include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
 end
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
-export set_eltype, set_indtype, single_precision, set_matrix_type
 export PrimalDualSolution
 
-export PDHGParameters, PDHGState, pdhg
+export preprocess, initialize, solve, solve!
+export PDHGParameters
 export is_feasible, objective_value
 
 end # module CoolPDLP

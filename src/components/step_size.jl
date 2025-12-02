@@ -21,3 +21,17 @@ function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     η = T(invnorm_scaling) * inv(spectral_norm(A, At))
     return η
 end
+
+"""
+    StepSizes
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+@kwdef struct StepSizes{T <: Number}
+    "step size"
+    η::T
+    "primal weight"
+    ω::T
+end

@@ -46,8 +46,10 @@ objective_value(x, milp::MILP) = dot(x, milp.c)
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PrimalDualSolution{T <: Number, V <: AbstractVector{T}}
+@kwdef mutable struct PrimalDualSolution{T <: Number, V <: DenseVector{T}}
+    "primal solution"
     const x::V
+    "dual solution"
     const y::V
 end
 
@@ -85,4 +87,8 @@ function LinearAlgebra.axpby!(
     axpby!(a, x.x, b, y.x)
     axpby!(a, x.y, b, y.y)
     return y
+end
+
+function Base.isapprox(sol1::PrimalDualSolution{T, V}, sol2::PrimalDualSolution{T, V}; kwargs...) where {T, V}
+    return isapprox(sol1.x, sol2.x; kwargs...) && isapprox(sol1.y, sol2.y; kwargs...)
 end

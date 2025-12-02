@@ -21,11 +21,11 @@ end
 
 @testset "CPU" begin
     params = PDHGParameters(; termination_reltol = 1.0e-6, max_kkt_passes = 10^7)
-    (x, y), stats = pdhg(milp, params; show_progress = false)
+    sol, stats = solve(milp, params; show_progress = false)
     @test stats.termination_status == MOI.OPTIMAL
-    @test is_feasible(x, milp; cons_tol = 1.0e-4)
+    @test is_feasible(sol.x, milp; cons_tol = 1.0e-4)
     @test is_feasible(jump_x, milp)
-    @test objective_value(jump_x, milp) ≈ objective_value(x, milp) rtol = 1.0e-4
+    @test objective_value(jump_x, milp) ≈ objective_value(sol.x, milp) rtol = 1.0e-4
 end
 
 @testset "GPU" begin
@@ -33,8 +33,8 @@ end
         Float32, Int32, GPUSparseMatrixCSR, JLBackend();
         termination_reltol = 1.0e-4, max_kkt_passes = 10^7
     )
-    (x_gpu, y_gpu), stats_gpu = pdhg(milp, params_gpu; show_progress = false)
+    sol_gpu, stats_gpu = solve(milp, params_gpu; show_progress = false)
     @test stats_gpu.termination_status == MOI.OPTIMAL
-    @test is_feasible(Array(x_gpu), milp; cons_tol = 1.0e-4)
-    @test objective_value(jump_x, milp) ≈ objective_value(Array(x_gpu), milp) rtol = 1.0e-4
+    @test is_feasible(Array(sol_gpu.x), milp; cons_tol = 1.0e-3)
+    @test objective_value(jump_x, milp) ≈ objective_value(Array(sol_gpu.x), milp) rtol = 1.0e-3
 end

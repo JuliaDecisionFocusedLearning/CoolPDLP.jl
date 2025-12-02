@@ -66,9 +66,10 @@ function Base.show(io::IO, stats::ConvergenceStats)
     return print(
         io,
         """Convergence stats with termination status $termination_status:
-        - relative KKT error: $(relative(err))
-        - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
-        - KKT passes: $kkt_passes""",
+          - $err
+          - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
+          - KKT passes: $kkt_passes
+        """,
     )
 end
 

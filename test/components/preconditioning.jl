@@ -23,16 +23,16 @@ end
     milp = MILP(; c, lv, uv, A, lc, uc)
     x = randn(n)
     y = randn(m)
+    sol = PrimalDualSolution(x, y)
 
     params = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = 1, ruiz_iter = 10)
     prec = CoolPDLP.pdlp_preconditioner(milp, params)
 
-    milp_precond = CoolPDLP.precondition_problem(milp, prec)
-    milp_unprecond = CoolPDLP.precondition_problem(milp_precond, inv(prec))
+    milp_precond = CoolPDLP.precondition(milp, prec)
+    milp_unprecond = CoolPDLP.precondition(milp_precond, inv(prec))
     @test isapprox(milp, milp_unprecond)
 
-    x_precond, y_precond = CoolPDLP.precondition_variables(x, y, prec)
-    x_unprecond, y_unprecond = CoolPDLP.precondition_variables(x_precond, y_precond, inv(prec))
-    @test isapprox(x, x_unprecond)
-    @test isapprox(y, y_unprecond)
+    sol_precond = CoolPDLP.precondition(sol, prec)
+    sol_unprecond = CoolPDLP.unprecondition(sol_precond, prec)
+    @test isapprox(sol, sol_unprecond)
 end

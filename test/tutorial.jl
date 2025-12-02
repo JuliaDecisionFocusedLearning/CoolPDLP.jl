@@ -40,11 +40,11 @@ params = PDHGParameters(;
 
 # Then all it takes is to call [`pdhg`](@ref).
 
-(x, y), stats = pdhg(milp, params; show_progress = false);
+sol, stats = solve(milp, params; show_progress = false);
 
 # The solution is available as a primal-dual pair `(x, y)`:
 
-x
+sol.x
 
 # The stats contain information about the convergence of the algorithm:
 
@@ -52,11 +52,11 @@ stats
 
 # You can check the feasibility and objective value:
 
-is_feasible(x, milp; cons_tol = 1.0e-4)
+is_feasible(sol.x, milp; cons_tol = 1.0e-4)
 
 #-
 
-objective_value(x, milp)
+objective_value(sol.x, milp)
 
 # ## Comparing with JuMP
 
@@ -85,26 +85,26 @@ params_gpu = PDHGParameters(
     Int32,  # desired int type
     GPUSparseMatrixCSR,  # hardware-agnostic GPU sparse matrix
     JLBackend();  # replace with e.g. CUDABackend()
-    termination_reltol = 1.0f-6,
+    termination_reltol = 1.0f-4,
     time_limit = 10.0,
 )
 
 # The result of the algorithm will live on the GPU:
 
-(x_gpu, y_gpu), stats_gpu = pdhg(milp, params_gpu; show_progress = false)
-x_gpu
+sol_gpu, stats_gpu = solve(milp, params_gpu; show_progress = false)
+sol_gpu.x
 
 # To bring in back to the CPU, just call the `Array` converter.
 
-objective_value(Array(x_gpu), milp)
+objective_value(Array(sol_gpu.x), milp)
 
 # Tests, excluded from Markdown output  #src
 
 first_err = CoolPDLP.relative(first(stats.error_history)[2])  #src
 last_err = CoolPDLP.relative(last(stats.error_history)[2])  #src
 @test last_err < first_err  #src
-@test is_feasible(x, milp; cons_tol = 1.0e-3)  #src
-@test is_feasible(Array(x_gpu), milp; cons_tol = 1.0e-3)  #src
+@test is_feasible(sol.x, milp; cons_tol = 1.0e-3)  #src
+@test is_feasible(Array(sol_gpu.x), milp; cons_tol = 1.0e-3)  #src
 @test is_feasible(x_jump, milp)  #src
-@test objective_value(x, milp) ≈ objective_value(x_jump, milp) rtol = 1.0e-3  #src
-@test objective_value(Array(x_gpu), milp) ≈ objective_value(x_jump, milp) rtol = 1.0e-3  #src
+@test objective_value(sol.x, milp) ≈ objective_value(x_jump, milp) rtol = 1.0e-3  #src
+@test objective_value(Array(sol_gpu.x), milp) ≈ objective_value(x_jump, milp) rtol = 1.0e-3  #src
