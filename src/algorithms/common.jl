@@ -21,7 +21,34 @@ struct Algorithm{
 end
 
 """
-    Algorithm
+    Algorithm{:ALGNAME}(
+        # conversion
+        _T::Type{T} = Float64,
+        ::Type{Ti} = Int,
+        ::Type{M} = SparseMatrixCSC;
+        backend::B = CPU(),
+        # preconditioning
+        chambolle_pock_alpha = 1.0,
+        ruiz_iter = 10,
+        # step sizes
+        invnorm_scaling = 0.9,
+        primal_weight_damping = 0.5,
+        zero_tol = 1.0e-8,
+        # restart
+        sufficient_decay = 0.2,
+        necessary_decay = 0.8,
+        artificial_decay = 0.36,
+        # generic
+        show_progress = true,
+        check_every = 100,
+        record_error_history = true,
+        # termination
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 10^5,
+        time_limit = 100.0,
+    )
+
+Constructor for algorithm configs.
 """
 function Algorithm{A}(
         # conversion

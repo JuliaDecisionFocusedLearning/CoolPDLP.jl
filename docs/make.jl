@@ -20,6 +20,9 @@ makedocs(;
         "Home" => "index.md",
         "tutorial.md",
         "api.md",
+        "Dev docs" => [
+            "preconditioning.md",
+        ],
     ],
 )
 

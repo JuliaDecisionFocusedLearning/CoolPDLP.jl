@@ -31,18 +31,18 @@ nbcons(milp)
 # ## Solving a MILP
 
 # You can use the PDLP algortithm to solve a MILP.
-# The first thing to do is define parameters.
+# The first thing to do is define parameters inside a [`PDLP`](@ref) struct.
 
 algo = PDLP(;
     termination_reltol = 1.0e-6,
     time_limit = 10.0,
 )
 
-# Then all it takes is to call [`pdhg`](@ref).
+# Then all it takes is to call [`solve`](@ref).
 
 sol, stats = solve(milp, algo);
 
-# The solution is available as a primal-dual pair `(x, y)`:
+# The solution is available as a [`PrimalDualSolution`](@ref):
 
 sol.x
 
