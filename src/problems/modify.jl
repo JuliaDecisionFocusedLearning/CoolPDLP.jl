@@ -82,17 +82,21 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         c, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
+    A_M = M(A)
+    At_M = M(At)
+    backend = common_backend(A_M, At_M)
+
     return MILP(;
-        c,
-        lv,
-        uv,
-        A = M(A),
-        At = M(At),
-        lc,
-        uc,
-        D1,
-        D2,
-        int_var,
+        c = adapt(backend, c),
+        lv = adapt(backend, lv),
+        uv = adapt(backend, uv),
+        A = A_M,
+        At = At_M,
+        lc = adapt(backend, lc),
+        uc = adapt(backend, uc),
+        D1 = adapt(backend, D1),
+        D2 = adapt(backend, D2),
+        int_var = adapt(backend, int_var),
         var_names,
         dataset,
         name,
