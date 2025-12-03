@@ -9,5 +9,7 @@ using Test
         perm_row = CoolPDLP.increasing_column_order(sparse(transpose(A)))
         A_sorted = CoolPDLP.permute_rows_columns(A; perm_col, perm_row)
         @test A[:, perm_col][perm_row, :] == A_sorted
+        @test issorted(map(col -> count(!iszero, col), eachcol(A_sorted)))
+        @test issorted(map(row -> count(!iszero, row), eachrow(A_sorted)))
     end
 end

@@ -1,3 +1,4 @@
+using CoolPDLP
 using JLArrays
 using KernelAbstractions
 using Test

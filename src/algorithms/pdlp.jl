@@ -66,14 +66,12 @@ function initialize(
     return state
 end
 
-
 function solve!(
         state::PDLPState,
         milp::MILP,
-        algo::Algorithm{:PDLP};
-        show_progress::Bool,
+        algo::Algorithm{:PDLP}
     )
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = show_progress)
+    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     while true
         while true
             yield()

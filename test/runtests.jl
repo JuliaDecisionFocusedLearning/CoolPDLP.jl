@@ -1,4 +1,3 @@
-using CoolPDLP
 using Test
 
 @testset verbose = true "CoolPDLP" begin

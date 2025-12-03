@@ -2,6 +2,8 @@
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
+ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
+GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
@@ -10,7 +12,6 @@ KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 MathProgBenchmarks = "f7f8d0a1-fd34-491e-a7ac-a4cf52f91fe5"
-QPSReader = "10f199a5-22af-520b-b891-7ce84a7b1bd0"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SCS = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
@@ -19,7 +20,7 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [sources]
 CoolPDLP = {path = ".."}
-MathProgBenchmarks = {url = "https://github.com/JuliaDecisionFocusedLearning/MathProgBenchmarks.jl"}
+MathProgBenchmarks = {rev = "749acbc22a09d81af47dfcab0b44d39088b1b9ad", url = "https://github.com/JuliaDecisionFocusedLearning/MathProgBenchmarks.jl"}
 
 [compat]
 Aqua = "0.8.14"

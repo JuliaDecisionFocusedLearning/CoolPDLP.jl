@@ -1,32 +1,33 @@
 module CoolPDLP
 
-using Adapt
-using Atomix
-using DispatchDoctor
-using DocStringExtensions
-using GPUArrays
-using IterativeSolvers
-using KernelAbstractions
-using LinearAlgebra
-using MathOptInterface: TerminationStatusCode, ITERATION_LIMIT, OPTIMAL, TIME_LIMIT
-using OhMyThreads
-using ProgressMeter
-using QPSReader
-using QPSReader: VTYPE_Binary, VTYPE_Integer
-using Random
-using SparseArrays
-using StableRNGs
-using Statistics
+# external dependencies
+using Adapt: Adapt, adapt
+using Atomix: Atomix
+using DispatchDoctor: @stable
+using DocStringExtensions: TYPEDFIELDS
+using IterativeSolvers: powm!
+using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
+using ProgressMeter: ProgressUnknown, finish!, next!
+using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
+using StableRNGs: StableRNG
+
+# standard libraries
+using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using Printf: @sprintf
+using Random: randn!
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
 
 @stable begin
-    include("utils/matrices.jl")
-    include("utils/linalg.jl")
     include("utils/device.jl")
+    include("utils/mat_coo.jl")
+    include("utils/mat_csr.jl")
+    include("utils/mat_ell.jl")
+    include("utils/linalg.jl")
+    include("utils/test.jl")
 
     include("problems/milp.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
-    include("problems/constraints.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")

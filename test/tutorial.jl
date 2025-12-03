@@ -40,7 +40,7 @@ algo = PDLP(;
 
 # Then all it takes is to call [`pdhg`](@ref).
 
-sol, stats = solve(milp, algo; show_progress = false);
+sol, stats = solve(milp, algo);
 
 # The solution is available as a primal-dual pair `(x, y)`:
 
@@ -87,11 +87,12 @@ algo_gpu = PDLP(
     backend = JLBackend(),  # replace with e.g. CUDABackend()
     termination_reltol = 1.0f-6,
     time_limit = 10.0,
+    show_progress = false,
 )
 
 # The result of the algorithm will live on the GPU:
 
-sol_gpu, stats_gpu = solve(milp, algo_gpu; show_progress = false)
+sol_gpu, stats_gpu = solve(milp, algo_gpu)
 sol_gpu.x
 
 # To bring in back to the CPU, just call the `Array` converter.

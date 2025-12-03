@@ -22,8 +22,6 @@ end
 
 """
     Algorithm
-
-$(TYPEDSIGNATURES)
 """
 function Algorithm{A}(
         # conversion
@@ -43,6 +41,7 @@ function Algorithm{A}(
         necessary_decay = 0.8,
         artificial_decay = 0.36,
         # generic
+        show_progress = true,
         check_every = 100,
         record_error_history = true,
         # termination
@@ -69,6 +68,7 @@ function Algorithm{A}(
         artificial_decay = _T(artificial_decay),
     )
     generic = GenericParameters(;
+        show_progress,
         check_every,
         record_error_history
     )
@@ -104,7 +104,18 @@ end
 
 abstract type AbstractState{T, V} end
 
-prog_showvalues(state::AbstractState) = (("relative_error", relative(state.stats.err)),)
+function prog_showvalues(state::AbstractState)
+    err = state.stats.err
+    (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
+    rel_primal = @sprintf("%.3e", primal / primal_scale)
+    rel_dual = @sprintf("%.3e", dual / dual_scale)
+    rel_gap = @sprintf("%.3e", gap / gap_scale)
+    return (
+        ("primal", rel_primal),
+        ("dual", rel_dual),
+        ("gap", rel_gap),
+    )
+end
 
 """
     preprocess(milp_init, sol_init, algo)
@@ -138,8 +149,8 @@ Initialize the appropriate state for solving `milp` starting from `sol` with the
 function initialize end
 
 """
-    solve(milp, sol, algo; show_progress=true)
-    solve(milp, algo; show_progress=true)
+    solve(milp, sol, algo)
+    solve(milp, algo)
     
 Solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
 
@@ -154,17 +165,16 @@ function solve(
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    solve!(state, milp, algo; show_progress)
+    solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
 end
 
 function solve(
         milp_init_cpu::MILP,
-        algo::Algorithm;
-        show_progress::Bool = true,
+        algo::Algorithm
     )
     sol_init_cpu = PrimalDualSolution(zero(milp_init_cpu.lv), zero(milp_init_cpu.lc))
-    return solve(milp_init_cpu, sol_init_cpu, algo; show_progress)
+    return solve(milp_init_cpu, sol_init_cpu, algo)
 end
 
 """
@@ -186,7 +196,7 @@ function termination_check!(
         push!(stats.error_history, (stats.kkt_passes, stats.err))
     end
     stats.termination_status = termination_status(stats, algo.termination)
-    return stats.termination_status !== nothing
+    return stats.termination_status !== STILL_RUNNING
 end
 
 function get_solution(state::AbstractState, milp::MILP)

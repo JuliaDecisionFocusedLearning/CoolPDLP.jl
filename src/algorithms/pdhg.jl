@@ -56,10 +56,9 @@ end
 function solve!(
         state::PDHGState,
         milp::MILP,
-        algo::Algorithm{:PDHG};
-        show_progress::Bool,
+        algo::Algorithm{:PDHG}
     )
-    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = show_progress)
+    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
