@@ -29,17 +29,19 @@ using Statistics
     include("problems/constraints.jl")
 
     include("components/scratch.jl")
-    include("components/errors.jl")
-    include("components/termination.jl")
-    include("components/restart.jl")
+    include("components/conversion.jl")
     include("components/preconditioning.jl")
     include("components/permutation.jl")
     include("components/step_size.jl")
+    include("components/errors.jl")
+    include("components/iteration.jl")
+    include("components/restart.jl")
     include("components/generic.jl")
-    include("components/parameters.jl")
+    include("components/termination.jl")
 
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
+    include("algorithms/pdlp.jl")
 end
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
@@ -48,7 +50,7 @@ export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
 export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
-export PDHGParameters
+export PDHG, PDLP
 export is_feasible, objective_value
 
 end # module CoolPDLP

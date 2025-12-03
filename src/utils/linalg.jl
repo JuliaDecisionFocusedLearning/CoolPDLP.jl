@@ -30,20 +30,10 @@ sqnorm(v::DenseVector{<:Number}) = dot(v, v)
 
 custom_sqnorm(x, y, ω) = sqrt(ω * sqnorm(x) + inv(ω) * sqnorm(y))
 
-function squared_bound_scale(l::Number, u::Number)
-    if isfinite(l) && isfinite(u)
-        if l == u
-            return abs2(l)
-        else
-            return abs2(l) + abs2(u)
-        end
-    elseif isfinite(l)
-        return abs2(l)
-    elseif isfinite(u)
-        return abs2(u)
-    else
-        return zero(l)
-    end
+function combine(l::Number, u::Number)
+    ls = isfinite(l) ? abs(l) : zero(l)
+    us = isfinite(u) ? abs(u) : zero(u)
+    return max(zero(l), ls, us)
 end
 
 struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}}

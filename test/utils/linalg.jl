@@ -31,11 +31,11 @@ end
 end
 
 @testset "Bound scale" begin
-    @test CoolPDLP.squared_bound_scale(1, 2) == 5
-    @test CoolPDLP.squared_bound_scale(3, 3) == 9
-    @test CoolPDLP.squared_bound_scale(-Inf, 2) == 4
-    @test CoolPDLP.squared_bound_scale(3, Inf) == 9
-    @test CoolPDLP.squared_bound_scale(-Inf, Inf) == 0
+    @test CoolPDLP.combine(1, 2) == 2
+    @test CoolPDLP.combine(3, 3) == 3
+    @test CoolPDLP.combine(-Inf, 2) == 2
+    @test CoolPDLP.combine(3, Inf) == 3
+    @test CoolPDLP.combine(-Inf, Inf) == 0
 end
 
 @testset "Symmetrized" begin

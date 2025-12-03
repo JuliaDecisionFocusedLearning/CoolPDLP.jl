@@ -46,6 +46,11 @@ function relative(err::KKTErrors)
     return max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
 end
 
+function absolute(err::KKTErrors, ω::Number)
+    (; primal, dual, gap) = err
+    return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+end
+
 function kkt_errors!(
         scratch::Scratch,
         sol::PrimalDualSolution,
@@ -60,8 +65,8 @@ function kkt_errors!(
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - proj_box(A_x, lc, uc))
     primal = norm(primal_diff)
-    lcuc2 = @. scratch.y = squared_bound_scale(lc, uc)
-    primal_scale = one(T) + sqrt(sum(lcuc2))
+    combined_bounds = @. scratch.y = combine(lc, uc)
+    primal_scale = one(T) + norm(combined_bounds)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c - At_y - r)
     dual = norm(dual_diff)

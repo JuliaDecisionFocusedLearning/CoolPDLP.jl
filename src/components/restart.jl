@@ -7,16 +7,16 @@ $(TYPEDFIELDS)
 """
 @kwdef struct RestartParameters{T <: Number}
     "restart criterion: sufficient decay in normalized duality gap"
-    β_sufficient::T
+    sufficient_decay::T
     "restart criterion: necessary decay"
-    β_necessary::T
+    necessary_decay::T
     "restart criterion: long inner loop"
-    β_artificial::T
+    artificial_decay::T
 end
 
 function Base.show(io::IO, params::RestartParameters)
-    (; β_sufficient, β_necessary, β_artificial) = params
-    return print(io, "RestartParameters: β_sufficient=$β_sufficient, β_necessary=$β_necessary, β_artificial=$β_artificial")
+    (; sufficient_decay, necessary_decay, artificial_decay) = params
+    return print(io, "RestartParameters: sufficient_decay=$sufficient_decay, necessary_decay=$necessary_decay, artificial_decay=$artificial_decay")
 end
 
 """
@@ -26,28 +26,32 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct RestartStats{T <: Number}
-    err_restart_candidate::KKTErrors{T}
-    err_restart_candidate_last::KKTErrors{T}
-    err_previous_restart::KKTErrors{T}
-    inner_iterations::Int
-    total_iterations::Int
+mutable struct RestartStats{T <: Number}
+    restart_from_avg::Bool
+    err_candidate::KKTErrors{T}
+    err_candidate_last::KKTErrors{T}
+    err_restart::KKTErrors{T}
+
+    function RestartStats(::Type{T}) where {T}
+        return new{T}(false, KKTErrors(T), KKTErrors(T), KKTErrors(T))
+    end
 end
 
-function restart_check(stats::RestartStats, params::RestartParameters)
-    (;
-        err_restart_candidate, err_restart_candidate_last, err_previous_restart,
-        inner_iterations, total_iterations,
-    ) = stats
-    (; β_sufficient, β_necessary, β_artificial) = params
+function should_restart(
+        stats::RestartStats, step_sizes::StepSizes, iteration::IterationCounter, params::RestartParameters,
+    )
+    (; ω) = step_sizes
+    (; err_candidate, err_candidate_last, err_restart) = stats
+    (; sufficient_decay, necessary_decay, artificial_decay) = params
+    (; inner, total) = iteration
 
-    sufficient_decay = absolute(err_restart_candidate) <= β_sufficient * absolute(err_previous_restart)
-    necessary_decay = absolute(err_restart_candidate) <= β_necessary * absolute(err_previous_restart)
-    no_local_progress = absolute(err_restart_candidate) > absolute(err_restart_candidate_last)
-    long_inner_loop = inner_iterations >= β_artificial * total_iterations
+    sufficient = absolute(err_candidate, ω) <= sufficient_decay * absolute(err_restart, ω)
+    necessary = absolute(err_candidate, ω) <= necessary_decay * absolute(err_restart, ω)
+    no_local_progress = absolute(err_candidate, ω) > absolute(err_candidate_last, ω)
+    long_inner_loop = inner >= artificial_decay * total
 
-    restart_criterion = sufficient_decay ||
-        (necessary_decay && no_local_progress) ||
+    restart_criterion = sufficient ||
+        (necessary && no_local_progress) ||
         long_inner_loop
     return restart_criterion
 end

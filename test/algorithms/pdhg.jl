@@ -20,8 +20,8 @@ begin
 end
 
 @testset "CPU" begin
-    params = PDHGParameters(; termination_reltol = 1.0e-6, max_kkt_passes = 10^7)
-    sol, stats = solve(milp, params; show_progress = false)
+    algo = PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^7)
+    sol, stats = solve(milp, algo; show_progress = false)
     @test stats.termination_status == MOI.OPTIMAL
     @test is_feasible(sol.x, milp; cons_tol = 1.0e-4)
     @test is_feasible(jump_x, milp)
@@ -29,9 +29,10 @@ end
 end
 
 @testset "GPU" begin
-    params_gpu = PDHGParameters(
-        Float32, Int32, GPUSparseMatrixCSR, JLBackend();
-        termination_reltol = 1.0e-4, max_kkt_passes = 10^7
+    params_gpu = PDLP(
+        Float32, Int32, GPUSparseMatrixCSR;
+        backend = JLBackend(),
+        termination_reltol = 1.0e-6, max_kkt_passes = 10^7
     )
     sol_gpu, stats_gpu = solve(milp, params_gpu; show_progress = false)
     @test stats_gpu.termination_status == MOI.OPTIMAL

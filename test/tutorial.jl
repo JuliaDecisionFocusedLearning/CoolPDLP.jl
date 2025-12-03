@@ -30,17 +30,17 @@ nbcons(milp)
 
 # ## Solving a MILP
 
-# You can use the PDHG algortithm to solve a MILP.
+# You can use the PDLP algortithm to solve a MILP.
 # The first thing to do is define parameters.
 
-params = PDHGParameters(;
+algo = PDLP(;
     termination_reltol = 1.0e-6,
     time_limit = 10.0,
 )
 
 # Then all it takes is to call [`pdhg`](@ref).
 
-sol, stats = solve(milp, params; show_progress = false);
+sol, stats = solve(milp, algo; show_progress = false);
 
 # The solution is available as a primal-dual pair `(x, y)`:
 
@@ -80,18 +80,18 @@ objective_value(x_jump, milp)
 
 # To run the same algorithm on the GPU, all it takes is to define a different set of parameters and thus force conversion of the instance:
 
-params_gpu = PDHGParameters(
+algo_gpu = PDLP(
     Float32,  # desired float type
     Int32,  # desired int type
-    GPUSparseMatrixCSR,  # hardware-agnostic GPU sparse matrix
-    JLBackend();  # replace with e.g. CUDABackend()
-    termination_reltol = 1.0f-4,
+    GPUSparseMatrixCSR;  # hardware-agnostic GPU sparse matrix
+    backend = JLBackend(),  # replace with e.g. CUDABackend()
+    termination_reltol = 1.0f-6,
     time_limit = 10.0,
 )
 
 # The result of the algorithm will live on the GPU:
 
-sol_gpu, stats_gpu = solve(milp, params_gpu; show_progress = false)
+sol_gpu, stats_gpu = solve(milp, algo_gpu; show_progress = false)
 sol_gpu.x
 
 # To bring in back to the CPU, just call the `Array` converter.
