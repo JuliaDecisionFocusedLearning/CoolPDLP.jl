@@ -7,21 +7,8 @@ using SparseArrays
 using Test
 
 @testset "Checks" begin
-    m, n = 10, 20
-    c = rand(n)
-    lv = rand(n)
-    uv = lv + rand(n)
-    A = sprand(m, n, 0.3)
-    At = sparse(transpose(A))
-    lc = rand(m)
-    uc = lc + rand(m)
-    D1 = Diagonal(ones(m))
-    D2 = Diagonal(ones(n))
-    int_var = rand(Bool, n)
-    var_names = map(string, 1:n)
-    dataset = "dataset"
-    name = "name"
-    path = "path"
+    milp, _ = CoolPDLP.random_milp_and_sol(100, 200, 0.4)
+    (; c, lv, uv, A, At, lc, uc, D1, D2, int_var) = milp
 
     @test_nowarn MILP(;
         c, lv, uv, A, At, lc, uc, D1, D2,
@@ -54,7 +41,7 @@ using Test
     )
 end
 
-@testset "Counting" begin
+@testset "Compare against JuMP" begin
     function jump_nbcons(model)
         eq, ineq = 0, 0
         for (F, S) in JuMP.list_of_constraint_types(model)
@@ -89,4 +76,11 @@ end;
     qps, path = read_instance(Netlib, "seba")
     milp = MILP(qps; path, name = "seba")
     @test startswith(string(milp), "MILP instance seba")
+end
+
+@testset "Approx" begin
+    netlib = list_instances(Netlib)
+    qps, path = read_instance(Netlib, netlib[1])
+    milp = MILP(qps; path, dataset = "Netlib")
+    @test milp ≈ milp
 end

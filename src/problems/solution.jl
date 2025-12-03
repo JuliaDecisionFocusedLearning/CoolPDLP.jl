@@ -46,7 +46,7 @@ objective_value(x, milp::MILP) = dot(x, milp.c)
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct PrimalDualSolution{T <: Number, V <: DenseVector{T}}
+mutable struct PrimalDualSolution{T <: Number, V <: DenseVector{T}}
     "primal solution"
     const x::V
     "dual solution"

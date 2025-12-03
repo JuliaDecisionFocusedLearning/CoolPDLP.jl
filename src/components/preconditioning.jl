@@ -1,25 +1,4 @@
 """
-    PreconditioningParameters
-
-# Fields
-
-$(TYPEDFIELDS)
-"""
-@kwdef struct PreconditioningParameters{T}
-    "norm parameter in the Chambolle-pock preconditioner"
-    chambolle_pock_alpha::T
-    "iteration parameter in the Ruiz preconditioner"
-    ruiz_iter::Int
-end
-
-function Base.show(io::IO, params::PreconditioningParameters)
-    (; chambolle_pock_alpha, ruiz_iter) = params
-    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter")
-end
-
-# Preconditioning effect
-
-"""
     Preconditioner
 
 # Fields
@@ -40,6 +19,20 @@ function Base.:*(prec_out::Preconditioner, prec_in::Preconditioner)
 end
 
 Base.inv(prec::Preconditioner) = Preconditioner(inv(prec.D1), inv(prec.D2))
+
+# Preconditioning effect
+
+"""
+    ConstraintMatrix
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct ConstraintMatrix{T <: Number, Ti <: Integer, M <: AbstractSparseMatrix{T, Ti}}
+    A::M
+    At::M
+end
 
 function precondition(cons::ConstraintMatrix, prec::Preconditioner)
     (; A, At) = cons
@@ -129,6 +122,25 @@ function ruiz_preconditioner(cons::ConstraintMatrix; iterations::Integer)
         prec = prec_next * prec
     end
     return prec
+end
+
+"""
+    PreconditioningParameters
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+@kwdef struct PreconditioningParameters{T}
+    "norm parameter in the Chambolle-pock preconditioner"
+    chambolle_pock_alpha::T
+    "iteration parameter in the Ruiz preconditioner"
+    ruiz_iter::Int
+end
+
+function Base.show(io::IO, params::PreconditioningParameters)
+    (; chambolle_pock_alpha, ruiz_iter) = params
+    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter")
 end
 
 function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)

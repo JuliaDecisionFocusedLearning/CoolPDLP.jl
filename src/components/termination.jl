@@ -1,4 +1,18 @@
 """
+    TerminationStatus
+
+Enum for the various ways that an algorithm can terminate.
+
+Possible values:
+
+- `OPTIMAL`
+- `TIME_LIMIT`
+- `ITERATION_LIMIT`
+- `STILL_RUNNING`
+"""
+@enum TerminationStatus OPTIMAL TIME_LIMIT ITERATION_LIMIT STILL_RUNNING
+
+"""
     TerminationParameters
 
 # Fields
@@ -36,8 +50,8 @@ mutable struct ConvergenceStats{T <: Number}
     time_elapsed::Float64
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int
-    "termination stats (should be `nothing` until the algorithm actuall terminates)"
-    termination_status::Union{Nothing, TerminationStatusCode}
+    "termination stats (should be `STILL_RUNNING` until the algorithm actually terminates)"
+    termination_status::TerminationStatus
     "history of KKT errors, indexed by number of KKT passes"
     const error_history::Vector{Tuple{Int, KKTErrors{T}}}
 
@@ -47,7 +61,7 @@ mutable struct ConvergenceStats{T <: Number}
             starting_time = time(),
             time_elapsed = 0.0,
             kkt_passes = 0,
-            termination_status = nothing,
+            termination_status = STILL_RUNNING,
             error_history = Tuple{Int, KKTErrors{T}}[]
         ) where {T}
         return new{T}(
@@ -66,10 +80,9 @@ function Base.show(io::IO, stats::ConvergenceStats)
     return print(
         io,
         """Convergence stats with termination status $termination_status:
-          - $err
-          - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
-          - KKT passes: $kkt_passes
-        """,
+        - $err
+        - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
+        - KKT passes: $kkt_passes""",
     )
 end
 
@@ -83,6 +96,6 @@ function termination_status(stats::ConvergenceStats, params::TerminationParamete
     elseif kkt_passes >= max_kkt_passes
         return ITERATION_LIMIT
     else
-        return nothing
+        return STILL_RUNNING
     end
 end

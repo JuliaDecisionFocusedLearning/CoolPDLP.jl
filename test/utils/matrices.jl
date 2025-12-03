@@ -1,5 +1,6 @@
 using Adapt
 using CoolPDLP
+using GPUArraysCore
 using JLArrays
 using KernelAbstractions
 using LinearAlgebra
@@ -16,45 +17,18 @@ b_candidates = [rand(size(A, 2)) for A in A_candidates];
 c_candidates = [rand(size(A, 1)) for A in A_candidates];
 α, β = rand(), rand()
 
-@testset "COO" begin
-    for (A, b, c) in zip(A_candidates, b_candidates, c_candidates)
-        A_coo = GPUSparseMatrixCOO(A)
-        A_coo_jl = adapt(JLBackend(), A_coo)
-        b_jl, c_jl = jl(b), jl(c)
-        @test Matrix(A_coo) == A
-        @test get_backend(A_coo_jl) isa JLBackend
-        @test A_coo_jl isa GPUSparseMatrixCOO{
-            Float64, Int, JLVector{Float64}, JLVector{Int},
-        }
-        @test mul!(copy(c_jl), A_coo_jl, b_jl, α, β) ≈ α * A * b + β * c
-    end
+function test_sparse_matrix(::Type{M}; A, b, c, α, β) where {M}
+    A_jl = adapt(JLBackend(), M(A))
+    b_jl, c_jl = jl(b), jl(c)
+    @test @allowscalar Matrix(A_jl) == A
+    @test nnz(A_jl) == nnz(A)
+    @test get_backend(A_jl) isa JLBackend
+    @test mul!(copy(c_jl), A_jl, b_jl, α, β) ≈ α * A * b + β * c
+    return nothing
 end
 
-@testset "CSR" begin
+@testset for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
     for (A, b, c) in zip(A_candidates, b_candidates, c_candidates)
-        A_csr = GPUSparseMatrixCSR(A)
-        A_csr_jl = adapt(JLBackend(), A_csr)
-        b_jl, c_jl = jl(b), jl(c)
-        @test Matrix(A_csr) == A
-        @test get_backend(A_csr_jl) isa JLBackend
-        @test A_csr_jl isa GPUSparseMatrixCSR{
-            Float64, Int, JLVector{Float64}, JLVector{Int},
-        }
-        @test mul!(copy(c_jl), A_csr_jl, b_jl, α, β) ≈ α * A * b + β * c
-    end
-end
-
-@testset "ELL" begin
-    for (A, b, c) in zip(A_candidates, b_candidates, c_candidates)
-        A_ell = GPUSparseMatrixELL(A)
-        A_ell_jl = adapt(JLBackend(), A_ell)
-        b_jl, c_jl = jl(b), jl(c)
-        @test Matrix(A_ell) == A
-        @test get_backend(A_ell_jl) isa JLBackend
-        @test A_ell_jl isa GPUSparseMatrixELL{
-            Float64, Int, JLMatrix{Float64}, JLMatrix{Int},
-        }
-        mul!(copy(c_jl), A_ell_jl, b_jl, α, β)
-        # @test mul!(copy(c_jl), A_ell_jl, b_jl, α, β) ≈ α * A * b + β * c
+        test_sparse_matrix(M; A, b, c, α, β)
     end
 end
