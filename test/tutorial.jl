@@ -4,12 +4,12 @@ using CoolPDLP
 using HiGHS: HiGHS
 using JLArrays
 using JuMP: JuMP, MOI
-using MathProgBenchmarks: Netlib, list_instances, read_instance
+using MathOptBenchmarkInstances: Netlib, list_instances, read_instance
 using Test  #src
 
 # ## Reading a MILP
 
-# You can use [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl) to read a MILP from a local MPS file, or [MathProgBenchmarks.jl](https://github.com/JuliaDecisionFocusedLearning/MathProgBenchmarks.jl) to automatically download standard benchmark sets.
+# You can use [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl) to read a MILP from a local MPS file, or [MathOptBenchmarkInstances.jl](https://github.com/JuliaDecisionFocusedLearning/MathOptBenchmarkInstances.jl) to automatically download standard benchmark sets.
 
 dataset = Netlib
 list = list_instances(dataset)

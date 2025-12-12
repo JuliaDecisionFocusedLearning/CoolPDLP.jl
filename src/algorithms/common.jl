@@ -186,8 +186,7 @@ Return a couple `(sol, stats)` where `sol` is the last solution and `stats` cont
 function solve(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
-        algo::Algorithm;
-        show_progress::Bool = true,
+        algo::Algorithm
     )
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
@@ -205,9 +204,9 @@ function solve(
 end
 
 """
-    solve!(state, milp, sol, algo)
+    solve!(state, milp, algo)
 
-Modify `state` in-place to solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
+Modify `state` in-place to solve the continuous relaxation of `milp` using the algorithm defined by `algo`.
 """
 function solve! end
 

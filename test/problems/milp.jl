@@ -1,7 +1,7 @@
 using CoolPDLP
 using JLArrays
 using JuMP: JuMP, MOI
-using MathProgBenchmarks
+using MathOptBenchmarkInstances
 using Random
 using SparseArrays
 using Test
