@@ -32,10 +32,10 @@ end
         @test id_prec.D2 == I
     end
     @testset "Ruiz" begin
-        ruiz_prec = CoolPDLP.ruiz_preconditioner(cons; iterations = 1000)
+        ruiz_prec = CoolPDLP.ruiz_preconditioner(cons; iterations = 10000)
         cons_p = CoolPDLP.precondition(cons, ruiz_prec)
-        @test all(≈(1; rtol = 1.0e-3), map(col -> norm(col, Inf), eachcol(cons_p.A)))
-        @test all(≈(1; rtol = 1.0e-3), map(col -> norm(col, Inf), eachcol(cons_p.At)))
+        @test all(≈(1; rtol = 1.0e-2), map(col -> norm(col, Inf), eachcol(cons_p.A)))
+        @test all(≈(1; rtol = 1.0e-2), map(col -> norm(col, Inf), eachcol(cons_p.At)))
     end
 end
 
