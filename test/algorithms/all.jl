@@ -4,7 +4,7 @@ using HiGHS: HiGHS
 using JLArrays
 using KernelAbstractions
 using LinearAlgebra
-using MathProgBenchmarks
+using MathOptBenchmarkInstances
 using JuMP: JuMP, MOI
 using SparseArrays
 using Test
@@ -18,7 +18,7 @@ small_names = filter(map(milp -> milp.name, netlib_milps[1:3])) do name
 end
 
 function test_optimizer(
-        dataset::MathProgBenchmarks.Dataset, name::String, algo::CoolPDLP.Algorithm;
+        dataset::MathOptBenchmarkInstances.Dataset, name::String, algo::CoolPDLP.Algorithm;
         obj_rtol::Float64 = 1.0e-2, cons_tol::Float64 = 1.0e-2, int_tol::Float64 = Inf,
     )
     qps, path = read_instance(dataset, name)
