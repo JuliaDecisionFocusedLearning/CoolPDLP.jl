@@ -79,10 +79,10 @@ function solve!(
                 step!(state, milp)
                 next!(prog; showvalues = prog_showvalues(state))
             end
-            if restart_check!(state, milp, algo)
-                restart!(state, algo)
-            elseif termination_check!(state, milp, algo)
+            if termination_check!(state, milp, algo)
                 break
+            elseif restart_check!(state, milp, algo)
+                restart!(state, algo)
             end
         end
         if termination_check!(state, milp, algo)
