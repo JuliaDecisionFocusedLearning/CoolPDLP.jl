@@ -53,7 +53,7 @@ end
 
 @testset "PDLP" begin
     @testset for (M, backend) in configs
-        algo = PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-4, max_kkt_passes = 10^7, show_progress = false)
+        algo = PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-5, max_kkt_passes = 10^7, show_progress = false)
         dataset = Netlib
         @testset for name in small_names
             test_optimizer(dataset, name, algo; cons_tol = 1.0e-2)
