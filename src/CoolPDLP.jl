@@ -54,4 +54,6 @@ export preprocess, initialize, solve, solve!
 export PDHG, PDLP
 export is_feasible, objective_value
 
+global Optimizer
+
 end # module CoolPDLP
