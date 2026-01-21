@@ -1,6 +1,7 @@
 using CoolPDLP
 using LinearAlgebra
 using SparseArrays
+using Random: Xoshiro
 using Test
 
 @testset "Composition" begin
@@ -24,7 +25,8 @@ end
 end
 
 @testset "Preconditioner types" begin
-    A = sprand(10, 20, 0.4)
+    rng = Xoshiro(42)
+    A = sprand(rng, 10, 20, 0.4)
     cons = CoolPDLP.ConstraintMatrix(A, sparse(transpose(A)))
     @testset "Identity" begin
         id_prec = CoolPDLP.identity_preconditioner(cons)
