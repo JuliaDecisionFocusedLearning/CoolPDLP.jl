@@ -191,6 +191,11 @@ function solve(
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
+    if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
+        @. sol.x = proj_box(zero(eltype(milp.lv)), milp.lv, milp.uv)
+        state.stats.termination_status = OPTIMAL
+        return get_solution(state, milp), state.stats
+    end
     solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
 end
