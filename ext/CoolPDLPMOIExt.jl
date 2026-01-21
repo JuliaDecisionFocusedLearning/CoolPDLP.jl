@@ -194,11 +194,18 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     uc = cache.constraints.constants.upper
 
     milp = CoolPDLP.MILP(; c, lv, uv, A, lc, uc)
+
+    algorithm = pop!(dest.options, :algorithm, CoolPDLP.PDLP)
+
+    float_type = pop!(dest.options, :float_type, T)
+    int_type = pop!(dest.options, :int_type, Int)  # FIXME: get int type from float type?
+    matrix_type = pop!(dest.options, :matrix_type, SparseMatrixCSC)
+
     algo_opts = Dict{Symbol, Any}(:show_progress => !dest.silent)
     for (k, v) in dest.options
         algo_opts[k] = v
     end
-    algo = CoolPDLP.PDLP(; algo_opts...)
+    algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
 
     sol, stats = CoolPDLP.solve(milp, algo)
 
