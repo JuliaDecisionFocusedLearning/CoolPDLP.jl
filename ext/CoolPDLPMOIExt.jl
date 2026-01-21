@@ -48,8 +48,7 @@ function MOI.is_empty(model::Optimizer)
             model.primal_status == MOI.UNKNOWN_RESULT_STATUS &&
             model.dual_status == MOI.UNKNOWN_RESULT_STATUS &&
             iszero(model.solve_time) &&
-            isnothing(model.sets) &&
-            isempty(model.options)
+            isnothing(model.sets)
     )
 end
 function MOI.empty!(model::Optimizer{T}) where {T}
@@ -62,7 +61,6 @@ function MOI.empty!(model::Optimizer{T}) where {T}
     model.dual_status = MOI.UNKNOWN_RESULT_STATUS
     model.solve_time = zero(T)
     model.sets = nothing
-    empty!(model.options)
     return
 end
 
@@ -209,11 +207,11 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
 
     sol, stats = CoolPDLP.solve(milp, algo)
 
-    dest.x = sol.x
-    dest.y = sol.y
-    dest.z = CoolPDLP.proj_multiplier.(c .- milp.At * sol.y, lv, uv)
+    dest.x = Array(sol.x)
+    dest.y = Array(sol.y)
+    dest.z = CoolPDLP.proj_multiplier.(c .- milp.At * dest.y, lv, uv)
 
-    raw_obj = CoolPDLP.objective_value(sol.x, milp)
+    raw_obj = CoolPDLP.objective_value(dest.x, milp)
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
     dest.solve_time = stats.time_elapsed
 
