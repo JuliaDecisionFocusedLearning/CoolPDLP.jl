@@ -5,7 +5,7 @@ import CoolPDLP
 import SparseArrays: SparseMatrixCSC
 
 function __init__()
-    Base.setglobal!(CoolPDLP, :Optimizer, Optimizer)
+    return Base.setglobal!(CoolPDLP, :Optimizer, Optimizer)
 end
 
 MOI.Utilities.@product_of_sets(
@@ -26,14 +26,14 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     dual_status::MOI.ResultStatusCode
     solve_time::T
     silent::Bool
-    sets::Union{Nothing,RHS{T}}
-    options::Dict{Symbol,Any}
+    sets::Union{Nothing, RHS{T}}
+    options::Dict{Symbol, Any}
 
     function Optimizer(; T = Float64)
         return new{T}(
             T[], T[], T[], zero(T),
             MOI.OPTIMIZE_NOT_CALLED, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS,
-            zero(T), false, nothing, Dict{Symbol,Any}(),
+            zero(T), false, nothing, Dict{Symbol, Any}(),
         )
     end
 end
@@ -41,15 +41,15 @@ end
 function MOI.is_empty(model::Optimizer)
     return (
         isempty(model.x) &&
-        isempty(model.y) &&
-        isempty(model.z) &&
-        iszero(model.obj_value) &&
-        model.termination_status == MOI.OPTIMIZE_NOT_CALLED &&
-        model.primal_status == MOI.UNKNOWN_RESULT_STATUS &&
-        model.dual_status == MOI.UNKNOWN_RESULT_STATUS &&
-        iszero(model.solve_time) &&
-        isnothing(model.sets) &&
-        isempty(model.options)
+            isempty(model.y) &&
+            isempty(model.z) &&
+            iszero(model.obj_value) &&
+            model.termination_status == MOI.OPTIMIZE_NOT_CALLED &&
+            model.primal_status == MOI.UNKNOWN_RESULT_STATUS &&
+            model.dual_status == MOI.UNKNOWN_RESULT_STATUS &&
+            iszero(model.solve_time) &&
+            isnothing(model.sets) &&
+            isempty(model.options)
     )
 end
 function MOI.empty!(model::Optimizer{T}) where {T}
@@ -79,7 +79,7 @@ MOI.supports(::Optimizer, ::MOI.RawOptimizerAttribute) = true
 
 MOI.get(model::Optimizer, ::MOI.TimeLimitSec) = get(model.options, :time_limit, nothing)
 function MOI.set(model::Optimizer{T}, ::MOI.TimeLimitSec, value) where {T}
-    if isnothing(value)
+    return if isnothing(value)
         delete!(model.options, :time_limit)
     else
         model.options[:time_limit] = T(value)
@@ -118,47 +118,49 @@ function MOI.get(model::Optimizer, attr::MOI.VariablePrimal, vi::MOI.VariableInd
 end
 
 function MOI.get(
-    model::Optimizer{T},
-    attr::MOI.ConstraintDual,
-    ci::MOI.ConstraintIndex{MOI.ScalarAffineFunction{T},S},
-) where {T,S<:SUPPORTED_SET_TYPE{T}}
+        model::Optimizer{T},
+        attr::MOI.ConstraintDual,
+        ci::MOI.ConstraintIndex{MOI.ScalarAffineFunction{T}, S},
+    ) where {T, S <: SUPPORTED_SET_TYPE{T}}
     MOI.check_result_index_bounds(model, attr)
     row = only(MOI.Utilities.rows(model.sets, ci))
     return model.y[row]
 end
 
 function MOI.get(
-    model::Optimizer{T},
-    attr::MOI.ConstraintDual,
-    ci::MOI.ConstraintIndex{MOI.VariableIndex,MOI.GreaterThan{T}},
-) where {T}
+        model::Optimizer{T},
+        attr::MOI.ConstraintDual,
+        ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.GreaterThan{T}},
+    ) where {T}
     MOI.check_result_index_bounds(model, attr)
     return max(model.z[ci.value], zero(T))
 end
 
 function MOI.get(
-    model::Optimizer{T},
-    attr::MOI.ConstraintDual,
-    ci::MOI.ConstraintIndex{MOI.VariableIndex,MOI.LessThan{T}},
-) where {T}
+        model::Optimizer{T},
+        attr::MOI.ConstraintDual,
+        ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.LessThan{T}},
+    ) where {T}
     MOI.check_result_index_bounds(model, attr)
     return min(model.z[ci.value], zero(T))
 end
 
 function MOI.get(
-    model::Optimizer{T},
-    attr::MOI.ConstraintDual,
-    ci::MOI.ConstraintIndex{MOI.VariableIndex,S},
-) where {T,S<:Union{MOI.EqualTo{T},MOI.Interval{T}}}
+        model::Optimizer{T},
+        attr::MOI.ConstraintDual,
+        ci::MOI.ConstraintIndex{MOI.VariableIndex, S},
+    ) where {T, S <: Union{MOI.EqualTo{T}, MOI.Interval{T}}}
     MOI.check_result_index_bounds(model, attr)
     return model.z[ci.value]
 end
 
-const OptimizerCache{T} = MOI.Utilities.GenericModel{T,
+const OptimizerCache{T} = MOI.Utilities.GenericModel{
+    T,
     MOI.Utilities.ObjectiveContainer{T},
     MOI.Utilities.VariablesContainer{T},
-    MOI.Utilities.MatrixOfConstraints{T,
-        MOI.Utilities.MutableSparseMatrixCSC{T,Int,MOI.Utilities.OneBasedIndexing},
+    MOI.Utilities.MatrixOfConstraints{
+        T,
+        MOI.Utilities.MutableSparseMatrixCSC{T, Int, MOI.Utilities.OneBasedIndexing},
         MOI.Utilities.Hyperrectangle{T}, RHS{T},
     },
 }
@@ -171,7 +173,7 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     n = cache.constraints.coefficients.n
     max_sense = cache.objective.sense == MOI.MAX_SENSE
 
-    A = convert(SparseMatrixCSC{T,Int}, cache.constraints.coefficients)
+    A = convert(SparseMatrixCSC{T, Int}, cache.constraints.coefficients)
 
     c = zeros(T, n)
     obj_constant = zero(T)
@@ -192,18 +194,18 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     uc = cache.constraints.constants.upper
 
     milp = CoolPDLP.MILP(; c, lv, uv, A, lc, uc)
-    algo_opts = Dict{Symbol,Any}(:show_progress => !dest.silent)
+    algo_opts = Dict{Symbol, Any}(:show_progress => !dest.silent)
     for (k, v) in dest.options
         algo_opts[k] = v
     end
     algo = CoolPDLP.PDLP(; algo_opts...)
-    
+
     sol, stats = CoolPDLP.solve(milp, algo)
 
     dest.x = sol.x
     dest.y = sol.y
     dest.z = CoolPDLP.proj_multiplier.(c .- milp.At * sol.y, lv, uv)
-    
+
     raw_obj = CoolPDLP.objective_value(sol.x, milp)
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
     dest.solve_time = stats.time_elapsed

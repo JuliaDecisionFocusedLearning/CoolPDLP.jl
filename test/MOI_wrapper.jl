@@ -15,17 +15,17 @@ import JuMP
     MOI.Test.runtests(
         model,
         MOI.Test.Config(;
-            atol=1e-3,
-            rtol=1e-3,
-            optimal_status=MOI.OPTIMAL,
-            exclude=Any[
+            atol = 1.0e-3,
+            rtol = 1.0e-3,
+            optimal_status = MOI.OPTIMAL,
+            exclude = Any[
                 MOI.ObjectiveBound,
                 MOI.VariableBasisStatus,
                 MOI.ConstraintBasisStatus,
                 MOI.DualObjectiveValue,
             ],
         );
-        exclude=[
+        exclude = [
             # TODO: infeasible/unbounded detection
             r"INFEASIB",
             r"unbounded",
