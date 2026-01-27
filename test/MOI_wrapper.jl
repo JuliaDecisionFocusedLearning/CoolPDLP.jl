@@ -25,15 +25,12 @@ using JLArrays: JLBackend
                 MOI.ObjectiveBound,
                 MOI.VariableBasisStatus,
                 MOI.ConstraintBasisStatus,
-                MOI.DualObjectiveValue,
             ],
         );
         exclude = [
             # TODO: infeasible/unbounded detection
-            r"INFEASIB",
-            r"unbounded",
-            # Poor precision on this test
-            r"test_linear_add_constraints",
+            r"INFEASIBILITY_CERTIFICATE", r"INFEASIBLE",  # exclude infeasible test problems
+            r"test_linear_add_constraints",  # for `y`, we get 36.434290756682884 but answer is 36.36363636363637
         ],
     )
 end
@@ -53,6 +50,37 @@ end
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
     @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
+end
+
+@testset "Float32" begin
+    # model/return in Float64, solve in Float32
+    model = JuMP.Model(CoolPDLP.Optimizer)
+    JuMP.set_silent(model)
+    JuMP.set_attribute(model, "float_type", Float32)
+    JuMP.@variable(model, x >= 0)
+    JuMP.@variable(model, 0 <= y <= 3)
+    JuMP.@objective(model, Min, 12x + 20y)
+    JuMP.@constraint(model, c1, 6x + 8y >= 100)
+    JuMP.@constraint(model, c2, 7x + 12y >= 120)
+    @test_warn "Got mismatched float type" JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
+    @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
+    @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
+    @test JuMP.value(x) isa Float64
+
+    # model/return in Float32, solve in Float32
+    model = JuMP.GenericModel{Float32}(CoolPDLP.Optimizer{Float32})
+    JuMP.set_silent(model)
+    JuMP.@variable(model, x >= 0f0)
+    JuMP.@variable(model, 0f0 <= y <= 3f0)
+    JuMP.@objective(model, Min, 12f0x + 20f0y)
+    JuMP.@constraint(model, c1, 6f0x + 8f0y >= 100f0)
+    JuMP.@constraint(model, c2, 7f0x + 12f0y >= 120f0)
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
+    @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
+    @test JuMP.objective_value(model) ≈ 205f0 atol = 1.0e-2
+    @test JuMP.value(x) isa Float32
 end
 
 if CUDA.functional()

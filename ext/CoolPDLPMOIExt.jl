@@ -21,29 +21,33 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     y::Vector{T}
     z::Vector{T}
     obj_value::T
+    dual_obj_value::T
     termination_status::MOI.TerminationStatusCode
     primal_status::MOI.ResultStatusCode
     dual_status::MOI.ResultStatusCode
-    solve_time::T
+    solve_time::Float64
     silent::Bool
     sets::Union{Nothing, RHS{T}}
     options::Dict{Symbol, Any}
 
-    function Optimizer(; T = Float64)
+    function Optimizer{T}() where {T <: Real}
         return new{T}(
-            T[], T[], T[], zero(T),
+            T[], T[], T[], T(NaN), T(NaN),
             MOI.OPTIMIZE_NOT_CALLED, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS,
-            zero(T), false, nothing, Dict{Symbol, Any}(),
+            0.0, false, nothing, Dict{Symbol, Any}(),
         )
     end
 end
+
+Optimizer() = Optimizer{Float64}()
 
 function MOI.is_empty(model::Optimizer)
     return (
         isempty(model.x) &&
             isempty(model.y) &&
             isempty(model.z) &&
-            iszero(model.obj_value) &&
+            isnan(model.obj_value) &&
+            isnan(model.dual_obj_value) &&
             model.termination_status == MOI.OPTIMIZE_NOT_CALLED &&
             model.primal_status == MOI.UNKNOWN_RESULT_STATUS &&
             model.dual_status == MOI.UNKNOWN_RESULT_STATUS &&
@@ -55,11 +59,12 @@ function MOI.empty!(model::Optimizer{T}) where {T}
     empty!(model.x)
     empty!(model.y)
     empty!(model.z)
-    model.obj_value = zero(T)
+    model.obj_value = T(NaN)
+    model.dual_obj_value = T(NaN)
     model.termination_status = MOI.OPTIMIZE_NOT_CALLED
     model.primal_status = MOI.UNKNOWN_RESULT_STATUS
     model.dual_status = MOI.UNKNOWN_RESULT_STATUS
-    model.solve_time = zero(T)
+    model.solve_time = 0.0
     model.sets = nothing
     return
 end
@@ -109,6 +114,7 @@ end
 MOI.get(model::Optimizer, attr::MOI.PrimalStatus) = _status_check_index(model, attr, model.primal_status)
 MOI.get(model::Optimizer, attr::MOI.DualStatus) = _status_check_index(model, attr, model.dual_status)
 MOI.get(model::Optimizer, attr::MOI.ObjectiveValue) = _attr_check_index(model, attr, model.obj_value)
+MOI.get(model::Optimizer, attr::MOI.DualObjectiveValue) = _attr_check_index(model, attr, model.dual_obj_value)
 
 function MOI.get(model::Optimizer, attr::MOI.VariablePrimal, vi::MOI.VariableIndex)
     MOI.check_result_index_bounds(model, attr)
@@ -121,8 +127,7 @@ function MOI.get(
         ci::MOI.ConstraintIndex{MOI.ScalarAffineFunction{T}, S},
     ) where {T, S <: SUPPORTED_SET_TYPE{T}}
     MOI.check_result_index_bounds(model, attr)
-    row = only(MOI.Utilities.rows(model.sets, ci))
-    return model.y[row]
+    return model.y[MOI.Utilities.rows(model.sets, ci)]
 end
 
 function MOI.get(
@@ -131,7 +136,7 @@ function MOI.get(
         ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.GreaterThan{T}},
     ) where {T}
     MOI.check_result_index_bounds(model, attr)
-    return max(model.z[ci.value], zero(T))
+    return CoolPDLP.positive_part(model.z[ci.value])
 end
 
 function MOI.get(
@@ -140,7 +145,7 @@ function MOI.get(
         ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.LessThan{T}},
     ) where {T}
     MOI.check_result_index_bounds(model, attr)
-    return min(model.z[ci.value], zero(T))
+    return -CoolPDLP.negative_part(model.z[ci.value])
 end
 
 function MOI.get(
@@ -196,7 +201,10 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     algorithm = pop!(dest.options, :algorithm, CoolPDLP.PDLP)
 
     float_type = pop!(dest.options, :float_type, T)
-    int_type = pop!(dest.options, :int_type, Int)  # FIXME: get int type from float type?
+    if float_type !== T
+        @warn "Got mismatched float type: solving in $float_type but returning the solution in $T."
+    end
+    int_type = pop!(dest.options, :int_type, Int)
     matrix_type = pop!(dest.options, :matrix_type, SparseMatrixCSC)
 
     algo_opts = Dict{Symbol, Any}(:show_progress => !dest.silent)
@@ -212,7 +220,14 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     dest.z = CoolPDLP.proj_multiplier.(c .- milp.At * dest.y, lv, uv)
 
     raw_obj = CoolPDLP.objective_value(dest.x, milp)
+    raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+        sum(CoolPDLP.safeprod_left.(lc, CoolPDLP.positive_part.(dest.y)))
+        - sum(CoolPDLP.safeprod_left.(uc, CoolPDLP.negative_part.(dest.y)))
+        + sum(CoolPDLP.safeprod_left.(lv, CoolPDLP.positive_part.(dest.z)))
+        - sum(CoolPDLP.safeprod_left.(uv, CoolPDLP.negative_part.(dest.z)))
+    )
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
+    dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
