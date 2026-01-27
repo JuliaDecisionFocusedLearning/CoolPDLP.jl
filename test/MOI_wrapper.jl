@@ -71,15 +71,15 @@ end
     # model/return in Float32, solve in Float32
     model = JuMP.GenericModel{Float32}(CoolPDLP.Optimizer{Float32})
     JuMP.set_silent(model)
-    JuMP.@variable(model, x >= 0f0)
-    JuMP.@variable(model, 0f0 <= y <= 3f0)
-    JuMP.@objective(model, Min, 12f0x + 20f0y)
-    JuMP.@constraint(model, c1, 6f0x + 8f0y >= 100f0)
-    JuMP.@constraint(model, c2, 7f0x + 12f0y >= 120f0)
+    JuMP.@variable(model, x >= 0.0f0)
+    JuMP.@variable(model, 0.0f0 <= y <= 3.0f0)
+    JuMP.@objective(model, Min, 12.0f0x + 20.0f0y)
+    JuMP.@constraint(model, c1, 6.0f0x + 8.0f0y >= 100.0f0)
+    JuMP.@constraint(model, c2, 7.0f0x + 12.0f0y >= 120.0f0)
     JuMP.optimize!(model)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
-    @test JuMP.objective_value(model) ≈ 205f0 atol = 1.0e-2
+    @test JuMP.objective_value(model) ≈ 205.0f0 atol = 1.0e-2
     @test JuMP.value(x) isa Float32
 end
 

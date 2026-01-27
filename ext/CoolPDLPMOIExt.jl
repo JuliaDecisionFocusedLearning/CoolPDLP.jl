@@ -222,9 +222,9 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     raw_obj = CoolPDLP.objective_value(dest.x, milp)
     raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
         sum(CoolPDLP.safeprod_left.(lc, CoolPDLP.positive_part.(dest.y)))
-        - sum(CoolPDLP.safeprod_left.(uc, CoolPDLP.negative_part.(dest.y)))
-        + sum(CoolPDLP.safeprod_left.(lv, CoolPDLP.positive_part.(dest.z)))
-        - sum(CoolPDLP.safeprod_left.(uv, CoolPDLP.negative_part.(dest.z)))
+            - sum(CoolPDLP.safeprod_left.(uc, CoolPDLP.negative_part.(dest.y)))
+            + sum(CoolPDLP.safeprod_left.(lv, CoolPDLP.positive_part.(dest.z)))
+            - sum(CoolPDLP.safeprod_left.(uv, CoolPDLP.negative_part.(dest.z)))
     )
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
     dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
