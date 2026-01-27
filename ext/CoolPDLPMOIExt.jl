@@ -96,7 +96,7 @@ MOI.set(model::Optimizer, attr::MOI.RawOptimizerAttribute, value) = (model.optio
 MOI.get(::Optimizer, ::MOI.SolverName) = "CoolPDLP"
 MOI.get(::Optimizer, ::MOI.SolverVersion) = string(pkgversion(CoolPDLP))
 MOI.get(model::Optimizer, ::MOI.TerminationStatus) = model.termination_status
-MOI.get(model::Optimizer, ::MOI.ResultCount) = model.termination_status == MOI.OPTIMAL ? 1 : 0
+MOI.get(model::Optimizer, ::MOI.ResultCount) = model.termination_status != MOI.OPTIMIZE_NOT_CALLED ? 1 : 0
 MOI.get(model::Optimizer, ::MOI.RawStatusString) = string(model.termination_status)
 MOI.get(model::Optimizer, ::MOI.SolveTimeSec) = model.solve_time
 
