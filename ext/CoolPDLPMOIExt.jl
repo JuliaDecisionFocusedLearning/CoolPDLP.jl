@@ -85,7 +85,7 @@ function MOI.set(model::Optimizer{T}, ::MOI.TimeLimitSec, value) where {T}
     return if isnothing(value)
         delete!(model.options, :time_limit)
     else
-        model.options[:time_limit] = T(value)
+        model.options[:time_limit] = Float64(value)
     end
 end
 MOI.get(model::Optimizer, ::MOI.Silent) = model.silent
