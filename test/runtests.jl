@@ -17,4 +17,7 @@ using Test
             end
         end
     end
+    @testset "MOI Wrapper" begin
+        include("MOI_wrapper.jl")
+    end
 end

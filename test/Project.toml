@@ -1,6 +1,7 @@
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
