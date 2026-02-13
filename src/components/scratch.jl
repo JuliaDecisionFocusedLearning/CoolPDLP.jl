@@ -4,7 +4,7 @@
     "dual scratch (length `ncons`)"
     y::V
     "dual scratch (length `nvar`)"
-    r::V
+    z::V
 end
 
 Scratch(sol::PrimalDualSolution) = Scratch(similar(sol.x), similar(sol.y), similar(sol.x))

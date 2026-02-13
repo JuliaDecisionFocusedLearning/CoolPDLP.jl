@@ -72,7 +72,7 @@ function kkt_errors!(
 
     A_x = mul!(scratch.y, A, x)
     c_At_y = c - mul!(scratch.x, At, y)
-    r = @. scratch.r = proj_multiplier(c_At_y, lv, uv)
+    z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - proj_box(A_x, lc, uc))
     primal = norm(primal_diff)
@@ -80,7 +80,7 @@ function kkt_errors!(
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     primal_scale = one(T) + norm(rescaled_combined_bounds)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - r)
+    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
     dual = norm(dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
@@ -92,8 +92,8 @@ function kkt_errors!(
     pc = @. scratch.y = (
         safeprod_left(lc, positive_part(y)) - safeprod_left(uc, negative_part(y))
     )
-    pv = @. scratch.r = (
-        safeprod_left(lv, positive_part(r)) - safeprod_left(uv, negative_part(r))
+    pv = @. scratch.z = (
+        safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
     pc_sum = sum(pc)
     pv_sum = sum(pv)
