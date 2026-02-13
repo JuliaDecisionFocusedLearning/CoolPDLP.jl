@@ -84,18 +84,22 @@ function kkt_errors!(
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
     dual_scale = one(T) + norm(rescaled_obj)
 
+    # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+    #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
+    #    where pc = (l⋅|y|⁺ - u⋅|y|⁻) and pv = (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
     pc = @. scratch.y = (
-        safeprod_left(uc, positive_part(-y)) - safeprod_left(lc, negative_part(-y))
+        safeprod_left(lc, positive_part(y)) - safeprod_left(uc, negative_part(y))
     )
     pv = @. scratch.r = (
-        safeprod_left(uv, positive_part(-r)) - safeprod_left(lv, negative_part(-r))
+        safeprod_left(lv, positive_part(r)) - safeprod_left(uv, negative_part(r))
     )
     pc_sum = sum(pc)
     pv_sum = sum(pv)
     cx = dot(c, x)
+    dobj = pc_sum + pv_sum
 
-    gap = abs(cx + pc_sum + pv_sum)
-    gap_scale = one(T) + abs(pc_sum + pv_sum) + abs(cx)
+    gap = abs(cx - dobj)
+    gap_scale = one(T) + abs(dobj) + abs(cx)
 
     err = KKTErrors(;
         primal,
