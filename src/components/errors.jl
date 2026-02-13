@@ -86,7 +86,7 @@ function kkt_errors!(
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
-    #    where pc = (l⋅|y|⁺ - u⋅|y|⁻) and pv = (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
+    #    where pc = (l⋅|y|⁺ - u⋅|y|⁻) and pv = (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)
     pc = @. scratch.y = (
         safeprod_left(lc, positive_part(y)) - safeprod_left(uc, negative_part(y))
     )
