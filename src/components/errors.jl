@@ -71,16 +71,18 @@ function kkt_errors!(
     (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
 
     A_x = mul!(scratch.y, A, x)
-    At_y = mul!(scratch.x, At, y)
-    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
+    c_At_y = c - mul!(scratch.x, At, y)
+    r = @. scratch.r = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - proj_box(A_x, lc, uc))
     primal = norm(primal_diff)
+
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     primal_scale = one(T) + norm(rescaled_combined_bounds)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c - At_y - r)
+    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - r)
     dual = norm(dual_diff)
+
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
     dual_scale = one(T) + norm(rescaled_obj)
 
