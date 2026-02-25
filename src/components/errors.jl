@@ -71,31 +71,37 @@ function kkt_errors!(
     (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
 
     A_x = mul!(scratch.y, A, x)
-    At_y = mul!(scratch.x, At, y)
-    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
+    c_At_y = c - mul!(scratch.x, At, y)
+    z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - proj_box(A_x, lc, uc))
     primal = norm(primal_diff)
+
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     primal_scale = one(T) + norm(rescaled_combined_bounds)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c - At_y - r)
+    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
     dual = norm(dual_diff)
+
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
     dual_scale = one(T) + norm(rescaled_obj)
 
+    # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+    #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
+    #    where pc = (l⋅|y|⁺ - u⋅|y|⁻) and pv = (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)
     pc = @. scratch.y = (
-        safeprod_left(uc, positive_part(-y)) - safeprod_left(lc, negative_part(-y))
+        safeprod_left(lc, positive_part(y)) - safeprod_left(uc, negative_part(y))
     )
-    pv = @. scratch.r = (
-        safeprod_left(uv, positive_part(-r)) - safeprod_left(lv, negative_part(-r))
+    pv = @. scratch.z = (
+        safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
     pc_sum = sum(pc)
     pv_sum = sum(pv)
     cx = dot(c, x)
+    dobj = pc_sum + pv_sum
 
-    gap = abs(cx + pc_sum + pv_sum)
-    gap_scale = one(T) + abs(pc_sum + pv_sum) + abs(cx)
+    gap = abs(cx - dobj)
+    gap_scale = one(T) + abs(dobj) + abs(cx)
 
     err = KKTErrors(;
         primal,

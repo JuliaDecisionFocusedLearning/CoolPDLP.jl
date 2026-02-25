@@ -7,7 +7,7 @@ function p(y, l, u)
     y⁻ = CoolPDLP.negative_part.(y)
     u_noinf = CoolPDLP.safe.(u)
     l_noinf = CoolPDLP.safe.(l)
-    return dot(y⁺, u_noinf) - dot(y⁻, l_noinf)
+    return dot(y⁺, l_noinf) - dot(y⁻, u_noinf)
 end
 
 milp, sol = CoolPDLP.random_milp_and_sol(100, 200, 0.4)
@@ -27,10 +27,10 @@ err_p = CoolPDLP.kkt_errors!(scratch, sol_p, milp_p)
 @testset "Correct KKT errors" begin
     @test err.primal ≈ norm(A * x - CoolPDLP.proj_box.(A * x, lc, uc))
     @test err.dual ≈ norm(c - At * y - r)
-    @test err.gap ≈ abs(dot(c, x) + p(-y, lc, uc) + p(-r, lv, uv))
+    @test err.gap ≈ abs(dot(c, x) - (p(y, lc, uc) + p(r, lv, uv)))
     @test err.primal_scale ≈ 1 + norm(CoolPDLP.combine.(lc, uc))
     @test err.dual_scale ≈ 1 + norm(c)
-    @test err.gap_scale ≈ 1 + abs(dot(c, x)) + abs(p(-y, lc, uc) + p(-r, lv, uv))
+    @test err.gap_scale ≈ 1 + abs(dot(c, x)) + abs(p(y, lc, uc) + p(r, lv, uv))
 end
 
 @testset "Invariance by preconditioning" begin

@@ -55,7 +55,7 @@ function initialize(
     η = fixed_stepsize(milp, algo.step_size)
     ω = primal_weight_init(milp, algo.step_size)
     step_sizes = StepSizes(; η, ω)
-    scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
+    scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(T)
     stats = ConvergenceStats(T; starting_time)

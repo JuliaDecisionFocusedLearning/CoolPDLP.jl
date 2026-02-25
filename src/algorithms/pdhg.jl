@@ -47,7 +47,7 @@ function initialize(
     η = fixed_stepsize(milp, algo.step_size)
     ω = one(η)
     step_sizes = StepSizes(; η, ω)
-    scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
+    scratch = Scratch(sol)
     stats = ConvergenceStats(T; starting_time)
     state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
     return state
