@@ -29,5 +29,5 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/gdalle/CoolPDLP.jl", devbranch = "main"
+    repo = "github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl", devbranch = "main"
 )
