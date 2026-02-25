@@ -105,7 +105,7 @@ objective_value(x_jump, milp)
 
 model_highs = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
 JuMP.set_optimizer(model_highs, HiGHS.Optimizer)
-JuMP.set_silent(model)
+JuMP.set_silent(model_highs)
 JuMP.optimize!(model_highs)
 x_ref = JuMP.value.(JuMP.all_variables(model_highs))
 
