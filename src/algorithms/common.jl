@@ -39,7 +39,7 @@ end
         necessary_decay = 0.8,
         artificial_decay = 0.36,
         # generic
-        show_progress = true,
+        show_progress = false,
         check_every = 100,
         record_error_history = true,
         # termination
@@ -68,7 +68,7 @@ function Algorithm{A}(
         necessary_decay = 0.8,
         artificial_decay = 0.36,
         # generic
-        show_progress = true,
+        show_progress = false,
         check_every = 100,
         record_error_history = true,
         # termination

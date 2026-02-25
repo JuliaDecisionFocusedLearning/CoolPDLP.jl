@@ -6,6 +6,13 @@ Represent a Mixed Integer Linear Program in "cuPDLPx form":
     min cᵀx   s.t.   lv ≤ x ≤ uv
                      lc ≤ A * x ≤ uc
 
+# Constructor
+
+    MILP(;
+        c, lv, uv, A, lc, uc,
+        [D1, D2, int_var, var_names, dataset, name, path]
+    )
+
 # Fields
 
 $(TYPEDFIELDS)
