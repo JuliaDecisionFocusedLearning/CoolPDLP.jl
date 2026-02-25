@@ -1,13 +1,3 @@
-module CoolPDLPMOIExt
-
-import MathOptInterface as MOI
-import CoolPDLP
-import SparseArrays: SparseMatrixCSC
-
-function __init__()
-    return Base.setglobal!(CoolPDLP, :Optimizer, Optimizer)
-end
-
 MOI.Utilities.@product_of_sets(
     RHS,
     MOI.EqualTo{T},
@@ -16,6 +6,13 @@ MOI.Utilities.@product_of_sets(
     MOI.Interval{T},
 )
 
+"""
+    Optimizer
+
+Solver type compatible with JuMP, which calls an algorithm from `CoolPDLP` under the hood.
+
+Its options are the same as the keyword arguments of [`Algorithm`](@ref).
+"""
 mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     x::Vector{T}
     y::Vector{T}
@@ -136,7 +133,7 @@ function MOI.get(
         ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.GreaterThan{T}},
     ) where {T}
     MOI.check_result_index_bounds(model, attr)
-    return CoolPDLP.positive_part(model.z[ci.value])
+    return positive_part(model.z[ci.value])
 end
 
 function MOI.get(
@@ -145,7 +142,7 @@ function MOI.get(
         ci::MOI.ConstraintIndex{MOI.VariableIndex, MOI.LessThan{T}},
     ) where {T}
     MOI.check_result_index_bounds(model, attr)
-    return -CoolPDLP.negative_part(model.z[ci.value])
+    return -negative_part(model.z[ci.value])
 end
 
 function MOI.get(
@@ -196,9 +193,9 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     lc = cache.constraints.constants.lower
     uc = cache.constraints.constants.upper
 
-    milp = CoolPDLP.MILP(; c, lv, uv, A, lc, uc)
+    milp = MILP(; c, lv, uv, A, lc, uc)
 
-    algorithm = pop!(dest.options, :algorithm, CoolPDLP.PDLP)
+    algorithm = pop!(dest.options, :algorithm, PDLP)
 
     float_type = pop!(dest.options, :float_type, T)
     if float_type !== T
@@ -213,32 +210,32 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     end
     algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
 
-    sol, stats = CoolPDLP.solve(milp, algo)
+    sol, stats = solve(milp, algo)
 
     dest.x = Array(sol.x)
     dest.y = Array(sol.y)
-    dest.z = CoolPDLP.proj_multiplier.(c .- milp.At * dest.y, lv, uv)
+    dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
 
-    raw_obj = CoolPDLP.objective_value(dest.x, milp)
+    raw_obj = objective_value(dest.x, milp)
     raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
-        sum(CoolPDLP.safeprod_left.(lc, CoolPDLP.positive_part.(dest.y)))
-            - sum(CoolPDLP.safeprod_left.(uc, CoolPDLP.negative_part.(dest.y)))
-            + sum(CoolPDLP.safeprod_left.(lv, CoolPDLP.positive_part.(dest.z)))
-            - sum(CoolPDLP.safeprod_left.(uv, CoolPDLP.negative_part.(dest.z)))
+        sum(safeprod_left.(lc, positive_part.(dest.y)))
+            - sum(safeprod_left.(uc, negative_part.(dest.y)))
+            + sum(safeprod_left.(lv, positive_part.(dest.z)))
+            - sum(safeprod_left.(uv, negative_part.(dest.z)))
     )
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
     dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
-    ts, ps, ds = if cts == CoolPDLP.OPTIMAL
+    ts, ps, ds = if cts == OPTIMAL
         MOI.OPTIMAL, MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
-    elseif cts == CoolPDLP.TIME_LIMIT
+    elseif cts == TIME_LIMIT
         MOI.TIME_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
-    elseif cts == CoolPDLP.ITERATION_LIMIT
+    elseif cts == ITERATION_LIMIT
         MOI.ITERATION_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
     else
-        @assert cts == CoolPDLP.STILL_RUNNING
+        @assert cts == STILL_RUNNING
         MOI.OTHER_ERROR, MOI.NO_SOLUTION, MOI.NO_SOLUTION
     end
     dest.termination_status = ts
@@ -246,6 +243,4 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     dest.dual_status = ds
 
     return index_map, false
-end
-
 end

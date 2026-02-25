@@ -39,9 +39,3 @@ playground*.jl
 .DS_Store
 *.trace
 *.gputrace
-
-challenge/data/instances
-challenge/data/checker
-challenge/data/instance_5m_bounds.txt
-challenge/data/miplib2017-checker.zip
-challenge/data/test_set.zip

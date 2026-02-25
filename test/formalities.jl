@@ -8,11 +8,9 @@ using Test
 end;
 
 @testset "ExplicitImports" begin
-    @test check_no_implicit_imports(CoolPDLP) === nothing
-    @test check_no_stale_explicit_imports(CoolPDLP) === nothing
-    @test check_all_explicit_imports_via_owners(CoolPDLP) === nothing
-    @test_broken check_all_explicit_imports_are_public(CoolPDLP; ignore = (QPSReader,)) === nothing
-    @test check_all_qualified_accesses_via_owners(CoolPDLP) === nothing
-    @test_broken check_all_qualified_accesses_are_public(CoolPDLP) === nothing
-    @test check_no_self_qualified_accesses(CoolPDLP) === nothing
+    ExplicitImports.test_explicit_imports(
+        CoolPDLP;
+        all_explicit_imports_are_public = false,
+        all_qualified_accesses_are_public = false,
+    )
 end

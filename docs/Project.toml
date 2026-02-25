@@ -6,6 +6,7 @@ JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 MathOptBenchmarkInstances = "f7f8d0a1-fd34-491e-a7ac-a4cf52f91fe5"
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [sources]

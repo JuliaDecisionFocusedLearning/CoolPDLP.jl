@@ -18,6 +18,6 @@ using Test
         end
     end
     @testset "MOI Wrapper" begin
-        include("MOI_wrapper.jl")
+        include("moi.jl")
     end
 end
