@@ -48,7 +48,7 @@ include("public.jl")
     include("algorithms/pdlp.jl")
 end
 
-include("moi.jl")
+include("MOI_wrapper.jl")
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 

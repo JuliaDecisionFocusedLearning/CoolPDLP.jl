@@ -165,10 +165,16 @@ const OptimizerCache{T} = MOI.Utilities.GenericModel{
     },
 }
 
+MOI.default_cache(dest::Optimizer, ::Type{T}) where {T} = MOI.Utilities.UniversalFallback(OptimizerCache{T}())
+
 function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
-    MOI.empty!(dest)
     cache = OptimizerCache{T}()
     index_map = MOI.copy_to(cache, src)
+    MOI.optimize!(dest, cache)
+    return index_map, false
+end
+function MOI.optimize!(dest::Optimizer{T}, cache::OptimizerCache{T}) where {T}
+    MOI.empty!(dest)
 
     n = cache.constraints.coefficients.n
     max_sense = cache.objective.sense == MOI.MAX_SENSE
@@ -242,5 +248,5 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     dest.primal_status = ps
     dest.dual_status = ds
 
-    return index_map, false
+    return MOI.Utilities.identity_index_map(cache), false
 end
