@@ -166,10 +166,6 @@ const OptimizerCache{T} = MOI.Utilities.GenericModel{
 }
 
 MOI.default_cache(dest::Optimizer, ::Type{T}) where {T} = MOI.Utilities.UniversalFallback(OptimizerCache{T}())
-function MOI.optimize!(dest::Optimizer{T}, src::MOI.Utilities.UniversalFallback{OptimizerCache{T}}) where {T}
-    MOI.Utilities.throw_unsupported(src)
-    return MOI.optimize!(dest, src.model)
-end
 
 function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     cache = OptimizerCache{T}()
