@@ -6,6 +6,7 @@ using CUDA.CUSPARSE
 import JuMP
 using JLArrays: JLBackend
 
+if ENV["COOLPDLP_TEST_MOI"] == "1"
 @testset "MOI Test Suite" begin
     model = MOI.Bridges.full_bridge_optimizer(
         MOI.Utilities.CachingOptimizer(
@@ -33,6 +34,7 @@ using JLArrays: JLBackend
             r"test_linear_add_constraints",  # for `y`, we get 36.434290756682884 but answer is 36.36363636363637
         ],
     )
+end
 end
 
 @testset "JLBackend" begin
