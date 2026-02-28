@@ -14,7 +14,7 @@ permissions:
 jobs:
   test:
     env:
-      COOLPDLP_TEST_MOI: '1'
+      COOLPDLP_TEST_MOISUITE: '1'
     runs-on: ubuntu-latest
     strategy:
       matrix:

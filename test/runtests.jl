@@ -1,6 +1,7 @@
 using Test
 
 @testset verbose = true "CoolPDLP" begin
+    if ENV["COOLPDLP_TEST_MOISUITE"] != "1"
     @testset "Formalities" begin
         include("formalities.jl")
     end
@@ -16,6 +17,7 @@ using Test
                 end
             end
         end
+    end
     end
     @testset "MOI Wrapper" begin
         include("moi.jl")
