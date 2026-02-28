@@ -25,7 +25,19 @@ pkg> add https://github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl
 ```
 
 There are two ways to call the solver: either directly or via its [`JuMP.jl`](https://github.com/jump-dev/JuMP.jl) interface.
-See the tutorial for details.
+
+## Use with JuMP
+
+To use `CoolPDLP` with JuMP, use `CoolPDLP.Optimizer`:
+
+```julia
+using CoolPDLP, JuMP
+
+model = Model(CoolPDLP.Optimizer)
+# Set `matrix_type` and `backend` to use GPU:
+set_attribute(model, "matrix_type", CUSPARSE.CuSparseMatrixCSR)
+set_attribute(model, "backend", CUDABackend())
+```
 
 ## Why a new package?
 
