@@ -6,7 +6,7 @@ using CUDA.CUSPARSE
 import JuMP
 using JLArrays: JLBackend
 
-if ENV["COOLPDLP_TEST_MOISUITE"] == "1"
+if get(ENV, "COOLPDLP_TEST_MOISUITE", "0") == "1"
 @testset "MOI Test Suite" begin
     model = MOI.Bridges.full_bridge_optimizer(
         MOI.Utilities.CachingOptimizer(

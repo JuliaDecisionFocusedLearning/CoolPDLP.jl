@@ -1,7 +1,7 @@
 using Test
 
 @testset verbose = true "CoolPDLP" begin
-    if ENV["COOLPDLP_TEST_MOISUITE"] != "1"
+    if get(ENV, "COOLPDLP_TEST_MOISUITE", "0") != "1"
     @testset "Formalities" begin
         include("formalities.jl")
     end
