@@ -1,7 +1,8 @@
 using Test
 
 @testset verbose = true "CoolPDLP" begin
-    if get(ENV, "COOLPDLP_TEST_MOISUITE", "0") != "1"
+    moisuite = get(ENV, "COOLPDLP_TEST_MOISUITE", nothing)
+    if moisuite != "1"
         @testset "Formalities" begin
             include("formalities.jl")
         end
@@ -18,9 +19,8 @@ using Test
                 end
             end
         end
-    else
-        @assert get(ENV, "COOLPDLP_TEST_MOISUITE", "0") == "1"
-
+    end
+    if moisuite != "0"
         @testset "MOI Wrapper" begin
             include("moi.jl")
         end

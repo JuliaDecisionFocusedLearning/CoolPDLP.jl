@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   test:
+    env:
+      COOLPDLP_TEST_MOISUITE: '0'
     runs-on: ubuntu-latest
     strategy:
       matrix:
