@@ -18,8 +18,11 @@ using Test
                 end
             end
         end
-    end
-    @testset "MOI Wrapper" begin
-        include("moi.jl")
+    else
+        @assert get(ENV, "COOLPDLP_TEST_MOISUITE", "0") == "1"
+
+        @testset "MOI Wrapper" begin
+            include("moi.jl")
+        end
     end
 end
