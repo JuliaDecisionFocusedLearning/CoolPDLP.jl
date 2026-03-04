@@ -28,7 +28,7 @@ There are two ways to call the solver: either directly or via its [`JuMP.jl`](ht
 
 ## Use with JuMP
 
-To use `CoolPDLP` with JuMP, use `CoolPDLP.Optimizer`:
+To use `CoolPDLP` with JuMP, select `CoolPDLP.Optimizer` and customize the options:
 
 ```julia
 using CoolPDLP, JuMP
