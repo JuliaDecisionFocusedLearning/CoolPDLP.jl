@@ -1,3 +1,5 @@
+# adapted from https://github.com/exanauts/ExaModels.jl/blob/a26feee22a063bc448c607b14f84b2819d4788ba/test/NLPTest/power.jl
+
 using ExaModels, KernelAbstractions
 using Downloads, Test, SparseArrays
 using NLPModels, NLPModelsIpopt
