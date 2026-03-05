@@ -174,9 +174,7 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     return index_map, false
 end
 
-function _pass_attributes(dest::Optimizer{T}, cache::MOI.Utilities.UniversalFallback{OptimizerCache{T}}) where {T}
-    index_map = MOI.Utilities.identity_index_map(cache)
-
+function _pass_attributes(dest::Optimizer{T}, cache::MOI.Utilities.UniversalFallback{OptimizerCache{T}}, index_map) where {T}
     MOI.Utilities.pass_attributes(dest, cache, index_map, MOI.get(cache, MOI.ListOfVariableIndices()))
 
     attrs = MOI.Utilities.ModelFilter(a -> !(a isa MOI.ObjectiveSense || a isa MOI.ObjectiveFunction), cache)
@@ -192,7 +190,8 @@ end
 
 function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallback{OptimizerCache{T}}) where {T}
     MOI.empty!(dest)
-    cache = _pass_attributes(dest, fcache)
+    index_map = MOI.Utilities.identity_index_map(fcache)
+    cache = _pass_attributes(dest, fcache, index_map)
 
     n = cache.constraints.coefficients.n
     max_sense = cache.objective.sense == MOI.MAX_SENSE
@@ -266,5 +265,5 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.primal_status = ps
     dest.dual_status = ds
 
-    return MOI.Utilities.identity_index_map(cache), false
+    return index_map, false
 end
