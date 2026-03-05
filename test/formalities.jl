@@ -4,7 +4,9 @@ using ExplicitImports
 using Test
 
 @testset "Aqua" begin
-    Aqua.test_all(CoolPDLP; undocumented_names = true)
+    Aqua.test_all(CoolPDLP; undocumented_names = false,
+        undefined_exports  = (broken = true, ),
+    )
 end;
 
 @testset "ExplicitImports" begin

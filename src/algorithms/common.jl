@@ -11,6 +11,7 @@ struct Algorithm{
         Ti <: Integer,
         M <: AbstractMatrix,
         B <: Backend,
+        P <: AbstractPresolver,
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -18,6 +19,7 @@ struct Algorithm{
     restart::RestartParameters{T}
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolver::P
 end
 
 """
@@ -46,6 +48,8 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver::AbstractPresolver = NoPresolver(),
     )
 
 Constructor for algorithm configs.
@@ -75,7 +79,9 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
-    ) where {A, T, Ti, M, B}
+        # presolve
+        presolver::P = NoPresolver(),
+    ) where {A, T, Ti, M, B, P <: AbstractPresolver}
 
     conversion = ConversionParameters(
         T, Ti, M; backend,
@@ -105,18 +111,19 @@ function Algorithm{A}(
         time_limit
     )
 
-    return Algorithm{A, T, Ti, M, B}(
+    return Algorithm{A, T, Ti, M, B, P}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -125,7 +132,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $presolver"""
     )
 end
 
@@ -186,9 +194,17 @@ Return a couple `(sol, stats)` where `sol` is the last solution and `stats` cont
 function solve(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
-        algo::Algorithm
-    )
+        algo::Algorithm{A, T, Ti, M, B, P},
+    ) where {A, T, Ti, M, B, P<:NoPresolver}
     starting_time = time()
+    return _solve(milp_init_cpu, sol_init_cpu, algo, starting_time)
+end
+function _solve(
+        milp_init_cpu::MILP,
+        sol_init_cpu::PrimalDualSolution,
+        algo::Algorithm,
+        starting_time
+    )
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
     if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
@@ -198,6 +214,27 @@ function solve(
     end
     solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
+end
+
+function solve(
+        milp_init_cpu::MILP,
+        sol_init_cpu::PrimalDualSolution,
+        algo::Algorithm{A, T, Ti, M, B, P}
+    ) where {A, T, Ti, M, B, P}
+    starting_time = time()
+    status, res = apply_presolve(algo.presolver, milp_init_cpu)
+
+    if status == PresolveInfeasible
+        stats = ConvergenceStats(Float64; starting_time, termination_status = INFEASIBLE)
+        stats.time_elapsed = time() - starting_time
+        return sol_init_cpu, stats
+    elseif status == PresolveUnbounded || status == PresolveUnboundedOrInfeasible
+        stats = ConvergenceStats(Float64; starting_time, termination_status = UNBOUNDED)
+        stats.time_elapsed = time() - starting_time
+        return sol_init_cpu, stats
+    end
+    sol_red, stats = _solve(res.milp_to_solve, map_warmstart(res, sol_init_cpu), algo, starting_time)
+    return recover_solution(res, sol_red), stats
 end
 
 function solve(

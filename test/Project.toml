@@ -6,6 +6,10 @@ CoolPDLP = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
+PaPILO = "d9c0c21a-f458-4936-9625-08537585e348"
+PaPILO_Presolve_jll = "ac3407f7-d818-4657-ac2d-3679289da1ef"
+PSLP = "ef7f38f3-b543-4219-892d-e0f472564133"
+PSLP_jll = "f21d708b-afb1-4941-8a85-571bbd38ad3d"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
@@ -20,7 +24,11 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [sources]
-CoolPDLP = {path = ".."}
+CoolPDLP            = {path = ".."}
+PSLP                = {rev = "main", url = "https://github.com/klamike/PSLP.jl.git"}
+PSLP_jll            = {rev = "main", url = "https://github.com/klamike/PSLP.jl.git", subdir = "PSLP_jll"}
+PaPILO              = {rev = "main", url = "https://github.com/klamike/PaPILO.jl.git"}
+PaPILO_Presolve_jll = {rev = "main", url = "https://github.com/klamike/PaPILO.jl.git", subdir = "PaPILO_Presolve_jll"}
 
 [compat]
 Aqua = "0.8.14"

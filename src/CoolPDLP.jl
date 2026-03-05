@@ -16,7 +16,7 @@ using StableRNGs: StableRNG
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
 using Printf: @sprintf
 using Random: randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn, spzeros
 
 include("public.jl")
 
@@ -43,6 +43,9 @@ include("public.jl")
     include("components/generic.jl")
     include("components/termination.jl")
 
+    include("presolve/presolve_interface.jl")
+    include("presolve/basic.jl")
+
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
@@ -59,6 +62,11 @@ export preprocess, initialize, solve, solve!
 export PDHG, PDLP
 @public Algorithm
 export is_feasible, objective_value
+export BasicPresolver
+
+# external presolvers
+global PaPILOPresolver, PSLPPresolver
+export PaPILOPresolver, PSLPPresolver
 
 @public Optimizer
 
