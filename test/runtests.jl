@@ -26,6 +26,6 @@ using Test
         end
     end
     @testset "QuadraticModels Wrapper" begin
-        include("extensions/QuadraticModels/power.jl")
+        include("QuadraticModels.jl")
     end
 end
