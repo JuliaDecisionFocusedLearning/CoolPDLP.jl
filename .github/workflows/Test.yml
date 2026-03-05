@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.suite_name }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -22,6 +23,11 @@ jobs:
         moi_suite:
           - '0'
           - '1'
+        include:
+          - moi_suite: '0'
+            suite_name: 'unit'
+          - moi_suite: '1'
+            suite_name: 'MOI'
     env:
       COOLPDLP_TEST_MOISUITE: ${{ matrix.moi_suite }}
     steps:
