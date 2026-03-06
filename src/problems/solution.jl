@@ -25,7 +25,7 @@ function is_feasible(
         verbose && @warn "Constraints not satisfied" cons_err cons_tol
         return false
     elseif int_err > int_tol
-        verbose && @warn "Integrality not satisfied" int_err cons_tol
+        verbose && @warn "Integrality not satisfied" int_err int_tol
         return false
     else
         return true
