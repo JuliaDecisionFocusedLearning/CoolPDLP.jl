@@ -56,7 +56,7 @@ function init_stepsize(milp::LinearProgram{T}, params::StepSizeParameters) where
     norm_A = T(spectral_norm(A, At))
     ω = one(T)
     η = T(params.invnorm_scaling) * inv(norm_A)
-    return η, ω, norm_A, norm_Q
+    return η, ω, norm_A, zero(T)
 end
 
 function init_stepsize(milp::QuadraticProgram{T}, params::StepSizeParameters) where {T}
