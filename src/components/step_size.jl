@@ -37,8 +37,8 @@ function compute_eta(norm_A::T, norm_Q::T, ω::T, invnorm_scaling::T) where {T}
         return invnorm_scaling * η_max
     end
 end
-
-function primal_weight_init(milp::AbstractProgram{T}, params::StepSizeParameters) where {T}
+primal_weight_init(::LinearProgram{T}, ::StepSizeParameters) where {T} = one(T)
+function primal_weight_init(milp::QuadraticProgram{T}, params::StepSizeParameters) where {T}
     (; c, lc, uc) = milp
     (; zero_tol) = params
     c_norm = norm(c)
@@ -51,20 +51,13 @@ function primal_weight_init(milp::AbstractProgram{T}, params::StepSizeParameters
     end
 end
 
-function init_stepsize(milp::LinearProgram{T}, params::StepSizeParameters) where {T}
+function init_stepsize(milp::AbstractProgram{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
-    norm_A = T(spectral_norm(A, At))
-    ω = one(T)
-    η = compute_eta(norm_A, zero(T), ω, T(params.invnorm_scaling))
-    return η, ω, norm_A, zero(T)
-end
-
-function init_stepsize(milp::QuadraticProgram{T}, params::StepSizeParameters) where {T}
-    (; A, At, Q) = milp
+    Q = get_Q(milp)
     norm_A = T(spectral_norm(A, At))
     norm_Q = T(spectral_norm(Q, Q))
     ω = primal_weight_init(milp, params)
-    η = compute_eta(norm_A, norm_Q, ω, T(params.invnorm_scaling))
+    η = compute_eta(norm_A, zero(T), ω, T(params.invnorm_scaling))
     return η, ω, norm_A, norm_Q
 end
 
