@@ -16,7 +16,7 @@ using StableRNGs: StableRNG
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
 using Printf: @sprintf
 using Random: randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn, spzeros
 
 include("public.jl")
 
@@ -28,7 +28,7 @@ include("public.jl")
     include("utils/linalg.jl")
     include("utils/test.jl")
 
-    include("problems/milp.jl")
+    include("problems/program.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
 
@@ -52,7 +52,8 @@ include("MOI_wrapper.jl")
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
-export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
+export AbstractProgram, LinearProgram, QuadraticProgram
+export nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
 export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!

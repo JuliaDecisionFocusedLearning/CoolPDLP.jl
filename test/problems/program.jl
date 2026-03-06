@@ -10,33 +10,33 @@ using Test
     milp, _ = CoolPDLP.random_milp_and_sol(100, 200, 0.4)
     (; c, lv, uv, A, At, lc, uc, D1, D2, int_var) = milp
 
-    @test_nowarn MILP(;
+    @test_nowarn LinearProgram(;
         c, lv, uv, A, At, lc, uc, D1, D2,
     )
     # Type issues
-    @test_throws ArgumentError MILP(;
+    @test_throws ArgumentError LinearProgram(;
         c = Vector{Any}(c), lv, uv, A, At, lc, uc,
     )
-    @test_throws ArgumentError MILP(;
+    @test_throws ArgumentError LinearProgram(;
         c = jl(c), lv, uv, A, At, lc, uc,
     )
     # Dimension issues
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c = lc, lv, uv, A, At, lc, uc,
     )
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c, lv = lc, uv, A, At, lc, uc,
     )
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c, lv, uv, A = At, At, lc, uc,
     )
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c, lv, uv, A, At, lc = lv, uc,
     )
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c, lv, uv, A, At, lc, uc, D1 = D2, D2,
     )
-    @test_throws DimensionMismatch MILP(;
+    @test_throws DimensionMismatch LinearProgram(;
         c, lv, uv, A, At, lc, uc, int_var = vcat(int_var, false)
     )
 end
@@ -60,7 +60,7 @@ end
     netlib = list_instances(Netlib)
     @testset for name in netlib[randperm(length(netlib))[1:20]]
         qps, path = read_instance(Netlib, name)
-        milp = MILP(qps; path, name, dataset = "Netlib")
+        milp = LinearProgram(qps; path, name, dataset = "Netlib")
         if name in ["agg", "blend", "dfl001", "forplan", "gfrd-pnc", "sierra"]
             @test_skip JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
         else
@@ -74,13 +74,7 @@ end;
 
 @testset "Show" begin
     qps, path = read_instance(Netlib, "seba")
-    milp = MILP(qps; path, name = "seba")
-    @test startswith(string(milp), "MILP instance seba")
+    milp = LinearProgram(qps; path, name = "seba")
+    @test startswith(string(milp), "LinearProgram instance seba")
 end
 
-@testset "Approx" begin
-    netlib = list_instances(Netlib)
-    qps, path = read_instance(Netlib, netlib[1])
-    milp = MILP(qps; path, dataset = "Netlib")
-    @test milp ≈ milp
-end

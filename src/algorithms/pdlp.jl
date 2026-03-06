@@ -43,7 +43,7 @@ $(TYPEDFIELDS)
 end
 
 function initialize(
-        milp::MILP{T, V},
+        milp::AbstractProgram{T, V},
         sol::PrimalDualSolution{T, V},
         algo::Algorithm{:PDLP, T};
         starting_time::Float64
@@ -52,10 +52,10 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    η = fixed_stepsize(milp, algo.step_size)
+    η, norm_A, norm_Q = fixed_stepsize(milp, algo.step_size)
     ω = primal_weight_init(milp, algo.step_size)
-    step_sizes = StepSizes(; η, ω)
-    scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
+    step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
+    scratch = Scratch(sol, milp)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(T)
     stats = ConvergenceStats(T; starting_time)
@@ -68,43 +68,42 @@ end
 
 function solve!(
         state::PDLPState,
-        milp::MILP,
+        milp::AbstractProgram,
         algo::Algorithm{:PDLP}
     )
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
+    progress = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = prog_showvalues(state))
+            next!(progress; showvalues = prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
         elseif restart_check!(state, milp, algo)
-            restart!(state, algo)
+            restart!(state, milp, algo)
         end
     end
-    finish!(prog)
+    finish!(progress)
     return state
 end
 
 function step!(
-        state::PDLPState{T, V},
-        milp::MILP{T, V},
-    ) where {T, V}
-    # switch pointers
+        state::PDLPState,
+        milp::AbstractProgram,
+    )
     state.sol, state.sol_last = state.sol_last, state.sol
-
     (; sol, sol_last, step_sizes, scratch) = state
     (; x, y) = sol_last
     (; η, ω) = step_sizes
-    (; c, lv, uv, A, At, lc, uc) = milp
+    (; lv, uv, A, At, lc, uc) = milp
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    # xp = proj_box.(x - τ * (grad - At * y), lv, uv)
+    g = grad_x(scratch, x, milp)
     At_y = mul!(scratch.x, At, y)
-    @. sol.x = proj_box(x - τ * (c - At_y), lv, uv)
+    @. sol.x = proj_box(x - τ * (g - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
     # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
@@ -132,7 +131,7 @@ end
 
 function restart_check!(
         state::PDLPState,
-        milp::MILP,
+        milp::AbstractProgram,
         algo::Algorithm{:PDLP}
     )
     (;
@@ -164,7 +163,7 @@ function restart_check!(
     return should_restart(restart_stats, step_sizes, iteration, algo.restart)
 end
 
-function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
+function restart!(state::PDLPState{T}, milp::AbstractProgram, algo::Algorithm{:PDLP}) where {T}
     (;
         sol, sol_avg, sol_restart,
         step_sizes, iteration, scratch, restart_stats,
@@ -181,6 +180,7 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
     step_sizes.ω = primal_weight_update!(
         scratch, step_sizes, sol_cand, sol_restart, algo.step_size
     )
+    update_eta!(step_sizes, milp, algo.step_size)
     # update solutions
     copy!(sol, sol_cand)
     zero!(sol_avg)

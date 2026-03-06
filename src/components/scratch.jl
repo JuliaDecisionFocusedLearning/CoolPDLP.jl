@@ -7,4 +7,8 @@
     r::V
 end
 
-Scratch(sol::PrimalDualSolution) = Scratch(similar(sol.x), similar(sol.y), similar(sol.x))
+Scratch(sol::PrimalDualSolution) = Scratch(;
+    x = similar(sol.x), y = similar(sol.y), r = similar(sol.x),
+)
+
+Scratch(sol::PrimalDualSolution, ::AbstractProgram) = Scratch(sol)

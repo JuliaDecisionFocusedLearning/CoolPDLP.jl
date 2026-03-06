@@ -71,6 +71,7 @@ const SUPPORTED_SET_TYPE{T} = Union{MOI.EqualTo{T}, MOI.GreaterThan{T}, MOI.Less
 MOI.supports_constraint(::Optimizer{T}, ::Type{MOI.VariableIndex}, ::Type{<:SUPPORTED_SET_TYPE{T}}) where {T} = true
 MOI.supports_constraint(::Optimizer{T}, ::Type{MOI.ScalarAffineFunction{T}}, ::Type{<:SUPPORTED_SET_TYPE{T}}) where {T} = true
 MOI.supports(::Optimizer{T}, ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}) where {T} = true
+MOI.supports(::Optimizer{T}, ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{T}}) where {T} = true
 
 MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.Silent) = true
@@ -200,14 +201,34 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
 
     c = zeros(T, n)
     obj_constant = zero(T)
-    if cache.objective.scalar_affine !== nothing
+    if !isnothing(cache.objective.scalar_affine)
         for term in cache.objective.scalar_affine.terms
             c[term.variable.value] += term.coefficient
         end
         obj_constant = cache.objective.scalar_affine.constant
     end
+
+    Q = spzeros(T, n, n)
+    if !isnothing(cache.objective.scalar_quadratic)
+        for term in cache.objective.scalar_quadratic.quadratic_terms
+            i = term.variable_1.value
+            j = term.variable_2.value
+            # MOI stores upper-triangular entries of the symmetric Q in ½xᵀQx.
+            # Each ScalarQuadraticTerm(c, xi, xj) with i ≤ j means Q[i,j] = c.
+            Q[i, j] += term.coefficient
+            if i != j
+                Q[j, i] += term.coefficient
+            end
+        end
+        for term in cache.objective.scalar_quadratic.affine_terms
+            c[term.variable.value] += term.coefficient
+        end
+        obj_constant += cache.objective.scalar_quadratic.constant
+    end
+
     if max_sense
         c .*= -one(T)
+        Q .*= -one(T)
     end
 
     dest.sets = cache.constraints.sets
@@ -216,7 +237,11 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     lc = cache.constraints.constants.lower
     uc = cache.constraints.constants.upper
 
-    milp = MILP(; c, lv, uv, A, lc, uc)
+    milp = if nnz(Q) == 0
+        LinearProgram(; c, lv, uv, A, lc, uc)
+    else
+        QuadraticProgram(; c, lv, uv, A, Q, lc, uc)
+    end
 
     algorithm = pop!(dest.options, :algorithm, PDLP)
 
@@ -237,15 +262,26 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
 
     dest.x = Array(sol.x)
     dest.y = Array(sol.y)
-    dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
+
+    grad = if milp isa QuadraticProgram
+        c .+ milp.Q * dest.x
+    else
+        c
+    end
+    dest.z = proj_multiplier.(grad .- milp.At * dest.y, lv, uv)
 
     raw_obj = objective_value(dest.x, milp)
-    raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+    raw_dual_obj_lp = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
         sum(safeprod_left.(lc, positive_part.(dest.y)))
             - sum(safeprod_left.(uc, negative_part.(dest.y)))
             + sum(safeprod_left.(lv, positive_part.(dest.z)))
             - sum(safeprod_left.(uv, negative_part.(dest.z)))
     )
+    raw_dual_obj = if milp isa QuadraticProgram
+        raw_dual_obj_lp - dot(dest.x, milp.Q * dest.x) / 2
+    else
+        raw_dual_obj_lp
+    end
     dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
     dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
     dest.solve_time = stats.time_elapsed

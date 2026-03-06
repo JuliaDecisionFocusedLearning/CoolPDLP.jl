@@ -5,7 +5,7 @@ using LinearAlgebra
 using JuMP: JuMP, MOI
 using Test
 
-@testset "Cube MILP" begin
+@testset "Cube LinearProgram" begin
     c = [1.0, 2.0]
     lv = zeros(2)
     uv = 2 .* ones(2)
@@ -14,7 +14,7 @@ using Test
     uc = [1.0]
     int_var = [true, false]
 
-    milp = MILP(; c, lv, uv, A, lc, uc, int_var)
+    milp = LinearProgram(; c, lv, uv, A, lc, uc, int_var)
     @test is_feasible([1.0, 0.0], milp)
     @test @test_warn "Integrality not satisfied" !is_feasible([0.5, 0.5], milp)
     @test @test_warn "Constraints not satisfied" !is_feasible([0.0, 0.0], milp)
@@ -25,7 +25,7 @@ end
 @testset "Comparison with JuMP" begin
     name = "afiro"
     qps, path = read_instance(Netlib, name)
-    milp = MILP(qps; path, name, dataset = "Netlib")
+    milp = LinearProgram(qps; path, name, dataset = "Netlib")
 
     jump_model = JuMP.read_from_file(milp.path; format = MOI.FileFormats.FORMAT_MPS)
     JuMP.set_optimizer(jump_model, HiGHS.Optimizer)

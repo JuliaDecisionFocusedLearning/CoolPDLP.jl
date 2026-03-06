@@ -94,9 +94,11 @@ function spectral_norm(
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)
 end
+spectral_norm(::Nothing, ::Nothing; kwargs...) = 0
 
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
+combine_norms(a, b, p) = isinf(p) ? max.(a, b) : (a .^ p .+ b .^ p) .^ (1 / p)
 
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))

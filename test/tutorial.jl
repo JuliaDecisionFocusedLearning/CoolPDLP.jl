@@ -7,18 +7,18 @@ using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances: Netlib, list_instances, read_instance
 using Test  #src
 
-# ## Creating a MILP
+# ## Creating a LinearProgram
 
-# You can use [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl) to read a MILP from a local MPS file, or [MathOptBenchmarkInstances.jl](https://github.com/JuliaDecisionFocusedLearning/MathOptBenchmarkInstances.jl) to automatically download standard benchmark sets (which we do here).
+# You can use [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl) to read a LinearProgram from a local MPS file, or [MathOptBenchmarkInstances.jl](https://github.com/JuliaDecisionFocusedLearning/MathOptBenchmarkInstances.jl) to automatically download standard benchmark sets (which we do here).
 
 dataset = Netlib
 list = list_instances(dataset)
 name = list[4]
 qps, path = read_instance(dataset, name);
 
-# A [`MILP`](@ref) object can be constructed from there:
+# A [`LinearProgram`](@ref) object can be constructed from there:
 
-milp = MILP(qps; dataset, name, path)
+milp = LinearProgram(qps; dataset, name, path)
 
 # Its attributes can be queried:
 
@@ -30,9 +30,9 @@ nbcons(milp)
 
 # Note that manual construction is also an option if you provide the constraints, variable bounds and objectives as arrays.
 
-# ## Solving a MILP
+# ## Solving a LinearProgram
 
-# You can use the PDLP algortithm to solve the continuous relaxation of a MILP.
+# You can use the PDLP algortithm to solve the continuous relaxation of a LinearProgram.
 # The first thing to do is define parameters inside a [`PDLP`](@ref) struct.
 
 algo = PDLP(;

@@ -152,7 +152,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 Return a tuple `(milp, sol)`.
 """
 function preprocess(
-        milp_init_cpu::MILP,
+        milp_init_cpu::AbstractProgram,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
     )
@@ -178,20 +178,20 @@ function initialize end
 """
     solve(milp, sol, algo)
     solve(milp, algo)
-    
+
 Solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
 
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
 """
 function solve(
-        milp_init_cpu::MILP,
+        milp_init_cpu::AbstractProgram,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm
     )
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
+    if milp isa LinearProgram && nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
         @. sol.x = proj_box(zero(eltype(milp.lv)), milp.lv, milp.uv)
         state.stats.termination_status = OPTIMAL
         return get_solution(state, milp), state.stats
@@ -201,7 +201,7 @@ function solve(
 end
 
 function solve(
-        milp_init_cpu::MILP,
+        milp_init_cpu::AbstractProgram,
         algo::Algorithm
     )
     sol_init_cpu = PrimalDualSolution(zero(milp_init_cpu.lv), zero(milp_init_cpu.lc))
@@ -217,7 +217,7 @@ function solve! end
 
 function termination_check!(
         state::AbstractState,
-        milp::MILP,
+        milp::AbstractProgram,
         algo::Algorithm
     )
     (; sol, scratch, stats) = state
@@ -230,6 +230,6 @@ function termination_check!(
     return stats.termination_status !== STILL_RUNNING
 end
 
-function get_solution(state::AbstractState, milp::MILP)
+function get_solution(state::AbstractState, milp::AbstractProgram)
     return unprecondition(state.sol, Preconditioner(milp))
 end

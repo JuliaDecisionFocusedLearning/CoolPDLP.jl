@@ -10,7 +10,7 @@ Check whether solution vector `x` is feasible for `milp`.
 - `verbose`: whether to display warnings
 """
 function is_feasible(
-        x, milp::MILP;
+        x, milp::AbstractProgram;
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
     )
     (; lv, uv, A, lc, uc, int_var) = milp
@@ -35,9 +35,13 @@ end
 """
     objective_value(x, milp)
 
-Compute the value of the linear objective of `milp` at solution vector `x`.
+Compute the objective value of `milp` at solution vector `x`.
 """
-objective_value(x, milp::MILP) = dot(x, milp.c)
+objective_value(x, milp::LinearProgram) = dot(x, milp.c)
+
+function objective_value(x, milp::QuadraticProgram)
+    return dot(x, milp.c) + dot(x, milp.Q * x) / 2
+end
 
 """
     PrimalDualSolution

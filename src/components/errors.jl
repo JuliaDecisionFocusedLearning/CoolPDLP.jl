@@ -62,28 +62,47 @@ function absolute(err::KKTErrors, ω::Number)
     return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
 end
 
+grad_x(scratch, x, milp::LinearProgram) = milp.c
+function grad_x(scratch, x, milp::QuadraticProgram)
+    mul!(scratch.r, milp.Q, x)
+    @. scratch.r += milp.c
+    return scratch.r
+end
+
 function kkt_errors!(
         scratch::Scratch,
         sol::PrimalDualSolution,
-        milp::MILP{T},
+        milp::AbstractProgram{T},
     ) where {T}
     (; x, y) = sol
-    (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
+    (; lv, uv, A, At, lc, uc, D1, D2) = milp
+    g = grad_x(scratch, x, milp)
+
+    cx = dot(g, x)
+    rescaled_obj = @. scratch.x = inv(D2.diag) * g
+    dual_scale = one(T) + norm(rescaled_obj)
 
     A_x = mul!(scratch.y, A, x)
     At_y = mul!(scratch.x, At, y)
-    r = @. scratch.r = proj_multiplier(c - At_y, lv, uv)
+
+    h = @. scratch.r = g - At_y
+    dual_diff = @. scratch.x = inv(D2.diag) * (h - proj_multiplier(h, lv, uv))
+    dual = norm(dual_diff)
+    # h is no longer needed, reuse the scratch.r
+    r = @. scratch.r = proj_multiplier(scratch.r, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - proj_box(A_x, lc, uc))
     primal = norm(primal_diff)
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     primal_scale = one(T) + norm(rescaled_combined_bounds)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c - At_y - r)
-    dual = norm(dual_diff)
-    rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    dual_scale = one(T) + norm(rescaled_obj)
-
+    # dual obj: lᵀy⁺ − uᵀy⁻ + lᵥᵀr⁺ − uᵥᵀr⁻ − ½xᵀQx
+    # primal obj: cᵀx + ½xᵀQx
+    # gap = |primal − dual|
+    #     = |(cᵀx + ½xᵀQx) − (lᵀy⁺ − uᵀy⁻ + lᵥᵀr⁺ − uᵥᵀr⁻ − ½xᵀQx)|
+    #     = |cᵀx + ½xᵀQx + ½xᵀQx − lᵀy⁺ + uᵀy⁻ − lᵥᵀr⁺ + uᵥᵀr⁻|
+    #     = |cᵀx + xᵀQx + (uᵀy⁻ − lᵀy⁺) + (uᵥᵀr⁻ − lᵥᵀr⁺)|
+    #     = | gᵀx + (uᵀy⁻ − lᵀy⁺) + (uᵥᵀr⁻ − lᵥᵀr⁺)|; g = c + Qx
     pc = @. scratch.y = (
         safeprod_left(uc, positive_part(-y)) - safeprod_left(lc, negative_part(-y))
     )
@@ -92,7 +111,6 @@ function kkt_errors!(
     )
     pc_sum = sum(pc)
     pv_sum = sum(pv)
-    cx = dot(c, x)
 
     gap = abs(cx + pc_sum + pv_sum)
     gap_scale = one(T) + abs(pc_sum + pv_sum) + abs(cx)

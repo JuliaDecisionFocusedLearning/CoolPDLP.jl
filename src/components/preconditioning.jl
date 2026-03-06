@@ -12,7 +12,7 @@ struct Preconditioner{T <: Number, V <: DenseVector{T}}
     D2::Diagonal{T, V}
 end
 
-Preconditioner(milp::MILP) = Preconditioner(milp.D1, milp.D2)
+Preconditioner(milp::AbstractProgram) = Preconditioner(milp.D1, milp.D2)
 
 function Base.:*(prec_out::Preconditioner, prec_in::Preconditioner)
     return Preconditioner(prec_out.D1 * prec_in.D1, prec_in.D2 * prec_out.D2)
@@ -58,7 +58,10 @@ function unprecondition(sol::PrimalDualSolution, prec::Preconditioner)
     return PrimalDualSolution(x, y)
 end
 
-function precondition(milp::MILP, prec::Preconditioner)
+precondition_Q(::Nothing, ::Diagonal) = nothing
+precondition_Q(Q::AbstractMatrix, D2::Diagonal) = D2 * Q * D2
+
+function precondition(milp::AbstractProgram, prec::Preconditioner)
     (;
         c, lv, uv, A, At, lc, uc,
         int_var, var_names, dataset, name, path,
@@ -71,12 +74,14 @@ function precondition(milp::MILP, prec::Preconditioner)
     A_p, At_p = cons_p.A, cons_p.At
     lc_p, uc_p = D1 * lc, D1 * uc
     new_prec = prec * Preconditioner(milp)
-    milp_p = MILP(;
+    return rebuild(
+        milp;
         c = c_p,
         lv = lv_p,
         uv = uv_p,
         A = A_p,
         At = At_p,
+        Q = precondition_Q(get_Q(milp), D2),
         lc = lc_p,
         uc = uc_p,
         D1 = new_prec.D1,
@@ -87,7 +92,6 @@ function precondition(milp::MILP, prec::Preconditioner)
         name,
         path
     )
-    return milp_p
 end
 
 # Preconditioner construction
@@ -100,10 +104,14 @@ function identity_preconditioner(cons::ConstraintMatrix{T}) where {T}
 end
 
 function diagonal_norm_preconditioner(
-        cons::ConstraintMatrix{T}; p_row::Number, p_col::Number
+        cons::ConstraintMatrix{T}, Q = nothing; p_row::Number, p_col::Number
     ) where {T}
     (; A, At) = cons
     col_norms = map(j -> column_norm(A, j, p_col), axes(A, 2))
+    if !isnothing(Q)
+        q_col_norms = map(j -> column_norm(Q, j, p_col), axes(Q, 2))
+        col_norms = combine_norms(col_norms, q_col_norms, p_col)
+    end
     row_norms = map(i -> column_norm(At, i, p_row), axes(A, 1))
     d1 = map(rn -> iszero(rn) ? one(T) : inv(sqrt(rn)), row_norms)
     d2 = map(cn -> iszero(cn) ? one(T) : inv(sqrt(cn)), col_norms)
@@ -114,14 +122,17 @@ function chambolle_pock_preconditioner(cons::ConstraintMatrix; alpha::Number)
     return diagonal_norm_preconditioner(cons; p_row = 2 - alpha, p_col = alpha)
 end
 
-function ruiz_preconditioner(cons::ConstraintMatrix; iterations::Integer)
+function ruiz_preconditioner(milp::AbstractProgram; iterations::Integer)
+    cons = ConstraintMatrix(milp.A, milp.At)
     prec = identity_preconditioner(cons)
+    Q_cur = get_Q(milp)
     for _ in 1:iterations
-        prec_next = diagonal_norm_preconditioner(cons; p_col = Inf, p_row = Inf)
+        prec_next = diagonal_norm_preconditioner(cons, Q_cur; p_col = Inf, p_row = Inf)
         cons = precondition(cons, prec_next)
+        Q_cur = precondition_Q(Q_cur, prec_next.D2)
         prec = prec_next * prec
     end
-    return prec
+    return prec, cons
 end
 
 """
@@ -143,12 +154,9 @@ function Base.show(io::IO, params::PreconditioningParameters)
     return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter")
 end
 
-function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
-    (; A, At) = milp
+function pdlp_preconditioner(milp::AbstractProgram, params::PreconditioningParameters)
     (; chambolle_pock_alpha, ruiz_iter) = params
-    cons = ConstraintMatrix(A, At)
-    prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
-    cons_r = precondition(cons, prec_r)
+    prec_r, cons_r = ruiz_preconditioner(milp; iterations = ruiz_iter)
     prec_cp = chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
     prec = prec_r * prec_cp
     return prec

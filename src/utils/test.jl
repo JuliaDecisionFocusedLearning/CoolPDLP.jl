@@ -46,5 +46,5 @@ function random_milp_and_sol(m::Int, n::Int, p::Float64)
     int_var = rand(Bool, length(c))
     x = proj_box.(randn(n), lv, uv)
     y = proj_multiplier.(randn(m), lc, uc)
-    return MILP(; c, lv, uv, A, lc, uc, int_var), PrimalDualSolution(x, y)
+    return LinearProgram(; c, lv, uv, A, lc, uc, int_var), PrimalDualSolution(x, y)
 end

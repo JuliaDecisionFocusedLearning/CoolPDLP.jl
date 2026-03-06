@@ -35,7 +35,7 @@ function Base.show(io::IO, params::ConversionParameters{T, Ti, M}) where {T, Ti,
 end
 
 function perform_conversion(
-        milp::MILP,
+        milp::AbstractProgram,
         params::ConversionParameters{T, Ti, M},
     ) where {T, Ti, M}
     (; backend) = params
