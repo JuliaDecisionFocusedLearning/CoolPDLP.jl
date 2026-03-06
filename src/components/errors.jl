@@ -62,6 +62,9 @@ function absolute(err::KKTErrors, ω::Number)
     return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
 end
 
+_half_xQx(cx, x, milp::LinearProgram{T}) where {T} = zero(T)
+_half_xQx(cx, x, milp::QuadraticProgram) = (cx - dot(milp.c, x)) / 2
+
 grad_x(scratch, x, milp::LinearProgram) = milp.c
 function grad_x(scratch, x, milp::QuadraticProgram)
     mul!(scratch.r, milp.Q, x)
@@ -96,13 +99,13 @@ function kkt_errors!(
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     primal_scale = one(T) + norm(rescaled_combined_bounds)
 
-    # dual obj: lᵀy⁺ − uᵀy⁻ + lᵥᵀr⁺ − uᵥᵀr⁻ − ½xᵀQx
-    # primal obj: cᵀx + ½xᵀQx
-    # gap = |primal − dual|
+    # primal obj P = cᵀx + ½xᵀQx
+    # dual obj   D = lᵀy⁺ − uᵀy⁻ + lᵥᵀr⁺ − uᵥᵀr⁻ − ½xᵀQx
+    # gap = |P − D|
     #     = |(cᵀx + ½xᵀQx) − (lᵀy⁺ − uᵀy⁻ + lᵥᵀr⁺ − uᵥᵀr⁻ − ½xᵀQx)|
-    #     = |cᵀx + ½xᵀQx + ½xᵀQx − lᵀy⁺ + uᵀy⁻ − lᵥᵀr⁺ + uᵥᵀr⁻|
     #     = |cᵀx + xᵀQx + (uᵀy⁻ − lᵀy⁺) + (uᵥᵀr⁻ − lᵥᵀr⁺)|
-    #     = | gᵀx + (uᵀy⁻ − lᵀy⁺) + (uᵥᵀr⁻ − lᵥᵀr⁺)|; g = c + Qx
+    #     = |gᵀx + pc_sum + pv_sum|;  g = c + Qx
+    # gap_scale = 1 + |P| + |D| = 1 + |gᵀx − ½xᵀQx| + |pc_sum + pv_sum + ½xᵀQx|
     pc = @. scratch.y = (
         safeprod_left(uc, positive_part(-y)) - safeprod_left(lc, negative_part(-y))
     )
@@ -113,7 +116,8 @@ function kkt_errors!(
     pv_sum = sum(pv)
 
     gap = abs(cx + pc_sum + pv_sum)
-    gap_scale = one(T) + abs(pc_sum + pv_sum) + abs(cx)
+    half_xQx = _half_xQx(cx, x, milp)
+    gap_scale = one(T) + abs(cx - half_xQx) + abs(pc_sum + pv_sum + half_xQx)
 
     err = KKTErrors(;
         primal,
