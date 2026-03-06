@@ -31,6 +31,8 @@ $(TYPEDFIELDS)
     sol_last::PrimalDualSolution{T, V}
     "step sizes"
     step_sizes::StepSizes{T}
+    "step size parameters"
+    step_size_params::StepSizeParameters{T}
     "scratch space"
     scratch::Scratch{T, V}
     "convergence stats"
@@ -44,12 +46,12 @@ function initialize(
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
-    η, norm_A, norm_Q = fixed_stepsize(milp, algo.step_size)
-    ω = one(η)
+    η, ω, norm_A, norm_Q = init_stepsize(milp, algo.step_size)
     step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
+    step_size_params = algo.step_size
     scratch = Scratch(sol, milp)
     stats = ConvergenceStats(T; starting_time)
-    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
+    state = PDHGState(; sol, sol_last, step_sizes, step_size_params, scratch, stats)
     return state
 end
 
@@ -78,10 +80,11 @@ function step!(
         milp::AbstractProgram,
     )
     state.sol, state.sol_last = state.sol_last, state.sol
-    (; sol, sol_last, step_sizes, scratch) = state
+    (; sol, sol_last, step_sizes, step_size_params, scratch) = state
     (; x, y) = sol_last
-    (; η, ω) = step_sizes
     (; lv, uv, A, At, lc, uc) = milp
+
+    η, ω = update_step_size!(step_sizes, milp, step_size_params)
 
     τ, σ = η / ω, η * ω
 

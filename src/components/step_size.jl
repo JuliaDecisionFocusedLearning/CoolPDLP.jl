@@ -24,12 +24,6 @@ end
 
 Compute step size `η` satisfying the Vu-Condat convergence condition:
 `η²‖A‖² + (η/(2ω))‖Q‖ ≤ 1`.
-
-In the (τ, σ) parameterization with τ = η/ω and σ = ηω, this is
-`στ‖A‖² + τ L_f/2 ≤ 1` where `L_f = ‖Q‖` is the Lipschitz constant of ∇f
-for `f(x) = ½xᵀQx + cᵀx`.
-
-For LP (`norm_Q = 0`), reduces to `η = invnorm_scaling / ‖A‖` (Chambolle & Pock, 2011).
 """
 function compute_eta(norm_A::T, norm_Q::T, ω::T, invnorm_scaling::T) where {T}
     a = norm_A^2
@@ -39,20 +33,9 @@ function compute_eta(norm_A::T, norm_Q::T, ω::T, invnorm_scaling::T) where {T}
     elseif iszero(a)
         return invnorm_scaling * 2ω / norm_Q
     else
-        η_max = (-b + sqrt(b^2 + 4a)) / (2a)
+        η_max = 2 / (hypot(b, 2norm_A) + b)
         return invnorm_scaling * η_max
     end
-end
-
-function fixed_stepsize(milp::AbstractProgram{T}, params::StepSizeParameters) where {T}
-    (; A, At) = milp
-    (; invnorm_scaling) = params
-    norm_A = T(spectral_norm(A, At))
-    Q = get_Q(milp)
-    norm_Q = T(spectral_norm(Q, Q))
-    ω = primal_weight_init(milp, params)
-    η = compute_eta(norm_A, norm_Q, ω, T(invnorm_scaling))
-    return η, norm_A, norm_Q
 end
 
 function primal_weight_init(milp::AbstractProgram{T}, params::StepSizeParameters) where {T}
@@ -66,6 +49,23 @@ function primal_weight_init(milp::AbstractProgram{T}, params::StepSizeParameters
     else
         return one(T)
     end
+end
+
+function init_stepsize(milp::LinearProgram{T}, params::StepSizeParameters) where {T}
+    (; A, At) = milp
+    norm_A = T(spectral_norm(A, At))
+    ω = one(T)
+    η = T(params.invnorm_scaling) * inv(norm_A)
+    return η, ω, norm_A, norm_Q
+end
+
+function init_stepsize(milp::QuadraticProgram{T}, params::StepSizeParameters) where {T}
+    (; A, At, Q) = milp
+    norm_A = T(spectral_norm(A, At))
+    norm_Q = T(spectral_norm(Q, Q))
+    ω = primal_weight_init(milp, params)
+    η = compute_eta(norm_A, norm_Q, ω, T(params.invnorm_scaling))
+    return η, ω, norm_A, norm_Q
 end
 
 """
@@ -88,12 +88,12 @@ $(TYPEDFIELDS)
     norm_Q::T = zero(η)
 end
 
-update_eta!(::StepSizes, ::LinearProgram, ::StepSizeParameters) = nothing
-function update_eta!(step_sizes::StepSizes, ::QuadraticProgram, params::StepSizeParameters)
+update_step_size!(step_sizes::StepSizes, ::LinearProgram, ::StepSizeParameters) = (step_sizes.η, step_sizes.ω)
+function update_step_size!(step_sizes::StepSizes, ::QuadraticProgram, params::StepSizeParameters)
     step_sizes.η = compute_eta(
         step_sizes.norm_A, step_sizes.norm_Q, step_sizes.ω, params.invnorm_scaling,
     )
-    return nothing
+    return step_sizes.η, step_sizes.ω
 end
 
 function primal_weight_update!(

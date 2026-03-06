@@ -32,6 +32,8 @@ $(TYPEDFIELDS)
     sol_restart::PrimalDualSolution{T, V}
     "step sizes"
     step_sizes::StepSizes{T}
+    "step size parameters"
+    step_size_params::StepSizeParameters{T}
     "scratch space"
     scratch::Scratch{T, V}
     "iteration counter"
@@ -52,16 +54,16 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    η, norm_A, norm_Q = fixed_stepsize(milp, algo.step_size)
-    ω = primal_weight_init(milp, algo.step_size)
+    η, ω, norm_A, norm_Q = init_stepsize(milp, algo.step_size)
     step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
+    step_size_params = algo.step_size
     scratch = Scratch(sol, milp)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(T)
     stats = ConvergenceStats(T; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
-        step_sizes, scratch, iteration, restart_stats, stats
+        step_sizes, step_size_params, scratch, iteration, restart_stats, stats
     )
     return state
 end
@@ -93,10 +95,11 @@ function step!(
         milp::AbstractProgram,
     )
     state.sol, state.sol_last = state.sol_last, state.sol
-    (; sol, sol_last, step_sizes, scratch) = state
+    (; sol, sol_last, step_sizes, step_size_params, scratch) = state
     (; x, y) = sol_last
-    (; η, ω) = step_sizes
     (; lv, uv, A, At, lc, uc) = milp
+
+    η, ω = update_step_size!(step_sizes, milp, step_size_params)
 
     τ, σ = η / ω, η * ω
 
@@ -166,7 +169,7 @@ end
 function restart!(state::PDLPState{T}, milp::AbstractProgram, algo::Algorithm{:PDLP}) where {T}
     (;
         sol, sol_avg, sol_restart,
-        step_sizes, iteration, scratch, restart_stats,
+        step_sizes, step_size_params, iteration, scratch, restart_stats,
     ) = state
 
     # identify candidate
@@ -178,9 +181,9 @@ function restart!(state::PDLPState{T}, milp::AbstractProgram, algo::Algorithm{:P
     # update step sizes (must be done before losing previous restart)
     step_sizes.η_sum = zero(T)
     step_sizes.ω = primal_weight_update!(
-        scratch, step_sizes, sol_cand, sol_restart, algo.step_size
+        scratch, step_sizes, sol_cand, sol_restart, step_size_params
     )
-    update_eta!(step_sizes, milp, algo.step_size)
+    update_step_size!(step_sizes, milp, step_size_params)
     # update solutions
     copy!(sol, sol_cand)
     zero!(sol_avg)

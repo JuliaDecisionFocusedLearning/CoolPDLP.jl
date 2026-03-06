@@ -48,10 +48,21 @@ function random_qp(n, m; seed = 42)
     return QuadraticProgram(; c, Q, lv, uv, A, lc, uc)
 end
 
+function high_linear_weight_qp()
+    n = 2
+    c = [100.0, 100.0]
+    Q = sparse([10.0 0.0; 0.0 10.0])
+    A = sparse([1.0 1.0])
+    lv = zeros(n)
+    uv = fill(Inf, n)
+    lc = [1.0]
+    uc = [1.0]
+    return QuadraticProgram(; c, Q, lv, uv, A, lc, uc)
+end
+
 @testset "QP - PDLP" begin
     @testset "Simple equality QP" begin
         milp = simple_equality_qp()
-        @test milp isa QuadraticProgram
         @test milp isa QuadraticProgram
         algo = PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, show_progress = false)
         sol, stats = solve(milp, algo)
@@ -77,4 +88,38 @@ end
         @test stats.termination_status == CoolPDLP.OPTIMAL
         @test is_feasible(sol.x, milp; cons_tol = 1.0e-2)
     end
+end
+
+@testset "QP - PDHG" begin
+    @testset "Simple equality QP" begin
+        milp = simple_equality_qp()
+        algo = PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, show_progress = false)
+        sol, stats = solve(milp, algo)
+        @test stats.termination_status == CoolPDLP.OPTIMAL
+        @test sol.x[1] ≈ 1 / 2 atol = 1.0e-4
+        @test sol.x[2] ≈ 1 / 2 atol = 1.0e-4
+    end
+
+    @testset "Linear + quadratic QP" begin
+        milp = linear_quadratic_qp()
+        algo = PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, show_progress = false)
+        sol, stats = solve(milp, algo)
+        @test stats.termination_status == CoolPDLP.OPTIMAL
+        @test sol.x[1] ≈ 2 / 3 atol = 1.0e-3
+        @test sol.x[2] ≈ 1 / 3 atol = 1.0e-3
+    end
+
+    @testset "High linear weight QP" begin
+        milp = high_linear_weight_qp()
+        algo = PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, show_progress = false)
+        sol, stats = solve(milp, algo)
+        @test stats.termination_status == CoolPDLP.OPTIMAL
+        @test sol.x[1] ≈ 1 / 2 atol = 1.0e-4
+        @test sol.x[2] ≈ 1 / 2 atol = 1.0e-4
+    end
+end
+
+@testset "QP step-size numerics" begin
+    η = CoolPDLP.compute_eta(1.0, 1.0e12, 1.0, 0.9)
+    @test η > 0
 end
