@@ -57,7 +57,7 @@ function init_stepsize(milp::AbstractProgram{T}, params::StepSizeParameters) whe
     norm_A = T(spectral_norm(A, At))
     norm_Q = T(spectral_norm(Q, Q))
     ω = primal_weight_init(milp, params)
-    η = compute_eta(norm_A, zero(T), ω, T(params.invnorm_scaling))
+    η = compute_eta(norm_A, norm_Q, ω, T(params.invnorm_scaling))
     return η, ω, norm_A, norm_Q
 end
 
