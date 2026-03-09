@@ -90,8 +90,8 @@ end
     uc = lc + rand(m)
 
     @test_nowarn QuadraticProgram(; c, lv, uv, A, Q, lc, uc)
-    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[1:end-1, :], lc, uc)
-    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[:, 1:end-1], lc, uc)
+    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[1:(end - 1), :], lc, uc)
+    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[:, 1:(end - 1)], lc, uc)
     @test_throws ArgumentError QuadraticProgram(; c = Vector{Any}(c), lv, uv, A, Q, lc, uc)
 end
 
