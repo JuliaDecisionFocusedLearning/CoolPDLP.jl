@@ -52,12 +52,18 @@ struct MILP{
     "file path the MILP was read from"
     path::String
 
+    _convert_or_construct(A) = try
+        convert(typeof(A), transpose(A))
+    catch
+        typeof(A).name.wrapper(transpose(A))
+    end
+
     function MILP(;
             c,
             lv,
             uv,
             A,
-            At = convert(typeof(A), transpose(A)),
+            At = _convert_or_construct(A),
             lc,
             uc,
             D1 = Diagonal(one!(similar(lc))),

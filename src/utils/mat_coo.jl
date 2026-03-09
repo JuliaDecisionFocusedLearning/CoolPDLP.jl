@@ -47,6 +47,11 @@ function Adapt.adapt_structure(to, A::GPUSparseMatrixCOO)
     )
 end
 
+function Base.convert(::Type{GPUSparseMatrixCOO{T, Ti, V, Vi}}, At::LinearAlgebra.Transpose{<:Any, <:GPUSparseMatrixCOO{T, Ti, V, Vi}}) where {T, Ti, V, Vi}
+    A = parent(At)
+    return GPUSparseMatrixCOO(A.n, A.m, A.colval, A.rowval, A.nzval)
+end
+
 function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     rowval, colval, nzval = findnz(A)
     return GPUSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
