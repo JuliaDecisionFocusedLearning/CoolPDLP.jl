@@ -3,7 +3,7 @@ function increasing_column_order(A::SparseMatrixCSC)
     return sortperm(col_lengths)
 end
 
-permute_rows_columns(::Nothing, perm_col, perm_row) = nothing
+permute_rows_columns(::Nothing; kwargs...) = nothing
 function permute_rows_columns(
         A::SparseMatrixCSC; perm_col::Vector{Int}, perm_row::Vector{Int}
     )
