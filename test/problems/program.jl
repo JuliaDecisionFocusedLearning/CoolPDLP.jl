@@ -77,4 +77,3 @@ end;
     milp = LinearProgram(qps; path, name = "seba")
     @test startswith(string(milp), "LinearProgram instance seba")
 end
-
