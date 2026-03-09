@@ -1,5 +1,6 @@
 using CoolPDLP
 using LinearAlgebra
+using SparseArrays
 using Test
 
 function p(y, l, u)
@@ -35,4 +36,48 @@ end
 
 @testset "Invariance by preconditioning" begin
     @test err_p ≈ err
+end
+
+n, m = 20, 10
+c = randn(n)
+lv = zeros(n)
+uv = fill(Inf, n)
+A = sprand(m, n, 0.4)
+At = sparse(A')
+lc = randn(m)
+uc = lc + rand(m)
+H = sprand(n, n, 0.3)
+Q = Matrix(H' * H)
+
+qp = QuadraticProgram(; c, lv, uv, A, Q = sparse(Q), lc, uc)
+x = abs.(randn(n))
+y = randn(m)
+sol_qp = PrimalDualSolution(x, y)
+scratch_qp = CoolPDLP.Scratch(sol_qp)
+
+err_qp = CoolPDLP.kkt_errors!(scratch_qp, sol_qp, qp)
+
+g = c + Q * x
+r_qp = CoolPDLP.proj_multiplier.(g - At * y, lv, uv)
+half_xQx = dot(x, Q * x) / 2
+cx = dot(g, x)  # = cᵀx + xᵀQx
+pc_sum = p(-y, lc, uc)
+pv_sum = p(-r_qp, lv, uv)
+
+@testset "Correct QP KKT errors" begin
+    @test err_qp.primal ≈ norm(A * x - CoolPDLP.proj_box.(A * x, lc, uc))
+    @test err_qp.dual ≈ norm(g - At * y - r_qp)
+    @test err_qp.gap ≈ abs(cx + pc_sum + pv_sum)
+    @test err_qp.dual_scale ≈ 1 + norm(g)
+    @test err_qp.gap_scale ≈ 1 + abs(cx - half_xQx) + abs(pc_sum + pv_sum + half_xQx)
+end
+
+@testset "QP KKT invariance by preconditioning" begin
+    params_qp = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = 1.0, ruiz_iter = 5)
+    prec_qp = CoolPDLP.pdlp_preconditioner(qp, params_qp)
+    qp_p = CoolPDLP.precondition(qp, prec_qp)
+    sol_qp_p = CoolPDLP.precondition(sol_qp, prec_qp)
+    scratch_qp_p = CoolPDLP.Scratch(sol_qp_p)
+    err_qp_p = CoolPDLP.kkt_errors!(scratch_qp_p, sol_qp_p, qp_p)
+    @test err_qp_p ≈ err_qp
 end

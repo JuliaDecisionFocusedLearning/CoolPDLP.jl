@@ -77,3 +77,46 @@ end;
     milp = LinearProgram(qps; path, name = "seba")
     @test startswith(string(milp), "LinearProgram instance seba")
 end
+
+@testset "QuadraticProgram Checks" begin
+    n, m = 20, 10
+    c = rand(n)
+    lv = rand(n)
+    uv = lv + rand(n)
+    A = sprand(m, n, 0.4)
+    H = sprand(n, n, 0.3)
+    Q = H' * H
+    lc = rand(m)
+    uc = lc + rand(m)
+
+    @test_nowarn QuadraticProgram(; c, lv, uv, A, Q, lc, uc)
+    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[1:end-1, :], lc, uc)
+    @test_throws DimensionMismatch QuadraticProgram(; c, lv, uv, A, Q = Q[:, 1:end-1], lc, uc)
+    @test_throws ArgumentError QuadraticProgram(; c = Vector{Any}(c), lv, uv, A, Q, lc, uc)
+end
+
+@testset "QuadraticProgram Show" begin
+    n, m = 5, 3
+    c = zeros(n)
+    Q = sparse(1.0I, n, n)
+    A = spzeros(m, n)
+    qp = QuadraticProgram(; c, Q, lv = zeros(n), uv = ones(n), A, lc = zeros(m), uc = ones(m))
+    s = string(qp)
+    @test startswith(s, "QuadraticProgram")
+    @test contains(s, "quadratic: true")  # FIXME: redundant with type name
+end
+
+@testset "get_Q" begin
+    n, m = 10, 5
+    c = rand(n)
+    lv = zeros(n)
+    uv = ones(n)
+    A = sprand(m, n, 0.4)
+    lc = zeros(m)
+    uc = ones(m)
+    lp = LinearProgram(; c, lv, uv, A, lc, uc)
+    @test isnothing(CoolPDLP.get_Q(lp))
+    Q = sparse(1.0I, n, n)
+    qp = QuadraticProgram(; c, lv, uv, A, Q, lc, uc)
+    @test CoolPDLP.get_Q(qp) === qp.Q
+end

@@ -120,6 +120,56 @@ end
 end
 
 @testset "QP step-size numerics" begin
-    η = CoolPDLP.compute_eta(1.0, 1.0e12, 1.0, 0.9)
-    @test η > 0
+    @testset "compute_eta" begin
+        T = Float64
+        # norm_A and norm_Q nonzero: η = invnorm_scaling * 2 / (hypot(b, 2*norm_A) + b), b = norm_Q/(2ω)
+        let norm_A = 2.0, norm_Q = 4.0, ω = 1.5, s = 0.9
+            b = norm_Q / (2ω)
+            @test CoolPDLP.compute_eta(norm_A, norm_Q, ω, s) ≈ s * 2 / (hypot(b, 2norm_A) + b)
+        end
+
+        # norm_A = 0 (Q-only): η = invnorm_scaling * 2ω / norm_Q
+        let norm_Q = 4.0, ω = 2.0, s = 0.5
+            @test CoolPDLP.compute_eta(zero(T), norm_Q, ω, s) ≈ s * 2ω / norm_Q
+        end
+
+        # norm_Q = 0 (LP): η = invnorm_scaling / norm_A
+        let norm_A = 2.0, s = 0.9
+            @test CoolPDLP.compute_eta(norm_A, zero(T), 1.0, s) ≈ s / norm_A
+        end
+
+        # both zero: fallback to 1.0 regardless of ω and invnorm_scaling
+        let
+            @test CoolPDLP.compute_eta(zero(T), zero(T), 2.5, 0.7) == 1.0
+        end
+    end
+
+    @testset "primal_weight_init" begin
+        lp, _ = CoolPDLP.random_milp_and_sol(5, 10, 0.4)
+        params = CoolPDLP.StepSizeParameters(; invnorm_scaling = 0.9, primal_weight_damping = 0.5, zero_tol = 1e-10)
+        @test CoolPDLP.primal_weight_init(lp, params) == 1.0
+
+        qp = linear_quadratic_qp()
+        ω_qp = CoolPDLP.primal_weight_init(qp, params)
+        expected_ω = norm(qp.c) / norm(CoolPDLP.combine.(qp.lc, qp.uc))
+        @test ω_qp ≈ expected_ω
+    end
+
+    @testset "update_step_size! LP is no-op" begin
+        lp, _ = CoolPDLP.random_milp_and_sol(5, 10, 0.4)
+        params = CoolPDLP.StepSizeParameters(; invnorm_scaling = 0.9, primal_weight_damping = 0.5, zero_tol = 1e-10)
+        step_sizes = CoolPDLP.StepSizes(; η = 0.1, ω = 2.0, norm_A = 1.0, norm_Q = 0.0)
+        η0, ω0 = step_sizes.η, step_sizes.ω
+        CoolPDLP.update_step_size!(step_sizes, lp, params)
+        @test step_sizes.η == η0
+        @test step_sizes.ω == ω0
+    end
+
+    @testset "update_step_size! QP recomputes η" begin
+        qp = simple_equality_qp()
+        params = CoolPDLP.StepSizeParameters(; invnorm_scaling = 0.9, primal_weight_damping = 0.5, zero_tol = 1e-10)
+        step_sizes = CoolPDLP.StepSizes(; η = 999.0, ω = 1.0, norm_A = 1.0, norm_Q = 1.0)
+        CoolPDLP.update_step_size!(step_sizes, qp, params)
+        @test step_sizes.η ≈ CoolPDLP.compute_eta(1.0, 1.0, 1.0, 0.9)
+    end
 end

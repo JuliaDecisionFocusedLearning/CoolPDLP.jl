@@ -83,6 +83,19 @@ end
     @test JuMP.value(x) isa Float32
 end
 
+@testset "QuadraticProgram via JuMP" begin
+    # min (1/2)(x₁ + x₂)² s.t. x₁ + x₂ = 1, x ≥ 0
+    model = JuMP.Model(CoolPDLP.Optimizer)
+    JuMP.set_silent(model)
+    JuMP.@variable(model, x[1:2] >= 0)
+    JuMP.@constraint(model, x[1] + x[2] == 1)
+    JuMP.@objective(model, Min, 0.5 * (x[1] + x[2])^2)
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
+    @test JuMP.objective_value(model) ≈ 0.5 atol = 1.0e-3
+    @test JuMP.value(x[1]) + JuMP.value(x[2]) ≈ 1.0 atol = 1.0e-3
+end
+
 if CUDA.functional()
     @info "Running CUDA tests"
     CUDA.versioninfo()

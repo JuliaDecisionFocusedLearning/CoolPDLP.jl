@@ -1,5 +1,6 @@
 using CoolPDLP
 using LinearAlgebra
+using Random: Xoshiro
 using SparseArrays
 using Test
 
@@ -66,4 +67,16 @@ end
             @test CoolPDLP.column_norm(A, j, p) ≈ norm(A[:, j], p)
         end
     end
+end
+
+@testset "spectral_norm(nothing, nothing)" begin
+    @test CoolPDLP.spectral_norm(nothing, nothing) == 0
+end
+
+@testset "combine_norms" begin
+    a = [1.0, 2.0, 3.0]
+    b = [4.0, 5.0, 6.0]
+    @test CoolPDLP.combine_norms(a, b, 1) ≈ a + b
+    @test CoolPDLP.combine_norms(a, b, 2) ≈ sqrt.(a .^ 2 + b .^ 2)
+    @test CoolPDLP.combine_norms(a, b, Inf) == max.(a, b)
 end
