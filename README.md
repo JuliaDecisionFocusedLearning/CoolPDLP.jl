@@ -74,3 +74,5 @@ See the [issue tracker](https://github.com/JuliaDecisionFocusedLearning/CoolPDLP
 ## Acknowledgements
 
 Guillaume Dalle was partially funded through a state grant managed by Agence Nationale de la Recherche for France 2030 (grant number ANR-24-PEMO-0001).
+
+This material is based upon work supported by the National Science Foundation AI Institute for Advances in Optimization ([AI4OPT](https://ai4opt.org)) under Grant No. 2112533 and the National Science Foundation Graduate Research Fellowship under Grant No. DGE-2039655. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
