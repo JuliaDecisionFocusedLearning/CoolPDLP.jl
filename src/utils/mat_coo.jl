@@ -47,9 +47,17 @@ function Adapt.adapt_structure(to, A::GPUSparseMatrixCOO)
     )
 end
 
+function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCOO)
+    return sparse(Vector(A.rowval), Vector(A.colval), Vector(A.nzval), A.m, A.n)
+end
+
 function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     rowval, colval, nzval = findnz(A)
     return GPUSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)
+end
+
+function sametype_transpose(A::GPUSparseMatrixCOO)
+    return GPUSparseMatrixCOO(A.n, A.m, A.colval, A.rowval, A.nzval)
 end
 
 @kernel function spmv_coo!(

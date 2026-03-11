@@ -50,6 +50,8 @@ end
 
 include("MOI_wrapper.jl")
 
+@public sametype_transpose
+
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq

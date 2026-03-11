@@ -56,8 +56,21 @@ function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
 end
 
 function GPUSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
-    At = sparse(transpose(A))
-    return GPUSparseMatrixCSR(At.n, At.m, At.colptr, At.rowval, At.nzval)
+    At_csc = SparseMatrixCSC(transpose(A))
+    return GPUSparseMatrixCSR(At_csc.n, At_csc.m, At_csc.colptr, At_csc.rowval, At_csc.nzval)
+end
+
+function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCSR)
+    At_csc = SparseMatrixCSC(A.n, A.m, Vector(A.rowptr), Vector(A.colval), Vector(A.nzval))
+    return SparseMatrixCSC(transpose(At_csc))
+end
+
+function sametype_transpose(A::GPUSparseMatrixCSR)
+    A_csc = SparseMatrixCSC(A)
+    return adapt(
+        get_backend(A),
+        GPUSparseMatrixCSR(A_csc.n, A_csc.m, A_csc.colptr, A_csc.rowval, A_csc.nzval)
+    )
 end
 
 @kernel function spmv_csr!(

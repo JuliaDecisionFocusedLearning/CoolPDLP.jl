@@ -10,6 +10,7 @@ Represent a Mixed Integer Linear Program in "cuPDLPx form":
 
     MILP(;
         c, lv, uv, A, lc, uc,
+        At=sametype_transpose(A),
         [D1, D2, int_var, var_names, dataset, name, path]
     )
 
@@ -21,6 +22,7 @@ struct MILP{
         T <: Number,
         V <: DenseVector{T},
         M <: AbstractMatrix{T},
+        Mt <: AbstractMatrix{T},
         Vb <: DenseVector{Bool},
     }
     "objective vector"
@@ -32,7 +34,7 @@ struct MILP{
     "constraint matrix"
     A::M
     "transposed constraint matrix"
-    At::M
+    At::Mt
     "constraint lower bound"
     lc::V
     "constraint upper bound"
@@ -57,7 +59,7 @@ struct MILP{
             lv,
             uv,
             A,
-            At = convert(typeof(A), transpose(A)),
+            At = sametype_transpose(A),
             lc,
             uc,
             D1 = Diagonal(one!(similar(lc))),
@@ -77,13 +79,15 @@ struct MILP{
 
         T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
         V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
-        M = promote_type(typeof(A), typeof(At))
+        M = typeof(A)
+        Mt = typeof(At)
         Vb = typeof(int_var)
 
         if (
                 !isconcretetype(T) ||
                     !isconcretetype(V) ||
                     !isconcretetype(M) ||
+                    !isconcretetype(Mt) ||
                     !isconcretetype(Vb)
             )
             throw(ArgumentError("Abstract type parameter"))
@@ -95,7 +99,7 @@ struct MILP{
             name = splitext(splitpath(path)[end])[1]
         end
 
-        return new{T, V, M, Vb}(
+        return new{T, V, M, Mt, Vb}(
             c,
             lv,
             uv,
@@ -136,14 +140,14 @@ function MILP(qps::QPSData; kwargs...)
     )
 end
 
-function Base.show(io::IO, milp::MILP{T, V, M}) where {T, V, M}
+function Base.show(io::IO, milp::MILP{T, V, M, Mt}) where {T, V, M, Mt}
     return print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
           - values $T
           - vectors $V
-          - matrices $M
+          - matrices $(M == Mt ? M : (M, Mt))
         - variables: $(nbvar(milp))
           - $(nbvar_cont(milp)) continuous
           - $(nbvar_int(milp)) integer

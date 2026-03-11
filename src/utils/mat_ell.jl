@@ -69,6 +69,19 @@ function GPUSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     return GPUSparseMatrixELL(m, n, colval, nzval)
 end
 
+function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixELL)
+    I = Matrix(map(ind -> Tuple(ind)[1], CartesianIndices(A.colval)))
+    J = Matrix(A.colval)
+    V = Matrix(A.nzval)
+    inds = J .> 0
+    return sparse(I[inds], J[inds], V[inds], A.m, A.n)
+end
+
+function sametype_transpose(A::GPUSparseMatrixELL)
+    At = SparseMatrixCSC(transpose(SparseMatrixCSC(A)))
+    return adapt(get_backend(A), GPUSparseMatrixELL(At))
+end
+
 @kernel function spmv_ell!(
         c::DenseVector{T},
         A_colval::AbstractMatrix{Ti},

@@ -1,3 +1,12 @@
+"""
+    sametype_transpose(A::AbstractMatrix)
+
+Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).
+
+The default implementation is just `convert(typeof(A), transpose(A))` but it may need to be overloaded for certain matrix types.
+"""
+sametype_transpose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
+
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
