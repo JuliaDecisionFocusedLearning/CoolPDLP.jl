@@ -13,7 +13,7 @@ A_candidates = [
 ];
 
 @testset for M in (CuSparseMatrixCSC, CuSparseMatrixCSR, CuSparseMatrixCOO)
-    for (A, b, c) in collect(zip(A_candidates, b_candidates, c_candidates))
+    for A in A_candidates
         A_gpu = M(A)
         @test @allowscalar Matrix(CoolPDLP.sametype_transpose(A_gpu)) == transpose(A)
         @test typeof(CoolPDLP.sametype_transpose(A_gpu)) == typeof(A_gpu)
