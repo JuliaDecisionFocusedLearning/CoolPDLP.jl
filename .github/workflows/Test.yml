@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.suite_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.group }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
