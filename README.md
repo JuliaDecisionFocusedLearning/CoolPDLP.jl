@@ -32,12 +32,13 @@ There are two ways to call the solver: either directly or via its [`JuMP.jl`](ht
 To use `CoolPDLP` with JuMP, select `CoolPDLP.Optimizer` and customize the options:
 
 ```julia
-using CoolPDLP, JuMP
+using CoolPDLP, JuMP, CUDA, CUDA.CUSPARSE
 
 model = Model(CoolPDLP.Optimizer)
 # Set `matrix_type` and `backend` to use GPU:
 set_attribute(model, "matrix_type", CUSPARSE.CuSparseMatrixCSR)
 set_attribute(model, "backend", CUDABackend())
+# Build and solve model as usual
 ```
 
 ## Why a new package?

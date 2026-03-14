@@ -20,16 +20,11 @@ jobs:
         version:
           - 'lts'
           - '1'
-        moi_suite:
-          - '0'
-          - '1'
-        include:
-          - moi_suite: '0'
-            suite_name: 'unit'
-          - moi_suite: '1'
-            suite_name: 'MOI'
+        group:
+          - 'Core'
+          - 'MOI'
     env:
-      COOLPDLP_TEST_MOISUITE: ${{ matrix.moi_suite }}
+      COOLPDLP_TEST_GROUP: ${{ matrix.group }}
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2

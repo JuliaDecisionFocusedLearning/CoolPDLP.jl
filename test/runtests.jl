@@ -1,8 +1,10 @@
+using Pkg
 using Test
 
+GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
+
 @testset verbose = true "CoolPDLP" begin
-    moisuite = get(ENV, "COOLPDLP_TEST_MOISUITE", nothing)
-    if moisuite != "1"
+    if GROUP == "Core" || isnothing(GROUP)
         @testset "Formalities" begin
             include("formalities.jl")
         end
@@ -11,6 +13,7 @@ using Test
         end
         for folder in readdir(@__DIR__)
             isdir(joinpath(@__DIR__, folder)) || continue
+            startswith(folder, "cuda") && continue
             @testset verbose = true "$folder" begin
                 for file in readdir(joinpath(@__DIR__, folder))
                     @testset "$file" begin
@@ -20,9 +23,16 @@ using Test
             end
         end
     end
-    if moisuite != "0"
+    if GROUP == "MOI" || isnothing(GROUP)
         @testset "MOI Wrapper" begin
             include("moi.jl")
         end
     end
+    if GROUP == "CUDA"  # don't test this if GROUP is not specified
+        Pkg.add("CUDA")
+        @testset "CUDA" begin
+            include("cuda/runtests.jl")
+        end
+    end
+
 end
