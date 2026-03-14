@@ -2,6 +2,7 @@ using Adapt
 using CoolPDLP
 using CUDA, CUDA.CUSPARSE
 using GPUArraysCore
+using SparseArrays
 using Test
 
 A_candidates = [
