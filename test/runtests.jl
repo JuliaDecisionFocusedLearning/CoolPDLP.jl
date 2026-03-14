@@ -30,7 +30,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     end
     if GROUP == "CUDA"  # don't test this if GROUP is not specified
         Pkg.add("CUDA")
-        @testset "CUDA" begin
+        @testset verbose = true "CUDA" begin
             include("cuda/runtests.jl")
         end
     end
