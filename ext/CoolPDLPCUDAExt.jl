@@ -8,13 +8,11 @@ function CoolPDLP.sametype_transpose(A::CuSparseMatrixCOO{Tv, Ti}) where {Tv, Ti
 end
 
 function CoolPDLP.sametype_transpose(A::CuSparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
-    At_csr = CuSparseMatrixCSR(transpose(A))
-    return CuSparseMatrixCSC(At_csr)
+    return CuSparseMatrixCSC(transpose(A))
 end
 
 function CoolPDLP.sametype_transpose(A::CuSparseMatrixCSR{Tv, Ti}) where {Tv, Ti}
-    At_csc = CuSparseMatrixCSC(transpose(A))
-    return CuSparseMatrixCSR(At_csc)
+    return CuSparseMatrixCSR(transpose(A))
 end
 
 end
