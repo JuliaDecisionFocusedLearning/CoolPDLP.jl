@@ -1,7 +1,7 @@
 using Test
 using Preferences: set_preferences!
 # see https://github.com/MilesCranmer/DispatchDoctor.jl?tab=readme-ov-file#-usage-in-packages
-set_preferences!("MyPackage", "default_codegen_level" => "min")
+set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
 @testset verbose = true "CoolPDLP" begin
     moisuite = get(ENV, "COOLPDLP_TEST_MOISUITE", nothing)
