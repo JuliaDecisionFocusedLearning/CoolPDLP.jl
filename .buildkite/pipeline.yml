@@ -18,5 +18,6 @@ steps:
       queue: "juliagpu"
       cuda: "*"
     timeout_in_minutes: 60
+    if: build.message !~ /\[skip tests\]/
     env:
       COOLPDLP_TEST_GROUP: "CUDA"
