@@ -1,6 +1,6 @@
 name = "CoolPDLP"
 uuid = "9e90bdc5-3073-4e0f-a275-e19f28ac1b53"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Guillaume Dalle", "Michael Klamkin"]
 
 [workspace]
