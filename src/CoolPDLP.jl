@@ -20,7 +20,7 @@ using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz,
 
 include("public.jl")
 
-@stable begin
+@stable default_mode = "warn" begin
     include("utils/device.jl")
     include("utils/mat_coo.jl")
     include("utils/mat_csr.jl")

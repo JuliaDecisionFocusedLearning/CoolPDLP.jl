@@ -1,8 +1,5 @@
 using Pkg
 using Test
-using Preferences: set_preferences!
-# see https://github.com/MilesCranmer/DispatchDoctor.jl?tab=readme-ov-file#-usage-in-packages
-set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 

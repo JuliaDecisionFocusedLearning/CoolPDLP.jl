@@ -48,3 +48,12 @@ function random_milp_and_sol(m::Int, n::Int, p::Float64)
     y = proj_multiplier.(randn(m), lc, uc)
     return MILP(; c, lv, uv, A, lc, uc, int_var), PrimalDualSolution(x, y)
 end
+
+# to test DispatchDoctor preference activation
+function _unstable_relu(x)
+    if x > 0
+        return x
+    else
+        return 0.0
+    end
+end
