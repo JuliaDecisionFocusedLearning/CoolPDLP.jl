@@ -68,6 +68,7 @@ end
     @test isapprox(sol, sol_unp)
     @test !isapprox(sol, sol_p)
 
+    @test milp.c0 == milp_p.c0
     @test objective_value(sol.x, milp) ≈ objective_value(sol_p.x, milp_p)
     @test dot(sol.y, milp.A, sol.x) ≈ dot(sol_p.y, milp_p.A, sol_p.x)
     @test CoolPDLP.proj_box.(sol.x, milp.lv, milp.uv) ≈ prec.D2 * CoolPDLP.proj_box.(sol_p.x, milp_p.lv, milp_p.uv)

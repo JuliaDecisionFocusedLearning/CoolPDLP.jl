@@ -83,4 +83,7 @@ end
     qps, path = read_instance(Netlib, netlib[1])
     milp = MILP(qps; path, dataset = "Netlib")
     @test milp ≈ milp
+    milp_offset = MILP(qps; path, dataset = "Netlib", c0 = 5.0)
+    @test milp_offset ≈ milp_offset
+    @test !(milp ≈ milp_offset)
 end

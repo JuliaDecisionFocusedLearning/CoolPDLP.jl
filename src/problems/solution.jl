@@ -37,7 +37,7 @@ end
 
 Compute the value of the linear objective of `milp` at solution vector `x`.
 """
-objective_value(x, milp::MILP) = dot(x, milp.c)
+objective_value(x, milp::MILP) = dot(x, milp.c) + milp.c0
 
 """
     PrimalDualSolution

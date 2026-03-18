@@ -60,7 +60,7 @@ end
 
 function precondition(milp::MILP, prec::Preconditioner)
     (;
-        c, lv, uv, A, At, lc, uc,
+        c, lv, uv, A, At, lc, uc, c0,
         int_var, var_names, dataset, name, path,
     ) = milp
     (; D1, D2) = prec
@@ -79,6 +79,7 @@ function precondition(milp::MILP, prec::Preconditioner)
         At = At_p,
         lc = lc_p,
         uc = uc_p,
+        c0,
         D1 = new_prec.D1,
         D2 = new_prec.D2,
         int_var,

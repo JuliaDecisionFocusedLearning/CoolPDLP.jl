@@ -11,7 +11,7 @@ end
 
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, lv, uv, A, At, lc, uc, c0, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -22,6 +22,7 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
         At = set_eltype(T, At),
         lc = set_eltype(T, lc),
         uc = set_eltype(T, uc),
+        c0 = T(c0),
         D1 = set_eltype(T, D1),
         D2 = set_eltype(T, D2),
         int_var,
@@ -51,7 +52,7 @@ end
 
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, lv, uv, A, At, lc, uc, c0, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -62,6 +63,7 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
         At = set_indtype(Ti, At),
         lc,
         uc,
+        c0,
         D1,
         D2,
         int_var,
@@ -79,7 +81,7 @@ Convert the sparse matrices inside `milp` using constructor `M`.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, lv, uv, A, At, lc, uc, c0, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
     A_M = M(A)
@@ -94,6 +96,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         At = At_M,
         lc = adapt(backend, lc),
         uc = adapt(backend, uc),
+        c0,
         D1 = adapt(backend, D1),
         D2 = adapt(backend, D2),
         int_var = adapt(backend, int_var),
@@ -110,7 +113,7 @@ end
 
 function Adapt.adapt_structure(to, milp::MILP)
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, lv, uv, A, At, lc, uc, c0, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -121,6 +124,7 @@ function Adapt.adapt_structure(to, milp::MILP)
         At = adapt(to, At),
         lc = adapt(to, lc),
         uc = adapt(to, uc),
+        c0,
         D1 = adapt(to, D1),
         D2 = adapt(to, D2),
         int_var = adapt(to, int_var),

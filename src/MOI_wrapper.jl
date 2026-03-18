@@ -208,6 +208,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     end
     if max_sense
         c .*= -one(T)
+        obj_constant = -obj_constant
     end
 
     dest.sets = cache.constraints.sets
@@ -216,7 +217,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     lc = cache.constraints.constants.lower
     uc = cache.constraints.constants.upper
 
-    milp = MILP(; c, lv, uv, A, lc, uc)
+    milp = MILP(; c, lv, uv, A, lc, uc, c0 = obj_constant)
 
     algorithm = pop!(dest.options, :algorithm, PDLP)
 
@@ -246,8 +247,8 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
             + sum(safeprod_left.(lv, positive_part.(dest.z)))
             - sum(safeprod_left.(uv, negative_part.(dest.z)))
     )
-    dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
-    dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
+    dest.obj_value = max_sense ? -raw_obj : raw_obj
+    dest.dual_obj_value = max_sense ? -(raw_dual_obj + milp.c0) : (raw_dual_obj + milp.c0)
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
