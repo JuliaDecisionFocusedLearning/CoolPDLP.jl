@@ -98,7 +98,7 @@ function spectral_norm(
         kwargs...
     )
     x0 = allocate(get_backend(K), eltype(K), size(K, 2))
-    randn!(StableRNG(0), x0)
+    randn!(StableRNG(0), x0)  # works for all arrays thanks to overload in GPUArrays
     KᵀK = Symmetrized(K, Kᵀ)
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)

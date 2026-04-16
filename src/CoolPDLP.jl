@@ -5,6 +5,7 @@ using Adapt: Adapt, adapt
 using Atomix: Atomix
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
+using GPUArrays: GPUArrays
 using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
