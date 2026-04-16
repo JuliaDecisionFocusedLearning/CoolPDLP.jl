@@ -2,12 +2,12 @@ using Test
 import MathOptInterface as MOI
 import CoolPDLP
 using CUDA
-using CUDA.CUSPARSE
+using cuSPARSE
 import JuMP
 
 model = JuMP.Model(CoolPDLP.Optimizer)
 JuMP.set_silent(model)
-JuMP.set_attribute(model, "matrix_type", CUSPARSE.CuSparseMatrixCSR)
+JuMP.set_attribute(model, "matrix_type", cuSPARSE.CuSparseMatrixCSR)
 JuMP.set_attribute(model, "backend", CUDABackend())
 
 JuMP.@variable(model, x >= 0)

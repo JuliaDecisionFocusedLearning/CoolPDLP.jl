@@ -35,11 +35,11 @@ There are two ways to call the solver: either directly or via its [`JuMP.jl`](ht
 To use `CoolPDLP` with JuMP, select `CoolPDLP.Optimizer` and customize the options:
 
 ```julia
-using CoolPDLP, JuMP, CUDA, CUDA.CUSPARSE
+using CoolPDLP, JuMP, CUDA, cuSPARSE
 
 model = Model(CoolPDLP.Optimizer)
 # Set `matrix_type` and `backend` to use GPU:
-set_attribute(model, "matrix_type", CUSPARSE.CuSparseMatrixCSR)
+set_attribute(model, "matrix_type", cuSPARSE.CuSparseMatrixCSR)
 set_attribute(model, "backend", CUDABackend())
 # Build and solve model as usual
 ```

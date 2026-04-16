@@ -1,6 +1,7 @@
 using Adapt
 using CoolPDLP
-using CUDA, CUDA.CUSPARSE
+using CUDA
+using cuSPARSE
 using GPUArraysCore
 using SparseArrays
 using Test
