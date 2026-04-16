@@ -24,16 +24,18 @@ StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
 
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+cuSPARSE = "b26da814-b3bc-49ef-b0ee-c816305aa060"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 
 [extensions]
-CoolPDLPCUDAExt = "CUDA"
+CoolPDLPCUDAExt = ["CUDA", "cuSPARSE"]
 CoolPDLPGPUArraysExt = "GPUArrays"
 
 [compat]
 Adapt = "4.4.0"
 Atomix = "1.1.2"
-CUDA = "5.11.0"
+CUDA = "6.0.0"
+cuSPARSE = "6.0.0"
 DispatchDoctor = "0.4.26"
 DocStringExtensions = "0.9.5"
 GPUArrays = "11.4.1"

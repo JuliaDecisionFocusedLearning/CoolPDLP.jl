@@ -1,6 +1,7 @@
 module CoolPDLPCUDAExt
 
-using CUDA.CUSPARSE: CuSparseMatrixCOO
+using CUDA: CUDA  # not used for now
+using cuSPARSE: CuSparseMatrixCOO
 using CoolPDLP: CoolPDLP
 
 function CoolPDLP.sametype_transpose(A::CuSparseMatrixCOO)
