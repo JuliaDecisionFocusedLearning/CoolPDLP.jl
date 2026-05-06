@@ -23,7 +23,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: DenseVector{T},
+        T <: Number, V <: DenseVector{T}, P,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -35,6 +35,8 @@ $(TYPEDFIELDS)
     scratch::Scratch{T, V}
     "convergence stats"
     stats::ConvergenceStats{T}
+    "progress bar"
+    prog::P
 end
 
 function initialize(
@@ -49,7 +51,8 @@ function initialize(
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
     stats = ConvergenceStats(T; starting_time)
-    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
+    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
+    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats, prog)
     return state
 end
 
@@ -58,18 +61,17 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDHG}
     )
-    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = prog_showvalues(state))
+            next!(state)
         end
         if termination_check!(state, milp, algo)
             break
         end
     end
-    finish!(prog)
+    finish!(state)
     return state
 end
 
@@ -87,14 +89,14 @@ function step!(
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
-    @. sol.x = proj_box(x - τ * (c - At_y), lv, uv)
+    @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
-    # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
+    # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. sol.y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
+    @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
 
     # other updates
     state.stats.kkt_passes += 1

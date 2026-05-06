@@ -25,7 +25,7 @@ err = CoolPDLP.kkt_errors!(scratch, sol, milp)
 err_p = CoolPDLP.kkt_errors!(scratch, sol_p, milp_p)
 
 @testset "Correct KKT errors" begin
-    @test err.primal ≈ norm(A * x - CoolPDLP.proj_box.(A * x, lc, uc))
+    @test err.primal ≈ norm(A * x - CoolPDLP.clamp.(A * x, lc, uc))
     @test err.dual ≈ norm(c - At * y - r)
     @test err.gap ≈ abs(dot(c, x) + p(-y, lc, uc) + p(-r, lv, uv))
     @test err.primal_scale ≈ 1 + norm(CoolPDLP.combine.(lc, uc))

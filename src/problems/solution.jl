@@ -92,3 +92,7 @@ end
 function Base.isapprox(sol1::PrimalDualSolution{T, V}, sol2::PrimalDualSolution{T, V}; kwargs...) where {T, V}
     return isapprox(sol1.x, sol2.x; kwargs...) && isapprox(sol1.y, sol2.y; kwargs...)
 end
+
+function PrimalDualSolution(milp::MILP)
+    return PrimalDualSolution(zero(milp.lv), zero(milp.lc))
+end

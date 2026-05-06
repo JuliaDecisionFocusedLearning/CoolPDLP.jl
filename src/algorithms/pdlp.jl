@@ -18,7 +18,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: DenseVector{T},
+        T <: Number, V <: DenseVector{T}, P,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -40,6 +40,8 @@ $(TYPEDFIELDS)
     restart_stats::RestartStats{T}
     "convergence stats"
     stats::ConvergenceStats{T}
+    "progress bar"
+    prog::P
 end
 
 function initialize(
@@ -59,9 +61,10 @@ function initialize(
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(T)
     stats = ConvergenceStats(T; starting_time)
+    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
-        step_sizes, scratch, iteration, restart_stats, stats
+        step_sizes, scratch, iteration, restart_stats, stats, prog
     )
     return state
 end
@@ -71,12 +74,11 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDLP}
     )
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = prog_showvalues(state))
+            next!(state)
         end
         if termination_check!(state, milp, algo)
             break
@@ -84,7 +86,7 @@ function solve!(
             restart!(state, algo)
         end
     end
-    finish!(prog)
+    finish!(state)
     return state
 end
 
@@ -102,14 +104,14 @@ function step!(
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
-    @. sol.x = proj_box(x - τ * (c - At_y), lv, uv)
+    @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
-    # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
+    # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. sol.y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
+    @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
 
     # other updates
     state.stats.kkt_passes += 1
