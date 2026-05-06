@@ -31,6 +31,9 @@ jobs:
           - 'Core'
           - 'MOI'
           - 'Perf'
+        exclude:
+          - version: 'lts'
+            group: 'Perf'
     env:
       COOLPDLP_TEST_GROUP: ${{ matrix.group }}
     steps:
