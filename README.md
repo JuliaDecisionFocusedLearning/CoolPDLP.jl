@@ -12,3 +12,4 @@ Unlike cuPDLP and its variants, this code is designed to run on most common GPU 
 - [cuPDLP.jl: A GPU Implementation of Restarted Primal-Dual Hybrid Gradient for Linear Programming in Julia](https://arxiv.org/abs/2311.12180), Lu et al. (2024)
 - [cuPDLP-C: A Strengthened Implementation of cuPDLP for Linear Programming by C language](https://arxiv.org/abs/2312.14832), Lu et al. (2024)
 - [cuPDLPx: A Further Enhanced GPU-Based First-Order Solver for Linear Programming](https://arxiv.org/abs/2507.14051), Lu et al. (2025)
+- [PDLP: A Practical First-Order Method for Large-Scale Linear Programming](https://arxiv.org/abs/2501.07018), Applegate et al. (2025)

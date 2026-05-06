@@ -21,11 +21,11 @@ makedocs(;
         "tutorial.md",
         "api.md",
         "Dev docs" => [
-            "preconditioning.md",
+            "math.md",
         ],
     ],
 )
 
 deploydocs(;
-    repo = "github.com/gdalle/CoolPDLP.jl", devbranch = "main"
+    repo = "github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl", devbranch = "main"
 )
