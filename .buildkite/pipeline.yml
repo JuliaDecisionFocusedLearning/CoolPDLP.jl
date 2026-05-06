@@ -1,0 +1,23 @@
+env:
+  SECRET_CODECOV_TOKEN: "QlZXG5FfYRWvyLVclOLJxpbrOk6Jggxl7WOp3hmirkZ2Og4UP4r6ZCeUG6PAY+SvAxlQipwunhb3ydoGzgkZiTm0z0nIpieU8SGJRlF4aK80ytBI8t5MVVZFNHDvfKTLTPIJOSxzF2+jRDhhw/5on+a/zTUp9Qk3akzOg5r7owKiDQbJtzabVsWVSDpy7a8pu1IITNI1Ijt1hl+mbnCD1gSiZKm6uSAOYAlsygED3Sd3PDfV3oK8SNVU2EoFuX+a63en3dNJL7Jv90c+elNkawLOdtz9hk0BpsUI33PDPdIMi1+PW4oWJnTpzmxYHwO9KuTgjKOtneJrmyAyr+rFgQ==;U2FsdGVkX1+Z7IVZoNNI3PazrluxzKUdhRpRBFO7k8HTyWpW7Oe2zt8D2OJmcduk7szFmTnH2IbBMWZfDqSzxA=="
+
+steps:
+  - label: "CUDA tests - Julia {{matrix.version}}"
+    matrix:
+      setup:
+        version:
+          - "1.10"
+          - "1"
+    plugins:
+      - JuliaCI/julia#v1:
+          version: "{{matrix.version}}"
+      - JuliaCI/julia-test#v1: ~
+      - JuliaCI/julia-coverage#v1:
+          codecov: true
+    agents:
+      queue: "juliagpu"
+      cuda: "*"
+    timeout_in_minutes: 60
+    if: build.message !~ /\[skip tests\]/
+    env:
+      COOLPDLP_TEST_GROUP: "CUDA"

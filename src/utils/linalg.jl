@@ -1,3 +1,12 @@
+"""
+    sametype_transpose(A::AbstractMatrix)
+
+Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).
+
+The default implementation is just `convert(typeof(A), transpose(A))` but it may need to be overloaded for certain matrix types.
+"""
+sametype_transpose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
+
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
@@ -89,7 +98,9 @@ function spectral_norm(
         kwargs...
     )
     x0 = allocate(get_backend(K), eltype(K), size(K, 2))
-    randn!(StableRNG(0), x0)
+    x0_cpu = adapt(CPU(), x0)  # StableRNGs doesn't work on GPU
+    randn!(StableRNG(0), x0_cpu)
+    copyto!(x0, x0_cpu)
     KᵀK = Symmetrized(K, Kᵀ)
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)

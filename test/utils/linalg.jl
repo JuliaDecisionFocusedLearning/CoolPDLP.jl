@@ -2,6 +2,7 @@ using CoolPDLP
 using LinearAlgebra
 using SparseArrays
 using Test
+using Random: Xoshiro
 
 @testset "Simple projections" begin
     for x in randn(100)
@@ -65,5 +66,12 @@ end
         for p in (0.1, 1.0, 2.0)
             @test CoolPDLP.column_norm(A, j, p) ≈ norm(A[:, j], p)
         end
+    end
+end
+
+@testset "Same-type transpose" begin
+    for A in Any[rand(10, 10), sprand(10, 10, 0.6)]
+        @test CoolPDLP.sametype_transpose(A) == transpose(A)
+        @test CoolPDLP.sametype_transpose(A) isa typeof(A)
     end
 end

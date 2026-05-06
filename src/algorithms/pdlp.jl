@@ -73,20 +73,15 @@ function solve!(
     )
     prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     while true
-        while true
-            yield()
-            for _ in 1:algo.generic.check_every
-                step!(state, milp)
-                next!(prog; showvalues = prog_showvalues(state))
-            end
-            if termination_check!(state, milp, algo)
-                break
-            elseif restart_check!(state, milp, algo)
-                restart!(state, algo)
-            end
+        yield()
+        for _ in 1:algo.generic.check_every
+            step!(state, milp)
+            next!(prog; showvalues = prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
+        elseif restart_check!(state, milp, algo)
+            restart!(state, algo)
         end
     end
     finish!(prog)

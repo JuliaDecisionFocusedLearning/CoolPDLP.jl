@@ -19,9 +19,21 @@ end
 
 @testset "Change backend" begin
     milp_flexible = CoolPDLP.set_matrix_type(GPUSparseMatrixCSR, milp)
-    @test milp_flexible isa MILP{Float64, Vector{Float64}, GPUSparseMatrixCSR{Float64, Int, Vector{Float64}, Vector{Int}}, Vector{Bool}}
+    @test milp_flexible isa MILP{
+        Float64,
+        Vector{Float64},
+        GPUSparseMatrixCSR{Float64, Int, Vector{Float64}, Vector{Int}},
+        GPUSparseMatrixCSR{Float64, Int, Vector{Float64}, Vector{Int}},
+        Vector{Bool},
+    }
     milp_gpu = adapt(JLBackend(), milp_flexible)
-    @test milp_gpu isa MILP{Float64, JLVector{Float64}, GPUSparseMatrixCSR{Float64, Int, JLVector{Float64}, JLVector{Int}}, JLVector{Bool}}
+    @test milp_gpu isa MILP{
+        Float64,
+        JLVector{Float64},
+        GPUSparseMatrixCSR{Float64, Int, JLVector{Float64}, JLVector{Int}},
+        GPUSparseMatrixCSR{Float64, Int, JLVector{Float64}, JLVector{Int}},
+        JLVector{Bool},
+    }
 
     sol_gpu = adapt(JLBackend(), sol)
     @test sol_gpu isa PrimalDualSolution{Float64, JLVector{Float64}}
