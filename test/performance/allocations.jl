@@ -6,7 +6,7 @@ using Test
 
 @testset verbose = true "Allocation-free `solve!`" begin
     milp = MILP(read_instance(Netlib, first(list_instances(Netlib)))[1])
-    @testset "$(nameof(typeof(algo)))" for algo in [
+    @testset "$(typeof(algo))" for algo in [
             PDHG(time_limit = 1.0, record_error_history = false)
             PDLP(time_limit = 1.0, record_error_history = false)
         ]
