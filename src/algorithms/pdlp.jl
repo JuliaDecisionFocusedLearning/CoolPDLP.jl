@@ -18,7 +18,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: DenseVector{T}, P,
+        T <: Number, V <: DenseVector{T},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -40,8 +40,6 @@ $(TYPEDFIELDS)
     restart_stats::RestartStats{T}
     "convergence stats"
     stats::ConvergenceStats{T}
-    "progress bar"
-    prog::P
 end
 
 function initialize(
@@ -61,10 +59,9 @@ function initialize(
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(T)
     stats = ConvergenceStats(T; starting_time)
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
-        step_sizes, scratch, iteration, restart_stats, stats, prog
+        step_sizes, scratch, iteration, restart_stats, stats
     )
     return state
 end
@@ -74,11 +71,12 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDLP}
     )
+    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(state)
+            next!(prog; showvalues = prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
@@ -86,7 +84,7 @@ function solve!(
             restart!(state, algo)
         end
     end
-    finish!(state)
+    finish!(prog)
     return state
 end
 

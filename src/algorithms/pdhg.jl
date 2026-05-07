@@ -23,7 +23,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: DenseVector{T}, P,
+        T <: Number, V <: DenseVector{T},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -35,8 +35,6 @@ $(TYPEDFIELDS)
     scratch::Scratch{T, V}
     "convergence stats"
     stats::ConvergenceStats{T}
-    "progress bar"
-    prog::P
 end
 
 function initialize(
@@ -51,8 +49,7 @@ function initialize(
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(; x = similar(sol.x), y = similar(sol.y), r = similar(sol.x))
     stats = ConvergenceStats(T; starting_time)
-    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
-    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats, prog)
+    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
     return state
 end
 
@@ -61,17 +58,18 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDHG}
     )
+    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
     while true
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(state)
+            next!(prog; showvalues = prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
         end
     end
-    finish!(state)
+    finish!(prog)
     return state
 end
 

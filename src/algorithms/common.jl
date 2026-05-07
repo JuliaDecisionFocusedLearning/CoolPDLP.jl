@@ -145,14 +145,6 @@ function prog_showvalues(state::AbstractState)
     )
 end
 
-function ProgressMeter.next!(state::AbstractState)
-    return next!(state.prog; showvalues = prog_showvalues(state))
-end
-
-function ProgressMeter.finish!(state::AbstractState)
-    return finish!(state.prog)
-end
-
 """
     preprocess(milp_init, sol_init, algo)
 
