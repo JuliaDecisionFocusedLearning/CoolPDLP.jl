@@ -9,16 +9,6 @@ using Random: Xoshiro
         @test x ≈ CoolPDLP.positive_part(x) - CoolPDLP.negative_part(x)
         @test CoolPDLP.positive_part(x) >= 0
         @test CoolPDLP.negative_part(x) >= 0
-        a = randn()
-        l, u = a - rand(), a + rand()
-        @test l <= CoolPDLP.proj_box(x, l, u) <= u
-        if l <= x <= u
-            @test CoolPDLP.proj_box(x, l, u) == x
-        elseif x >= u
-            @test CoolPDLP.proj_box(x, l, u) == u
-        elseif x <= l
-            @test CoolPDLP.proj_box(x, l, u) == l
-        end
     end
 end
 

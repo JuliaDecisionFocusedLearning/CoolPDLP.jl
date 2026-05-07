@@ -31,7 +31,14 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
             include("moi.jl")
         end
     end
-    if GROUP == "CUDA"  # don't test this if GROUP is not specified
+    # don't test this if GROUP is not specified
+    if GROUP == "Perf"
+        # test separately in CI to avoid Codecov noise
+        @testset "Performance" begin
+            include("perf.jl")
+        end
+    end
+    if GROUP == "CUDA"
         Pkg.add("CUDA")
         @testset verbose = true "CUDA" begin
             include("cuda/runtests.jl")

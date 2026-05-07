@@ -39,3 +39,4 @@ playground*.jl
 .DS_Store
 *.trace
 *.gputrace
+*.pb.gz

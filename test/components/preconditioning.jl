@@ -70,6 +70,6 @@ end
 
     @test objective_value(sol.x, milp) ≈ objective_value(sol_p.x, milp_p)
     @test dot(sol.y, milp.A, sol.x) ≈ dot(sol_p.y, milp_p.A, sol_p.x)
-    @test CoolPDLP.proj_box.(sol.x, milp.lv, milp.uv) ≈ prec.D2 * CoolPDLP.proj_box.(sol_p.x, milp_p.lv, milp_p.uv)
-    @test CoolPDLP.proj_box.(milp.A * sol.x, milp.lc, milp.uc) ≈ prec.D1 \ CoolPDLP.proj_box.(milp_p.A * sol_p.x, milp_p.lc, milp_p.uc)
+    @test CoolPDLP.clamp.(sol.x, milp.lv, milp.uv) ≈ prec.D2 * CoolPDLP.clamp.(sol_p.x, milp_p.lv, milp_p.uv)
+    @test CoolPDLP.clamp.(milp.A * sol.x, milp.lc, milp.uc) ≈ prec.D1 \ CoolPDLP.clamp.(milp_p.A * sol_p.x, milp_p.lc, milp_p.uc)
 end

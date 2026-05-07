@@ -25,8 +25,6 @@ end
 
 @inline safeprod_left(left, right) = ifelse(isinf(left), right, left * right)
 
-@inline proj_box(x::Number, l::Number, u::Number) = min(u, max(l, x))
-
 """
     proj_multiplier(λ, l, u)
 

@@ -134,9 +134,10 @@ abstract type AbstractState{T, V} end
 function prog_showvalues(state::AbstractState)
     err = state.stats.err
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    rel_primal = @sprintf("%.3e", primal / primal_scale)
-    rel_dual = @sprintf("%.3e", dual / dual_scale)
-    rel_gap = @sprintf("%.3e", gap / gap_scale)
+    # @sprintf induces string formatting overhead in hot loops
+    rel_primal = primal / primal_scale
+    rel_dual = dual / dual_scale
+    rel_gap = gap / gap_scale
     return (
         ("primal", rel_primal),
         ("dual", rel_dual),
@@ -192,7 +193,7 @@ function solve(
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
     if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
-        @. sol.x = proj_box(zero(eltype(milp.lv)), milp.lv, milp.uv)
+        @. sol.x = clamp(zero(eltype(milp.lv)), milp.lv, milp.uv)
         state.stats.termination_status = OPTIMAL
         return get_solution(state, milp), state.stats
     end

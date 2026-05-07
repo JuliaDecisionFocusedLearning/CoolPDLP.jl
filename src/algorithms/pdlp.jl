@@ -102,14 +102,14 @@ function step!(
 
     τ, σ = η / ω, η * ω
 
-    # xp = proj_box.(x - τ * (c - At * y), lv, uv)
+    # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
-    @. sol.x = proj_box(x - τ * (c - At_y), lv, uv)
+    @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
-    # yp = y - σ * A * (2xp - x) - σ * proj_box.(inv(σ) * y - A * (2xp - x), -uc, -lc)
+    # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. sol.y = y - σ * A_xdiff - σ * proj_box(inv(σ) * y - A_xdiff, -uc, -lc)
+    @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
 
     # other updates
     state.stats.kkt_passes += 1
