@@ -71,8 +71,8 @@ function kkt_errors!(
     (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
 
     A_x = mul!(scratch.y, A, x)
-    copyto!(c_At_y, c)
-    mul!(c_At_y, At, y, one(T), -one(T))
+    c_At_y = mul!(scratch.x, At, y, -one(T), zero(T))
+    c_At_y .+= c
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
