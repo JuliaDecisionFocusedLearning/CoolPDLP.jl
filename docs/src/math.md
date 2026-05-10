@@ -13,28 +13,28 @@ PDLP solves Linear Programs (LPs) formulated as follows:
 \end{cases}
 ```
 
-We associate non-negative multipliers $\alpha_c, \beta_c, \alpha_v, \beta_v \geq 0$ with all four inequality constraints, leading to the following Lagrangian:
+We associate non-negative multipliers $y_\ell, y_u, z_\ell, z_u \geq 0$ with all four inequality constraints, leading to the following Lagrangian:
 
 ```math
 \begin{align*}
-\mathcal{L}(x, \alpha_c, \beta_c, \alpha_v, \beta_v)
-& = c^\top x + \alpha_c^\top (\ell_c - A x) + \beta_c^\top (A x - u_c) + \alpha_v^\top (\ell_v - x) + \beta_v^\top (x - u_v) \\
-& = (c - A^\top \alpha_c + A^\top \beta_c - \alpha_v + \beta_v)^\top x + (\alpha_c^\top \ell_c - \beta_c^\top u_c) + (\alpha_v^\top \ell_v - \beta_v^\top u_v)
+\mathcal{L}(x, y_\ell, y_u, z_\ell, z_u)
+& = c^\top x + y_\ell^\top (\ell_c - A x) + y_u^\top (A x - u_c) + z_\ell^\top (\ell_v - x) + z_u^\top (x - u_v) \\
+& = (c - A^\top y_\ell + A^\top y_u - z_\ell + z_u)^\top x + (y_\ell^\top \ell_c - y_u^\top u_c) + (z_\ell^\top \ell_v - z_u^\top u_v)
 \end{align*}
 ```
 
-We interpret signed multipliers $\alpha_c, \alpha_v$ and $\beta_c, \beta_v$ as the positive and negative parts of unsigned multipliers $y$ and $z$, associated with the constraints and the variable bounds respectively:
+We interpret signed multipliers $y_\ell, z_\ell$ and $y_u, z_u$ as the positive and negative parts of unsigned multipliers $y$ and $z$, associated with the constraints and the variable bounds respectively:
 
 ```math
-y = \alpha_c - \beta_c \quad \text{and} \quad z = \alpha_v - \beta_v
+y = y_\ell - y_u \quad \text{and} \quad z = z_\ell - z_u
 ```
 
 which amounts to
 
 ```math
 \begin{align*}
-\alpha_c & = y^+ & \alpha_v & = z^+ \\
-\beta_c & = y^- & \beta_v & = z^-
+y_\ell & = y^+ & z_\ell & = z^+ \\
+y_u & = y^- & z_u & = z^-
 \end{align*}
 ```
 
