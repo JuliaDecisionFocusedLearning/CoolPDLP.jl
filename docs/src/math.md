@@ -150,11 +150,11 @@ for matrix $K$ of size $m \times n$ and $\alpha \in [0, 2]$, the diagonal factor
 \sigma_i = \left(\sum_j |K_{ij}|^{\alpha}\right)^{-1} \quad \text{(constraint side, row $i$)}
 ```
 
-so that $\|\Sigma^{1/2} K T^{1/2}\| \leq 1$ with $T = \mathrm{diag}(\tau_j), \Sigma = \mathrm{diag}(\sigma_i)$. CoolPDLP absorbs the $1/2$ powers into the rescaling factors: $D_2[j] = \tau_j^{1/2}$ and $D_1[i] = \sigma_i^{1/2}$. The exponent parameter $\alpha$ is exposed as `chambolle_pock_alpha` (default `1.0`). See also [`chambolle_pock_preconditioner`](@ref).
+so that $\|\Sigma^{1/2} K T^{1/2}\| \leq 1$ with $T = \mathrm{diag}(\tau_j), \Sigma = \mathrm{diag}(\sigma_i)$. CoolPDLP absorbs the $1/2$ powers into the rescaling factors: $D_2[j] = \tau_j^{1/2}$ and $D_1[i] = \sigma_i^{1/2}$. The exponent parameter $\alpha$ is exposed as `chambolle_pock_alpha` (default `1.0`). See also [`CoolPDLP.chambolle_pock_preconditioner`](@ref).
 
 ### Ruiz equilibration
 
-The Ruiz iteration alternately rescales each row and each column of $A$ by the square root of its $\ell_\infty$ norm. After enough iterations the rescaled matrix has all row and column $\infty$-norms close to 1. CoolPDLP applies a fixed number of iterations (`ruiz_iter`, default `10`). See also [`ruiz_preconditioner`](@ref).
+The Ruiz iteration alternately rescales each row and each column of $A$ by the square root of its $\ell_\infty$ norm. After enough iterations the rescaled matrix has all row and column $\infty$-norms close to 1. CoolPDLP applies a fixed number of iterations (`ruiz_iter`, default `10`). See also [`CoolPDLP.ruiz_preconditioner`](@ref).
 
 ### Composition
 
