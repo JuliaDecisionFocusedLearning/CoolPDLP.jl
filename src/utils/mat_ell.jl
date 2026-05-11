@@ -98,7 +98,7 @@ end
             s += A_nzval[i, k] * b[j]
         end
     end
-    c[i] = α * s + β * c[i]
+    c[i] = iszero(β) ? (α * s) : muladd(β, c[i], (α * s))
 end
 
 function LinearAlgebra.mul!(

@@ -26,6 +26,10 @@ function test_sparse_matrix(::Type{M}; A, b, c, α, β) where {M}
     @test nnz(A_jl) == nnz(A)
     @test get_backend(A_jl) isa JLBackend
     @test mul!(copy(c_jl), A_jl, b_jl, α, β) ≈ α * A * b + β * c
+    c_nan = jl(fill(NaN, size(A, 1)))
+    @test mul!(c_nan, A_jl, b_jl, α, false) ≈ α * A * b
+    c_nan2 = jl(fill(NaN, size(A, 1)))
+    @test mul!(c_nan2, A_jl, b_jl, α, zero(α)) ≈ α * A * b
     @test @allowscalar Matrix(CoolPDLP.sametype_transpose(A_jl)) == transpose(A)
     @test typeof(CoolPDLP.sametype_transpose(A_jl)) == typeof(At_jl)
     return nothing
