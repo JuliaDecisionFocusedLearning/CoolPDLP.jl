@@ -82,14 +82,18 @@ end
         prec = CoolPDLP.chambolle_pock_preconditioner(cons; alpha = alpha)
         At_csc = sparse(transpose(A))
         for j in axes(A, 2)
-            ref = sum(x -> iszero(x) ? zero(x) : abs(x)^(2 - alpha),
-                      nonzeros(A)[nzrange(A, j)]; init = 0.0)
+            ref = sum(
+                x -> iszero(x) ? zero(x) : abs(x)^(2 - alpha),
+                nonzeros(A)[nzrange(A, j)]; init = 0.0
+            )
             expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
             @test prec.D2.diag[j] ≈ expected
         end
         for i in axes(A, 1)
-            ref = sum(x -> iszero(x) ? zero(x) : abs(x)^alpha,
-                      nonzeros(At_csc)[nzrange(At_csc, i)]; init = 0.0)
+            ref = sum(
+                x -> iszero(x) ? zero(x) : abs(x)^alpha,
+                nonzeros(At_csc)[nzrange(At_csc, i)]; init = 0.0
+            )
             expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
             @test prec.D1.diag[i] ≈ expected
         end
