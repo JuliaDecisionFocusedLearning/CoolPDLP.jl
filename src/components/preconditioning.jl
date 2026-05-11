@@ -110,10 +110,37 @@ function diagonal_norm_preconditioner(
     return Preconditioner(Diagonal(d1), Diagonal(d2))
 end
 
-function chambolle_pock_preconditioner(cons::ConstraintMatrix; alpha::Number)
-    return diagonal_norm_preconditioner(cons; p_row = 2 - alpha, p_col = alpha)
+"""
+    chambolle_pock_preconditioner(cons; alpha)
+
+Diagonal preconditioner from Lemma 2 of:
+
+> Pock, Thomas, and Antonin Chambolle. "Diagonal preconditioning for first order
+> primal-dual algorithms in convex optimization." 2011 International Conference
+> on Computer Vision. IEEE, 2011. doi:10.1109/ICCV.2011.6126441
+
+For matrix `K` of size m×n and `α ∈ [0, 2]`, the variable-side factor for
+column `j` is `(sum_i |K[i,j]|^(2-α))^{-1/2}` and the constraint-side factor for
+row `i` is `(sum_j |K[i,j]|^α)^{-1/2}`. With these, `‖Σ^{1/2} K T^{1/2}‖ ≤ 1`
+where `T, Σ` are the diagonals built from those factors.
+"""
+function chambolle_pock_preconditioner(cons::ConstraintMatrix{T}; alpha::Number) where {T}
+    (; A, At) = cons
+    α_col = T(2 - alpha)
+    α_row = T(alpha)
+    col_sums = map(j -> column_power_sum(A, j, α_col), axes(A, 2))
+    row_sums = map(i -> column_power_sum(At, i, α_row), axes(A, 1))
+    d1 = map(s -> iszero(s) ? one(T) : inv(sqrt(s)), row_sums)
+    d2 = map(s -> iszero(s) ? one(T) : inv(sqrt(s)), col_sums)
+    return Preconditioner(Diagonal(d1), Diagonal(d2))
 end
 
+"""
+    ruiz_preconditioner(cons; iterations)
+
+Ruiz equilibration: for `iterations` rounds, rescale each row and column of `A`
+(inside `cons`) by the square root of its inf norm.
+"""
 function ruiz_preconditioner(cons::ConstraintMatrix; iterations::Integer)
     prec = identity_preconditioner(cons)
     for _ in 1:iterations

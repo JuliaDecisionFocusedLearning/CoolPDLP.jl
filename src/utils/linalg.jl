@@ -107,6 +107,19 @@ end
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
 
+"""
+    column_power_sum(A, j, p)
+
+Return `sum_i |A[i, j]|^p`. Zero entries are treated as contributing `0` (not `0^0 = 1`),
+so the sparse and dense cases are aligned.
+"""
+@inline _power_term(x, p) = iszero(x) ? zero(x) : x^p
+
+column_power_sum(A::AbstractMatrix, j::Integer, p) =
+    sum(x -> _power_term(abs(x), p), view(A, :, j); init = zero(real(eltype(A))))
+column_power_sum(A::SparseMatrixCSC, j::Integer, p) =
+    sum(x -> _power_term(abs(x), p), view(nonzeros(A), nzrange(A, j)); init = zero(real(eltype(A))))
+
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
 

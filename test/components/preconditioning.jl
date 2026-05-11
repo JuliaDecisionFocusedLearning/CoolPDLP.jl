@@ -73,3 +73,25 @@ end
     @test CoolPDLP.clamp.(sol.x, milp.lv, milp.uv) ≈ prec.D2 * CoolPDLP.clamp.(sol_p.x, milp_p.lv, milp_p.uv)
     @test CoolPDLP.clamp.(milp.A * sol.x, milp.lc, milp.uc) ≈ prec.D1 \ CoolPDLP.clamp.(milp_p.A * sol_p.x, milp_p.lc, milp_p.uc)
 end
+
+@testset "Pock-Chambolle exponents" begin
+    rng = Xoshiro(7)
+    A = sprand(rng, 10, 20, 0.5)
+    cons = CoolPDLP.ConstraintMatrix(A, sparse(transpose(A)))
+    @testset "α = $alpha" for alpha in (0.0, 0.5, 1.0, 1.5, 2.0)
+        prec = CoolPDLP.chambolle_pock_preconditioner(cons; alpha = alpha)
+        At_csc = sparse(transpose(A))
+        for j in axes(A, 2)
+            ref = sum(x -> iszero(x) ? zero(x) : abs(x)^(2 - alpha),
+                      nonzeros(A)[nzrange(A, j)]; init = 0.0)
+            expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
+            @test prec.D2.diag[j] ≈ expected
+        end
+        for i in axes(A, 1)
+            ref = sum(x -> iszero(x) ? zero(x) : abs(x)^alpha,
+                      nonzeros(At_csc)[nzrange(At_csc, i)]; init = 0.0)
+            expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
+            @test prec.D1.diag[i] ≈ expected
+        end
+    end
+end
