@@ -116,9 +116,9 @@ so the sparse and dense cases are aligned.
 @inline _power_term(x, p) = iszero(x) ? zero(x) : x^p
 
 column_power_sum(A::AbstractMatrix, j::Integer, p) =
-    sum(x -> _power_term(abs(x), p), view(A, :, j); init = zero(real(eltype(A))))
+    sum(x -> _power_term(abs(x), p), view(A, :, j); init = zero(eltype(A)))
 column_power_sum(A::SparseMatrixCSC, j::Integer, p) =
-    sum(x -> _power_term(abs(x), p), view(nonzeros(A), nzrange(A, j)); init = zero(real(eltype(A))))
+    sum(x -> _power_term(abs(x), p), view(nonzeros(A), nzrange(A, j)); init = zero(eltype(A)))
 
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
