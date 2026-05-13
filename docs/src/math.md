@@ -158,7 +158,7 @@ convention used in the original Pock-Chambolle paper referenced above.
 
 ### Ruiz equilibration
 
-The Ruiz iteration alternately rescales each row and each column of $A$ by the square root of its $\ell_\infty$ norm. After enough iterations the rescaled matrix has all row and column $\infty$-norms close to 1. CoolPDLP applies a fixed number of iterations (`ruiz_iter`, default `10`). See also [`CoolPDLP.ruiz_preconditioner`](@ref).
+The Ruiz iteration alternately rescales each row and each column of $A$ by the square root of its $\ell_\infty$ norm. After enough iterations the rescaled matrix has all row and column $\infty$-norms close to 1. See also [`CoolPDLP.ruiz_preconditioner`](@ref).
 
 ### Composition
 
