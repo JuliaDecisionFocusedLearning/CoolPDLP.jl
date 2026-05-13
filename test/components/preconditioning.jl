@@ -83,7 +83,7 @@ end
         At_csc = sparse(transpose(A))
         for j in axes(A, 2)
             ref = sum(
-                x -> iszero(x) ? zero(x) : abs(x)^(2 - alpha),
+                x -> iszero(x) ? zero(x) : abs(x)^(alpha),
                 nonzeros(A)[nzrange(A, j)]; init = 0.0
             )
             expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
@@ -91,7 +91,7 @@ end
         end
         for i in axes(A, 1)
             ref = sum(
-                x -> iszero(x) ? zero(x) : abs(x)^alpha,
+                x -> iszero(x) ? zero(x) : abs(x)^(2 - alpha),
                 nonzeros(At_csc)[nzrange(At_csc, i)]; init = 0.0
             )
             expected = iszero(ref) ? 1.0 : inv(sqrt(ref))

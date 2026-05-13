@@ -120,14 +120,19 @@ Diagonal preconditioner from Lemma 2 of:
 > on Computer Vision. IEEE, 2011. doi:10.1109/ICCV.2011.6126441
 
 For matrix `K` of size m×n and `α ∈ [0, 2]`, the variable-side factor for
-column `j` is `(sum_i |K[i,j]|^(2-α))^{-1/2}` and the constraint-side factor for
-row `i` is `(sum_j |K[i,j]|^α)^{-1/2}`. With these, `‖Σ^{1/2} K T^{1/2}‖ ≤ 1`
+column `j` is `(sum_i |K[i,j]|^α)^{-1/2}` and the constraint-side factor for
+row `i` is `(sum_j |K[i,j]|^(2-α))^{-1/2}`. With these, `‖Σ^{1/2} K T^{1/2}‖ ≤ 1`
 where `T, Σ` are the diagonals built from those factors.
+
+Note that CoolPDLP uses `2-α` for the row and `α` for the column, to be aligned with
+the 2021 paper "Practical large-scale linear programming using primal-dual hybrid gradient"
+of Applegate et al. - this is the opposite of the convention used in
+the original Pock-Chambolle paper referenced above.
 """
 function chambolle_pock_preconditioner(cons::ConstraintMatrix{T}; alpha::Number) where {T}
     (; A, At) = cons
-    α_col = T(2 - alpha)
-    α_row = T(alpha)
+    α_row = T(2 - alpha)
+    α_col = T(alpha)
     col_sums = map(j -> column_power_sum(A, j, α_col), axes(A, 2))
     row_sums = map(i -> column_power_sum(At, i, α_row), axes(A, 1))
     d1 = map(s -> iszero(s) ? one(T) : inv(sqrt(s)), row_sums)
