@@ -161,5 +161,5 @@ The Ruiz iteration alternately rescales each row and each column of $A$ by the s
 The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}, D_2^{\mathrm{ruiz}}$, then Pock-Chambolle is applied to the already-Ruiz-rescaled matrix $D_1^{\mathrm{ruiz}} A D_2^{\mathrm{ruiz}}$ and produces $D_1^{\mathrm{cp}}, D_2^{\mathrm{cp}}$. The final scaling is then
 
 ```math
-D_1 = D_1^{\mathrm{ruiz}} D_1^{\mathrm{cp}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
+D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
 ```
