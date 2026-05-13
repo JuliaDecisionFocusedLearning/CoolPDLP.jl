@@ -150,7 +150,7 @@ for matrix $K$ of size $m \times n$ and $\alpha \in [0, 2]$, the diagonal factor
 \sigma_i = \left(\sum_j |K_{ij}|^{2-\alpha}\right)^{-1} \quad \text{(constraint side, row $i$)}
 ```
 
-so that $\|\Sigma^{1/2} K T^{1/2}\| \leq 1$ with $T = \mathrm{diag}(\tau_j), \Sigma = \mathrm{diag}(\sigma_i)$. CoolPDLP absorbs the $1/2$ powers into the rescaling factors: $D_2[j] = \tau_j^{1/2}$ and $D_1[i] = \sigma_i^{1/2}$. The exponent parameter $\alpha$ is exposed as `chambolle_pock_alpha` (default `1.0`). See also [`CoolPDLP.chambolle_pock_preconditioner`](@ref).
+so that $\|\Sigma^{1/2} K T^{1/2}\| \leq 1$ with $T = \mathrm{diag}(\tau_j), \Sigma = \mathrm{diag}(\sigma_i)$. CoolPDLP absorbs the $1/2$ powers into the rescaling factors: $D_2[j] = \tau_j^{1/2}$ and $D_1[i] = \sigma_i^{1/2}$. The exponent parameter $\alpha$ is exposed as `chambolle_pock_alpha`. See also [`CoolPDLP.chambolle_pock_preconditioner`](@ref).
 
 Note that CoolPDLP uses $2-\alpha$ for the row and $\alpha$ for the column,
 to be aligned with the [PDLP paper](https://dl.acm.org/doi/abs/10.5555/3540261.3541809). This is the opposite of the
