@@ -8,5 +8,7 @@ CUDA.versioninfo()
     include("matrices.jl")
 end
 @testset "MOI" begin
+    import cuSPARSE
     include("moi.jl")
+    test_moi(cuSPARSE.CuSparseMatrixCSR, CUDABackend())
 end

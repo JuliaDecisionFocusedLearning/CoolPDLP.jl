@@ -47,7 +47,9 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     end
     if GROUP == "OpenCL"
         @testset "OpenCL" begin
-            include("opencl/moi.jl")
+            using pocl_jll, OpenCL
+            include("gpu/moi.jl")
+            test_moi(CoolPDLP.GPUSparseMatrixCSR, OpenCLBackend())
         end
     end
 end
