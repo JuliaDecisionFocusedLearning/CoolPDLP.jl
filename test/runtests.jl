@@ -17,6 +17,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
         for folder in readdir(@__DIR__)
             isdir(joinpath(@__DIR__, folder)) || continue
             startswith(folder, "cuda") && continue
+            startswith(folder, "opencl") && continue
             @testset verbose = true "$folder" begin
                 for file in readdir(joinpath(@__DIR__, folder))
                     @testset "$file" begin
@@ -44,5 +45,9 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
             include("cuda/runtests.jl")
         end
     end
-
+    if GROUP == "OpenCL"
+        @testset "OpenCL" begin
+            include("opencl/moi.jl")
+        end
+    end
 end
