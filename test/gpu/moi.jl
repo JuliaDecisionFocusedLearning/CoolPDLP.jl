@@ -18,4 +18,6 @@ function test_moi(matrix_type, backend)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
     @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
+
+    return nothing
 end

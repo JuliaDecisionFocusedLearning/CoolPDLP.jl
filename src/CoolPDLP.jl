@@ -3,7 +3,7 @@ module CoolPDLP
 # external dependencies
 using Adapt: Adapt, adapt
 using Atomix: Atomix
-using DispatchDoctor: @stable
+#using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend

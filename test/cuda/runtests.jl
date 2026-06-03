@@ -9,6 +9,6 @@ CUDA.versioninfo()
 end
 @testset "MOI" begin
     import cuSPARSE
-    include("moi.jl")
+    include("../gpu/moi.jl")
     test_moi(cuSPARSE.CuSparseMatrixCSR, CUDABackend())
 end
