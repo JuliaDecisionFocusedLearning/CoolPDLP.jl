@@ -34,8 +34,7 @@ function Base.show(io::IO, params::ConversionParameters{T, Ti, M}) where {T, Ti,
     return print(io, "ConversionParameters: types=($T, $Ti, $M), backend=$backend")
 end
 
-# mark as unstable, since `adapt(OpenCLBackend(), arr)` is deliberately not type stable
-@unstable function perform_conversion(
+function perform_conversion(
         milp::MILP,
         params::ConversionParameters{T, Ti, M},
     ) where {T, Ti, M}
@@ -45,7 +44,7 @@ end
     return milp_adapted
 end
 
-@unstable function perform_conversion(
+function perform_conversion(
         sol::PrimalDualSolution,
         params::ConversionParameters{T},
     ) where {T}
