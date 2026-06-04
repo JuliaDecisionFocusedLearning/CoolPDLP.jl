@@ -39,7 +39,25 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
         end
     end
     if GROUP == "CUDA"
-        Pkg.add("CUDA")
+        Pkg.add(
+            [
+                Pkg.PackageSpec(name = "CUDA", rev = "main"),
+                Pkg.PackageSpec(name = "CUDACore", rev = "main"),
+                Pkg.PackageSpec(name = "CUDATools", rev = "main"),
+                Pkg.PackageSpec(name = "CUPTI", rev = "main"),
+                Pkg.PackageSpec(name = "NVML", rev = "main"),
+                Pkg.PackageSpec(name = "cuBLAS", rev = "main"),
+                Pkg.PackageSpec(name = "cuSPARSE", rev = "main"),
+                Pkg.PackageSpec(name = "cuSOLVER", rev = "main"),
+                Pkg.PackageSpec(name = "cuFFT", rev = "main"),
+                Pkg.PackageSpec(name = "cuRAND", rev = "main"),
+                Pkg.PackageSpec(name = "cuDNN", rev = "main"),
+                Pkg.PackageSpec(name = "cuTENSOR", rev = "main"),
+                Pkg.PackageSpec(name = "cuTensorNet", rev = "main"),
+                Pkg.PackageSpec(name = "cuStateVec", rev = "main"),
+                Pkg.PackageSpec(name = "GPUCompiler", rev = "main"),
+            ]
+        )
         @testset verbose = true "CUDA" begin
             include("cuda/runtests.jl")
         end
