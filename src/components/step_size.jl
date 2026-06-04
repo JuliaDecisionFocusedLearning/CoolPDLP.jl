@@ -19,7 +19,7 @@ function Base.show(io::IO, params::StepSizeParameters)
     return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol")
 end
 
-function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
+@unstable function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
     (; invnorm_scaling) = params
     η = T(invnorm_scaling) * inv(spectral_norm(A, At))

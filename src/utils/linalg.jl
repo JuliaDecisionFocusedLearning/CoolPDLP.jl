@@ -90,7 +90,7 @@ end
 
 Compute the spectral norm of `K` with the power method from IterativeSolvers.jl.
 """
-function spectral_norm(
+@unstable function spectral_norm(
         K::AbstractMatrix{<:Number},
         Kᵀ::AbstractMatrix{<:Number};
         kwargs...
