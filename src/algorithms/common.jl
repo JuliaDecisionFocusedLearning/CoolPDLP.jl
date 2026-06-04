@@ -152,7 +152,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 
 Return a tuple `(milp, sol)`.
 """
-function preprocess(
+@unstable function preprocess(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
@@ -184,7 +184,7 @@ Solve the continuous relaxation of `milp` starting from solution `sol` using the
 
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
 """
-function solve(
+@unstable function solve(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm
@@ -201,7 +201,7 @@ function solve(
     return get_solution(state, milp), state.stats
 end
 
-function solve(
+@unstable function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )

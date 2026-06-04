@@ -3,7 +3,7 @@ module CoolPDLP
 # external dependencies
 using Adapt: Adapt, adapt
 using Atomix: Atomix
-#using DispatchDoctor: @stable
+using DispatchDoctor: @stable, @unstable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
@@ -20,7 +20,7 @@ using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz,
 
 include("public.jl")
 
-#@stable begin
+@stable begin
     include("utils/device.jl")
     include("utils/mat_coo.jl")
     include("utils/mat_csr.jl")
@@ -46,7 +46,7 @@ include("public.jl")
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
-#end
+end
 
 include("MOI_wrapper.jl")
 

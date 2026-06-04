@@ -45,7 +45,7 @@ function KernelAbstractions.get_backend(A::GPUSparseMatrixCSR)
     return common_backend(A.rowptr, A.colval, A.nzval)
 end
 
-function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
+@unstable function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
     return GPUSparseMatrixCSR(
         A.m,
         A.n,

@@ -34,7 +34,7 @@ function Base.show(io::IO, params::ConversionParameters{T, Ti, M}) where {T, Ti,
     return print(io, "ConversionParameters: types=($T, $Ti, $M), backend=$backend")
 end
 
-function perform_conversion(
+@unstable function perform_conversion(
         milp::MILP,
         params::ConversionParameters{T, Ti, M},
     ) where {T, Ti, M}
@@ -44,7 +44,7 @@ function perform_conversion(
     return milp_adapted
 end
 
-function perform_conversion(
+@unstable function perform_conversion(
         sol::PrimalDualSolution,
         params::ConversionParameters{T},
     ) where {T}

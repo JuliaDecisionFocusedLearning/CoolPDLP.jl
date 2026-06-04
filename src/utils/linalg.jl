@@ -70,7 +70,7 @@ struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}}
     scratch::V
 end
 
-function Symmetrized(K::AbstractMatrix, Kᵀ::AbstractMatrix)
+@unstable function Symmetrized(K::AbstractMatrix, Kᵀ::AbstractMatrix)
     scratch = allocate(get_backend(K), eltype(K), size(K, 1))
     return Symmetrized(K, Kᵀ, scratch)
 end

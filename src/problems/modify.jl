@@ -104,11 +104,11 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
     )
 end
 
-function Adapt.adapt_structure(to, sol::PrimalDualSolution)
+@unstable function Adapt.adapt_structure(to, sol::PrimalDualSolution)
     return PrimalDualSolution(adapt(to, sol.x), adapt(to, sol.y))
 end
 
-function Adapt.adapt_structure(to, milp::MILP)
+@unstable function Adapt.adapt_structure(to, milp::MILP)
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, dataset, name, path,
