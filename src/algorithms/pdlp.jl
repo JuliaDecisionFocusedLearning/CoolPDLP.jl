@@ -182,7 +182,7 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
         scratch, step_sizes, sol_cand, sol_restart, algo.step_size
     )
     # update solutions
-    copy!(sol, sol_cand)
+    sol !== sol_cand && copy!(sol, sol_cand)
     zero!(sol_avg)
     copy!(sol_restart, sol)
     # update counters
