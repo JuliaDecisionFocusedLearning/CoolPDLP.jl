@@ -8,6 +8,7 @@ function test_moi(matrix_type, backend)
     JuMP.set_silent(model)
     JuMP.set_attribute(model, "matrix_type", matrix_type)
     JuMP.set_attribute(model, "backend", backend)
+    JuMP.set_attribute(model, "time_limit", 1000.0)
 
     JuMP.@variable(model, x >= 0)
     JuMP.@variable(model, 0 <= y <= 3)

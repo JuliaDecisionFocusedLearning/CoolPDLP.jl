@@ -46,6 +46,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
         end
     end
     if GROUP == "OpenCL"
+        set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
         @testset "OpenCL" begin
             using pocl_jll, OpenCL
             include("gpu/moi.jl")
