@@ -15,8 +15,7 @@ steps:
       - JuliaCI/julia-coverage#v1:
           codecov: true
     agents:
-      queue: "juliagpu"
-      cuda: "*"
+      queue: "cuda"
     timeout_in_minutes: 60
     if: build.message !~ /\[skip tests\]/
     env:
