@@ -54,6 +54,12 @@ mutable struct ConvergenceStats{T <: Number}
     termination_status::TerminationStatus
     "history of KKT errors, indexed by number of KKT passes"
     const error_history::Vector{Tuple{Int, KKTErrors{T}}}
+    "true if the last crossover was applied and kept"
+    crossover_applied::Bool
+    "true if the last crossover was reverted to preserve KKT quality"
+    crossover_rolled_back::Bool
+    "number of primal coordinates snapped and kept by the last crossover"
+    crossover_n_snapped::Int
 
     function ConvergenceStats(
             ::Type{T};
@@ -62,7 +68,10 @@ mutable struct ConvergenceStats{T <: Number}
             time_elapsed = 0.0,
             kkt_passes = 0,
             termination_status = STILL_RUNNING,
-            error_history = Tuple{Int, KKTErrors{T}}[]
+            error_history = Tuple{Int, KKTErrors{T}}[],
+            crossover_applied = false,
+            crossover_rolled_back = false,
+            crossover_n_snapped = 0,
         ) where {T}
         return new{T}(
             err,
@@ -70,19 +79,31 @@ mutable struct ConvergenceStats{T <: Number}
             time_elapsed,
             kkt_passes,
             termination_status,
-            error_history
+            error_history,
+            crossover_applied,
+            crossover_rolled_back,
+            crossover_n_snapped,
         )
     end
 end
 
 function Base.show(io::IO, stats::ConvergenceStats)
-    (; err, time_elapsed, kkt_passes, termination_status) = stats
+    (; err, time_elapsed, kkt_passes, termination_status, crossover_applied, crossover_rolled_back, crossover_n_snapped) =
+        stats
+    xover = if crossover_rolled_back
+        "crossover rolled back"
+    elseif crossover_applied
+        "crossover applied ($crossover_n_snapped coords)"
+    else
+        "crossover not applied"
+    end
     return print(
         io,
         """Convergence stats with termination status $termination_status:
         - $err
         - time elapsed: $(round(time_elapsed; digits = 3)) seconds 
-        - KKT passes: $kkt_passes""",
+        - KKT passes: $kkt_passes
+        - $xover""",
     )
 end
 

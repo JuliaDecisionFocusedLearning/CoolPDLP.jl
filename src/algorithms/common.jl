@@ -18,6 +18,7 @@ struct Algorithm{
     restart::RestartParameters{T}
     generic::GenericParameters
     termination::TerminationParameters{T}
+    crossover::CrossoverParameters{T}
 end
 
 """
@@ -46,6 +47,13 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # crossover
+        crossover = true,
+        crossover_threshold = 1.0e-6,
+        crossover_fixed_tol = 1.0e-8,
+        crossover_rollback_on_kkt_regression = true,
+        crossover_kkt_rtol = 0.0,
+        crossover_use_effective_bounds = true,
     )
 
 Constructor for algorithm configs.
@@ -75,6 +83,13 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # crossover
+        crossover = true,
+        crossover_threshold = 1.0e-6,
+        crossover_fixed_tol = 1.0e-8,
+        crossover_rollback_on_kkt_regression = true,
+        crossover_kkt_rtol = 0.0,
+        crossover_use_effective_bounds = true,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -104,6 +119,15 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
+    reltol_T = _T(termination_reltol)
+    crossover_params = CrossoverParameters(;
+        enabled = crossover,
+        threshold = max(_T(crossover_threshold), reltol_T / 20),
+        fixed_tol = _T(crossover_fixed_tol),
+        rollback_on_kkt_regression = crossover_rollback_on_kkt_regression,
+        kkt_rtol = _T(crossover_kkt_rtol),
+        use_effective_bounds = crossover_use_effective_bounds,
+    )
 
     return Algorithm{A, T, Ti, M, B}(
         conversion,
@@ -111,12 +135,13 @@ function Algorithm{A}(
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        crossover_params
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, crossover) = algo
     return print(
         io, """
         $A algorithm:
@@ -125,11 +150,54 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $crossover"""
     )
 end
 
 abstract type AbstractState{T, V} end
+
+"""
+    apply_crossover!(state, milp, algo)
+
+Apply [`crossover_threshold!`](@ref) when `algo.crossover.enabled` and termination is [`OPTIMAL`](@ref).
+
+Roll back to the pre-crossover primal when [`crossover_kkt_acceptable`](@ref) fails.
+Updates `state.stats.crossover_applied`, `crossover_rolled_back`, and `crossover_n_snapped`.
+"""
+function apply_crossover!(
+        state::AbstractState,
+        milp::MILP,
+        algo::Algorithm,
+    )
+    params = algo.crossover
+    stats = state.stats
+    if !params.enabled
+        stats.crossover_applied = false
+        stats.crossover_rolled_back = false
+        stats.crossover_n_snapped = 0
+        return nothing
+    end
+    (; termination_reltol) = algo.termination
+    err_before = stats.err
+    x_backup = copy(state.sol.x)
+    crossover_threshold!(state.sol, milp, params)
+    n_changed = crossover_n_changed(state.sol.x, x_backup)
+    err_after = kkt_errors!(state.scratch, state.sol, milp)
+    if n_changed > 0 &&
+            crossover_kkt_acceptable(err_before, err_after, termination_reltol, params)
+        stats.err = err_after
+        stats.crossover_applied = true
+        stats.crossover_rolled_back = false
+        stats.crossover_n_snapped = n_changed
+    else
+        state.sol.x .= x_backup
+        stats.crossover_applied = false
+        stats.crossover_rolled_back = n_changed > 0
+        stats.crossover_n_snapped = 0
+    end
+    return nothing
+end
 
 function prog_showvalues(state::AbstractState)
     err = state.stats.err
@@ -198,6 +266,9 @@ function solve(
         return get_solution(state, milp), state.stats
     end
     solve!(state, milp, algo)
+    if state.stats.termination_status == OPTIMAL
+        apply_crossover!(state, milp, algo)
+    end
     return get_solution(state, milp), state.stats
 end
 
