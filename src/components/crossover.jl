@@ -1,7 +1,7 @@
 """
     CrossoverParameters
 
-Post-solve crossover settings: threshold snapping to bounds after [`OPTIMAL`](@ref) termination.
+Post-solve crossover settings: threshold snapping to bounds after `TerminationStatus.OPTIMAL` termination.
 
 See [`crossover_threshold!`](@ref) and [`apply_crossover!`](@ref).
 

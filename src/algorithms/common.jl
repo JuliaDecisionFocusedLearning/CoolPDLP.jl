@@ -160,7 +160,7 @@ abstract type AbstractState{T, V} end
 """
     apply_crossover!(state, milp, algo)
 
-Apply [`crossover_threshold!`](@ref) when `algo.crossover.enabled` and termination is [`OPTIMAL`](@ref).
+Apply [`crossover_threshold!`](@ref) when `algo.crossover.enabled` and termination is `TerminationStatus.OPTIMAL`.
 
 Roll back to the pre-crossover primal when [`crossover_kkt_acceptable`](@ref) fails.
 Updates `state.stats.crossover_applied`, `crossover_rolled_back`, and `crossover_n_snapped`.
