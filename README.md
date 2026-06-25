@@ -9,6 +9,7 @@
 [![docs:stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/stable)
 [![docs:dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/dev)
 [![DOI](https://zenodo.org/badge/1086418051.svg)](https://doi.org/10.5281/zenodo.19064770)
+| Community | [![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449&style=flat-square)](#contributors) |
 
 A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
 
@@ -87,3 +88,14 @@ See the [issue tracker](https://github.com/JuliaDecisionFocusedLearning/CoolPDLP
 Guillaume Dalle was partially funded through a state grant managed by Agence Nationale de la Recherche for France 2030 (grant number ANR-24-PEMO-0001).
 
 This material is based upon work supported by the National Science Foundation AI Institute for Advances in Optimization ([AI4OPT](https://ai4opt.org)) under Grant No. 2112533 and the National Science Foundation Graduate Research Fellowship under Grant No. DGE-2039655. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
