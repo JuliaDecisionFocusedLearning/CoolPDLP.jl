@@ -9,7 +9,7 @@
 [![docs:stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/stable)
 [![docs:dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/dev)
 [![DOI](https://zenodo.org/badge/1086418051.svg)](https://doi.org/10.5281/zenodo.19064770)
-| Community | [![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449&style=flat-square)](#contributors) |
+[![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449&style=flat-square)](#contributors)
 
 A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
 
