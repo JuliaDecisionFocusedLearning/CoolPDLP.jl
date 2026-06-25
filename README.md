@@ -94,6 +94,13 @@ This material is based upon work supported by the National Science Foundation AI
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://cmantoux.github.io/"><img src="https://avatars.githubusercontent.com/u/6652330?v=4?s=100" width="100px;" alt="Clément Mantoux"/><br /><sub><b>Clément Mantoux</b></sub></a><br /><a href="#design-cmantoux" title="Design">🎨</a></td>
+    </tr>
+  </tbody>
+</table>
 
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
