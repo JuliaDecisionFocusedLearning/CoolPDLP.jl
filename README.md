@@ -99,6 +99,7 @@ This material is based upon work supported by the National Science Foundation AI
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://gdalle.github.io/"><img src="https://avatars.githubusercontent.com/u/22795598?v=4?s=100" width="100px;" alt="Guillaume Dalle"/><br /><sub><b>Guillaume Dalle</b></sub></a><br /><a href="#code-gdalle" title="Code">💻</a> <a href="#doc-gdalle" title="Documentation">📖</a> <a href="#fundingFinding-gdalle" title="Funding Finding">🔍</a> <a href="#ideas-gdalle" title="Ideas, Planning, & Feedback">🤔</a> <a href="#maintenance-gdalle" title="Maintenance">🚧</a> <a href="#review-gdalle" title="Reviewed Pull Requests">👀</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://michael.klamkin.com/"><img src="https://avatars.githubusercontent.com/u/17013474?v=4?s=100" width="100px;" alt="Michael Klamkin"/><br /><sub><b>Michael Klamkin</b></sub></a><br /><a href="#code-klamike" title="Code">💻</a> <a href="#doc-klamike" title="Documentation">📖</a> <a href="#ideas-klamike" title="Ideas, Planning, & Feedback">🤔</a> <a href="#maintenance-klamike" title="Maintenance">🚧</a> <a href="#review-klamike" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/simeonschaub"><img src="https://avatars.githubusercontent.com/u/5220528?v=4?s=100" width="100px;" alt="Simeon David Schaub"/><br /><sub><b>Simeon David Schaub</b></sub></a><br /><a href="#code-simeonschaub" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
