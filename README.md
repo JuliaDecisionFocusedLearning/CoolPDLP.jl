@@ -3,12 +3,13 @@
 [![tests](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Build status](https://badge.buildkite.com/abafb7c3f7e1fd1ab4672581e288ca9dd330120e2a66851ae9.svg?branch=main)](https://buildkite.com/julialang/coolpdlp-dot-jl)
 [![Coverage](https://codecov.io/gh/JuliaDecisionFocusedLearning/CoolPDLP.jl/branch/main/graph/badge.svg)](https://app.codecov.io/gh/JuliaDecisionFocusedLearning/CoolPDLP.jl)
-[![code style: runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
-[![Aqua QA](https://juliatesting.github.io/Aqua.jl/dev/assets/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 [![docs:stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/stable)
 [![docs:dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaDecisionFocusedLearning.github.io/CoolPDLP.jl/dev)
-[![DOI](https://zenodo.org/badge/1086418051.svg)](https://doi.org/10.5281/zenodo.19064770)
+[![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.19064770-blue.svg)](https://doi.org/10.5281/zenodo.19064770)
+
+[![code style: runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
+[![Aqua QA](https://juliatesting.github.io/Aqua.jl/dev/assets/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449)](#contributors)
 
 A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
