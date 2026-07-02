@@ -20,10 +20,10 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        V <: DenseVector{T},
-        M <: AbstractMatrix{T},
-        Mt <: AbstractMatrix{T},
-        Vb <: DenseVector{Bool},
+        V <: AbstractVector{T},
+        M <: AbstractMatrix,
+        Mt <: AbstractMatrix,
+        Vb <: AbstractVector, #{Bool},
     }
     "objective vector"
     c::V
@@ -93,7 +93,7 @@ struct MILP{
             throw(ArgumentError("Abstract type parameter"))
         end
 
-        common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
+        #common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]

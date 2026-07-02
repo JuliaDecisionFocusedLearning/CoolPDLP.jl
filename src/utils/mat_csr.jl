@@ -7,9 +7,9 @@ $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCSR{
         T <: Number,
-        Ti <: Integer,
-        V <: DenseVector{T},
-        Vi <: DenseVector{Ti},
+        Ti <: Number,
+        V <: AbstractVector{T},
+        Vi <: AbstractVector{Ti},
     } <: AbstractSparseMatrix{T, Ti}
     m::Int
     n::Int
@@ -74,30 +74,30 @@ function sametype_transpose(A::GPUSparseMatrixCSR)
 end
 
 @kernel function spmv_csr!(
-        c::DenseVector{T},
-        A_rowptr::DenseVector{Ti},
-        A_colval::DenseVector{Ti},
-        A_nzval::DenseVector{T},
-        b::DenseVector{T},
+        c::AbstractVector{T},
+        A_rowptr::AbstractVector{Ti},
+        A_colval::AbstractVector{Ti},
+        A_nzval::AbstractVector{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
     i = @index(Global, Linear)
     s = zero(T)
-    for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
+    @inbounds for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
         j = A_colval[k]
         s += A_nzval[k] * b[j]
     end
-    c[i] = α * s + β * c[i]
+    @inbounds c[i] = α * s + β * c[i]
 end
 
 function LinearAlgebra.mul!(
-        c::V,
-        A::GPUSparseMatrixCSR{T, Ti, V},
-        b::V,
+        c::AbstractVector,
+        A::GPUSparseMatrixCSR,
+        b::AbstractVector,
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
+    )
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
