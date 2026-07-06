@@ -20,25 +20,28 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        V <: DenseVector{T},
-        M <: AbstractMatrix{T},
-        Mt <: AbstractMatrix{T},
+        Vo <: DenseVecOrMat{T},
+        Vv <: DenseVecOrMat{T},
+        Vc <: DenseVecOrMat{T},
+        V <: AbstractVector{T},
+        M <: AbstractArray{T},
+        Mt <: AbstractArray{T},
         Vb <: DenseVector{Bool},
     }
     "objective vector"
-    c::V
+    c::Vo
     "variable lower bound"
-    lv::V
+    lv::Vv
     "variable upper bound"
-    uv::V
+    uv::Vv
     "constraint matrix"
     A::M
     "transposed constraint matrix"
     At::Mt
     "constraint lower bound"
-    lc::V
+    lc::Vc
     "constraint upper bound"
-    uc::V
+    uc::Vc
     "left preconditioner"
     D1::Diagonal{T, V}
     "right preconditioner"
@@ -71,21 +74,31 @@ struct MILP{
             path = ""
         )
         m, n = size(A)
-        if !(n == length(c) == length(lv) == length(uv) == size(D2, 1) == length(int_var) == length(var_names))
+        if !(n == size(c, 1) == size(lv, 1) == size(uv, 1) == size(D2, 1) == length(int_var) == length(var_names))
             throw(DimensionMismatch("Variable size not consistent"))
-        elseif !(m == length(lc) == length(uc) == size(D1, 2))
+        elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2))
             throw(DimensionMismatch("Constraint size not consistent"))
+        else
+            size(lv, 2) == size(uv, 2) || throw(DimensionMismatch("Batch size not consistent"))
+            size(lc, 2) == size(uc, 2) || throw(DimensionMismatch("Batch size not consistent"))
+            batch_size = 1
+            for v in (c, lv, lc)
+                size(v, 2) == 1 && continue
+                if batch_size == 1
+                    batch_size = size(v, 2)
+                elseif batch_size != size(v, 2)
+                    throw(DimensionMismatch("Batch size not consistent"))
+                end
+            end
         end
 
         T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
-        V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
         M = typeof(A)
         Mt = typeof(At)
         Vb = typeof(int_var)
 
         if (
                 !isconcretetype(T) ||
-                    !isconcretetype(V) ||
                     !isconcretetype(M) ||
                     !isconcretetype(Mt) ||
                     !isconcretetype(Vb)
@@ -99,7 +112,7 @@ struct MILP{
             name = splitext(splitpath(path)[end])[1]
         end
 
-        return new{T, V, M, Mt, Vb}(
+        return new{T, typeof(c), typeof(lv), typeof(lc), typeof(diag(D1)), M, Mt, Vb}(
             c,
             lv,
             uv,
@@ -165,7 +178,7 @@ KernelAbstractions.get_backend(milp::MILP) = get_backend(milp.c)
 
 Return the number of variables in `milp`.
 """
-nbvar(milp::MILP) = length(milp.c)
+nbvar(milp::MILP) = size(milp.c, 1)
 
 """
     nbvar_int(milp)
@@ -177,7 +190,7 @@ nbvar_int(milp::MILP) = sum(milp.int_var)
 """
     nbvar_cont(milp)
 
-Return the number of integer variables in `milp`.
+Return the number of continuous variables in `milp`.
 """
 nbvar_cont(milp::MILP) = nbvar(milp) - nbvar_int(milp)
 
@@ -193,7 +206,7 @@ nbcons(milp::MILP) = size(milp.A, 1)
 
 Return the number of equality constraints in `milp`.
 """
-nbcons_eq(milp::MILP) = mapreduce((l, u) -> (l == u), +, milp.lc, milp.uc)
+nbcons_eq(milp::MILP) = mapreduce(==, +, milp.lc, milp.uc)
 
 """
     nbcons_ineq(milp)
