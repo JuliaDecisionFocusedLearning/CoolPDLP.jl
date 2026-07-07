@@ -11,7 +11,7 @@ function PDLP(args...; kwargs...)
 end
 
 """
-    PDHGState
+    PDLPState
 
 # Fields
 

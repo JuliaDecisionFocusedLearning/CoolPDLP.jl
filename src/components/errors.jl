@@ -5,7 +5,7 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct KKTErrors{T <: Number}
+@kwdef struct KKTErrors{T <: Union{Number, AbstractVector{<:Number}}}
     "primal feasibility error"
     primal::T
     "characteristic scale of the primal constraint RHS"
