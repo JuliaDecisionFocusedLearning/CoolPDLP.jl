@@ -233,3 +233,25 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
             m1.path == m2.path
     )
 end
+
+function batch_size((; c, lv, lc, A)::MILP)
+    return max(size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
+end
+function batch(milp::MILP, i::Int)
+    return MILP(;
+        c = batch_vec(milp.c, i),
+        lv = batch_vec(milp.lv, i),
+        uv = batch_vec(milp.uv, i),
+        A = batch_mat(milp.A, i),
+        At = batch_mat(milp.At, i),
+        lc = batch_vec(milp.lc, i),
+        uc = batch_vec(milp.uc, i),
+        D1 = milp.D1,
+        D2 = milp.D2,
+        int_var = milp.int_var,
+        var_names = milp.var_names,
+        dataset = milp.dataset,
+        name = milp.name,
+        path = milp.path
+    )
+end

@@ -18,7 +18,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: DenseVector{T},
+        T <: Number, V <: DenseVecOrMat{T},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -40,6 +40,22 @@ $(TYPEDFIELDS)
     restart_stats::RestartStats{T}
     "convergence stats"
     stats::ConvergenceStats{T}
+end
+
+batch_size((; sol)::PDLPState) = batch_size(sol)
+function batch(state::PDLPState, i::Int)
+    return PDLPState(
+        batch(state.sol, i),
+        batch(state.sol_last, i),
+        batch(state.sol_avg, i),
+        batch(state.sol_avg_last, i),
+        batch(state.sol_restart, i),
+        state.step_sizes,
+        batch(state.scratch, i),
+        state.iteration,
+        state.restart_stats,
+        state.stats,
+    )
 end
 
 function initialize(

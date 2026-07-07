@@ -96,3 +96,11 @@ end
 function PrimalDualSolution(milp::MILP)
     return PrimalDualSolution(zero(milp.lv), zero(milp.lc))
 end
+
+batch_size((; x)::PrimalDualSolution) = size(x, 2)
+function batch(sol::PrimalDualSolution, i::Int)
+    return PrimalDualSolution(
+        batch_vec(sol.x, i),
+        batch_vec(sol.y, i),
+    )
+end
