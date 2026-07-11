@@ -80,7 +80,6 @@ function _crossover_at_box_mask(
 end
 
 function _crossover_cpu_milp(milp::MILP)
-    # GPU / CSR MILPs: run implied-bounds logic on CPU CSC (row access via `At` columns).
     milp_csc = set_matrix_type(SparseMatrixCSC, milp)
     return adapt(CPU(), milp_csc)
 end
@@ -91,8 +90,9 @@ end
 Box bounds tightened with implied limits from equality rows.
 
 When an equality row has exactly one variable not yet on a finite box bound, that
-row's implied bound is used to fill in an infinite bound (e.g. `x₁ ≤ 1` from
-`x₁ + x₂ = 1` when `x₂` is already on its lower bound).
+row is solved for the free variable and the implied limit is applied with
+`min`/`max` on its box (fills `±Inf` or tightens an already finite bound).
+Example: `x₁ ≤ 1` from `x₁ + x₂ = 1` when `x₂` is already on its lower bound.
 
 Computed on CPU and copied back to the device of `milp.lv` / `milp.uv`.
 """
@@ -141,33 +141,27 @@ function crossover_effective_bounds(
 end
 
 function _crossover_effective_bounds!(
-        lv_eff,
-        uv_eff,
+        lv_eff::AbstractVector{T},
+        uv_eff::AbstractVector{T},
         At::SparseMatrixCSC{T},
-        lc,
-        uc,
-        x,
-        at_box;
+        lc::AbstractVector,
+        uc::AbstractVector,
+        x::AbstractVector,
+        at_box::AbstractVector;
         eq_atol::Real = 1.0e-12,
     ) where {T}
     m = size(At, 2)
-    lc_cpu = Vector(lc)
-    uc_cpu = Vector(uc)
-    x_cpu = Vector(x)
-    lv_cpu = Vector(lv_eff)
-    uv_cpu = Vector(uv_eff)
-    at_box_cpu = Vector(at_box)
     for i in 1:m
-        isapprox(lc_cpu[i], uc_cpu[i]; atol = eq_atol) || continue
-        slack = lc_cpu[i]
+        isapprox(lc[i], uc[i]; atol = eq_atol) || continue
+        slack = lc[i]
         free_j = 0
         free_aij = zero(T)
         n_free = 0
         for ptr in nzrange(At, i)
             j = SparseArrays.rowvals(At)[ptr]
             aij = nonzeros(At)[ptr]
-            if at_box_cpu[j]
-                slack -= aij * x_cpu[j]
+            if at_box[j]
+                slack -= aij * x[j]
             else
                 n_free += 1
                 n_free > 1 && break
@@ -177,13 +171,11 @@ function _crossover_effective_bounds!(
         end
         n_free == 1 || continue
         if free_aij > 0
-            uv_cpu[free_j] = min(uv_cpu[free_j], slack / free_aij)
+            uv_eff[free_j] = min(uv_eff[free_j], slack / free_aij)
         elseif free_aij < 0
-            lv_cpu[free_j] = max(lv_cpu[free_j], slack / free_aij)
+            lv_eff[free_j] = max(lv_eff[free_j], slack / free_aij)
         end
     end
-    lv_eff .= lv_cpu
-    uv_eff .= uv_cpu
     return lv_eff, uv_eff
 end
 

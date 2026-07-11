@@ -95,7 +95,6 @@ function Base.show(io::IO, stats::ConvergenceStats)
     elseif crossover_applied
         "crossover applied ($crossover_n_snapped coords)"
     else
-        # crossover disabled, no coordinates changed, or rollback with n_changed == 0
         "crossover not applied"
     end
     return print(
