@@ -167,6 +167,17 @@ end
     @test stats_disabled.crossover_n_snapped == 0
 end
 
+@testset "ConvergenceStats show" begin
+    stats = CoolPDLP.ConvergenceStats(Float64)
+    @test occursin("crossover not applied", sprint(show, stats))
+    stats.crossover_applied = true
+    stats.crossover_n_snapped = 3
+    @test occursin("crossover applied (3 coords)", sprint(show, stats))
+    stats.crossover_applied = false
+    stats.crossover_rolled_back = true
+    @test occursin("crossover rolled back", sprint(show, stats))
+end
+
 @testset "crossover_n_changed" begin
     @test CoolPDLP.crossover_n_changed([1.0, 2.0], [1.0, 2.0]) == 0
     @test CoolPDLP.crossover_n_changed([1.0, 0.0], [1.0, 2.0]) == 1

@@ -1,7 +1,13 @@
 """
     CrossoverParameters
 
-Post-solve crossover settings: threshold snapping to bounds after `TerminationStatus.OPTIMAL` termination.
+Post-solve crossover (V1): after `TerminationStatus.OPTIMAL`, snap primal coordinates
+near finite box bounds and optionally tighten bounds implied by equality rows.
+
+This is **not** a basic-vertex crossover (no simplex basis / Megiddo pivots). It is a
+lightweight rounding step related to PDLP post-processing and MIP-ready primals; see
+issue #13 and the draft note in the PR. A full Megiddo-style crossover is planned
+separately.
 
 See [`crossover_threshold!`](@ref) and [`apply_crossover!`](@ref).
 
@@ -22,15 +28,20 @@ $(TYPEDFIELDS)
     kkt_rtol::T = 0.0
     "tighten infinite bounds from equality rows before snapping"
     use_effective_bounds::Bool = true
+    "tolerance for treating a coordinate as on a finite box bound"
+    bound_atol::T = 1.0e-12
+    "tolerance for treating a constraint row as an equality"
+    eq_atol::T = 1.0e-12
 end
 
 function Base.show(io::IO, params::CrossoverParameters)
-    (; enabled, threshold, fixed_tol, rollback_on_kkt_regression, kkt_rtol, use_effective_bounds) = params
+    (; enabled, threshold, fixed_tol, rollback_on_kkt_regression, kkt_rtol, use_effective_bounds, bound_atol, eq_atol) =
+        params
     return print(
         io,
         "CrossoverParameters: enabled=$enabled, threshold=$threshold, fixed_tol=$fixed_tol, ",
         "rollback_on_kkt_regression=$rollback_on_kkt_regression, kkt_rtol=$kkt_rtol, ",
-        "use_effective_bounds=$use_effective_bounds",
+        "use_effective_bounds=$use_effective_bounds, bound_atol=$bound_atol, eq_atol=$eq_atol",
     )
 end
 
@@ -69,6 +80,7 @@ function _crossover_at_box_mask(
 end
 
 function _crossover_cpu_milp(milp::MILP)
+    # GPU / CSR MILPs: run implied-bounds logic on CPU CSC (row access via `At` columns).
     milp_csc = set_matrix_type(SparseMatrixCSC, milp)
     return adapt(CPU(), milp_csc)
 end
@@ -86,10 +98,10 @@ Computed on CPU and copied back to the device of `milp.lv` / `milp.uv`.
 """
 function crossover_effective_bounds(
         milp::MILP{T},
-        x::AbstractVector{T};
-        bound_atol::Real = 1.0e-12,
-        eq_atol::Real = 1.0e-12,
+        x::AbstractVector{T},
+        params::CrossoverParameters{T},
     ) where {T}
+    (; bound_atol, eq_atol) = params
     lv_eff = copy(milp.lv)
     uv_eff = copy(milp.uv)
     milp_cpu = _crossover_cpu_milp(milp)
@@ -97,14 +109,14 @@ function crossover_effective_bounds(
     lv_cpu = Vector(lv_eff)
     uv_cpu = Vector(uv_eff)
     at_box = Vector(
-        _crossover_at_box_mask(x_cpu, Vector(milp_cpu.lv), Vector(milp_cpu.uv); atol = bound_atol),
+        _crossover_at_box_mask(x_cpu, milp_cpu.lv, milp_cpu.uv; atol = bound_atol),
     )
     _crossover_effective_bounds!(
         lv_cpu,
         uv_cpu,
-        milp_cpu.A,
-        Vector(milp_cpu.lc),
-        Vector(milp_cpu.uc),
+        milp_cpu.At,
+        milp_cpu.lc,
+        milp_cpu.uc,
         x_cpu,
         at_box;
         eq_atol,
@@ -115,17 +127,30 @@ function crossover_effective_bounds(
     return lv_eff, uv_eff
 end
 
+function crossover_effective_bounds(
+        milp::MILP{T},
+        x::AbstractVector{T};
+        bound_atol::Real = 1.0e-12,
+        eq_atol::Real = 1.0e-12,
+    ) where {T}
+    return crossover_effective_bounds(
+        milp,
+        x,
+        CrossoverParameters{T}(; bound_atol = T(bound_atol), eq_atol = T(eq_atol)),
+    )
+end
+
 function _crossover_effective_bounds!(
         lv_eff,
         uv_eff,
-        A::SparseMatrixCSC{T},
+        At::SparseMatrixCSC{T},
         lc,
         uc,
         x,
         at_box;
         eq_atol::Real = 1.0e-12,
     ) where {T}
-    m, n = size(A)
+    m = size(At, 2)
     lc_cpu = Vector(lc)
     uc_cpu = Vector(uc)
     x_cpu = Vector(x)
@@ -134,34 +159,27 @@ function _crossover_effective_bounds!(
     at_box_cpu = Vector(at_box)
     for i in 1:m
         isapprox(lc_cpu[i], uc_cpu[i]; atol = eq_atol) || continue
-        free = Int[]
         slack = lc_cpu[i]
-        @inbounds for j in 1:n
-            aij = A[i, j]
-            aij == 0 && continue
+        free_j = 0
+        free_aij = zero(T)
+        n_free = 0
+        for ptr in nzrange(At, i)
+            j = SparseArrays.rowvals(At)[ptr]
+            aij = nonzeros(At)[ptr]
             if at_box_cpu[j]
                 slack -= aij * x_cpu[j]
             else
-                push!(free, j)
+                n_free += 1
+                n_free > 1 && break
+                free_j = j
+                free_aij = aij
             end
         end
-        length(free) == 1 || continue
-        j = only(free)
-        aij = A[i, j]
-        if aij > 0
-            implied = slack / aij
-            if !isfinite(uv_cpu[j])
-                uv_cpu[j] = implied
-            else
-                uv_cpu[j] = min(uv_cpu[j], implied)
-            end
-        elseif aij < 0
-            implied = slack / aij
-            if !isfinite(lv_cpu[j])
-                lv_cpu[j] = implied
-            else
-                lv_cpu[j] = max(lv_cpu[j], implied)
-            end
+        n_free == 1 || continue
+        if free_aij > 0
+            uv_cpu[free_j] = min(uv_cpu[free_j], slack / free_aij)
+        elseif free_aij < 0
+            lv_cpu[free_j] = max(lv_cpu[free_j], slack / free_aij)
         end
     end
     lv_eff .= lv_cpu
@@ -199,7 +217,7 @@ function crossover_threshold!(
         params::CrossoverParameters{T},
     ) where {T}
     if params.use_effective_bounds
-        lv_eff, uv_eff = crossover_effective_bounds(milp, x)
+        lv_eff, uv_eff = crossover_effective_bounds(milp, x, params)
     else
         lv_eff, uv_eff = milp.lv, milp.uv
     end
@@ -217,6 +235,13 @@ function crossover_threshold!(
 end
 
 function crossover_n_changed(x_after, x_before)
+    if get_backend(x_after) === CPU()
+        n = 0
+        for i in eachindex(x_after, x_before)
+            x_after[i] != x_before[i] && (n += 1)
+        end
+        return n
+    end
     return sum(x_after .!= x_before)
 end
 

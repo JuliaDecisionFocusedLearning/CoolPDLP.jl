@@ -47,16 +47,23 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
-        # crossover
+        # crossover (defaults are pragmatic V1 knobs; threshold is floored at reltol/20 below)
         crossover = true,
         crossover_threshold = 1.0e-6,
         crossover_fixed_tol = 1.0e-8,
         crossover_rollback_on_kkt_regression = true,
         crossover_kkt_rtol = 0.0,
         crossover_use_effective_bounds = true,
+        crossover_bound_atol = 1.0e-12,
+        crossover_eq_atol = 1.0e-12,
     )
 
 Constructor for algorithm configs.
+
+Crossover defaults: `crossover_threshold` and `crossover_fixed_tol` are small absolute
+snapping tolerances (similar order to cuPDLPx / PDLP post-process heuristics). The
+effective snap threshold is `max(crossover_threshold, termination_reltol / 20)` so
+crossover does not fire far from optimality when `reltol` is loose.
 """
 function Algorithm{A}(
         # conversion
@@ -90,6 +97,8 @@ function Algorithm{A}(
         crossover_rollback_on_kkt_regression = true,
         crossover_kkt_rtol = 0.0,
         crossover_use_effective_bounds = true,
+        crossover_bound_atol = 1.0e-12,
+        crossover_eq_atol = 1.0e-12,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -127,6 +136,8 @@ function Algorithm{A}(
         rollback_on_kkt_regression = crossover_rollback_on_kkt_regression,
         kkt_rtol = _T(crossover_kkt_rtol),
         use_effective_bounds = crossover_use_effective_bounds,
+        bound_atol = _T(crossover_bound_atol),
+        eq_atol = _T(crossover_eq_atol),
     )
 
     return Algorithm{A, T, Ti, M, B}(
