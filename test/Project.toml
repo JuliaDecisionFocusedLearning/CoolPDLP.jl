@@ -28,5 +28,6 @@ pocl_jll = "627d6b7a-bbe6-5189-83e7-98cc0a5aeadd"
 CoolPDLP = {path = ".."}
 
 [compat]
+Adapt = "4.7.0"
 Aqua = "0.8.14"
 Test = "1"
