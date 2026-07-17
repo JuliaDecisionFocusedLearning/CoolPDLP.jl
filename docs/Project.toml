@@ -13,4 +13,5 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 CoolPDLP = {path = ".."}
 
 [compat]
+HiGHS = "1.24.1"
 Literate = "2.21.0"
