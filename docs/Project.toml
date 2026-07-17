@@ -14,3 +14,4 @@ CoolPDLP = {path = ".."}
 
 [compat]
 Literate = "2.21.0"
+UnicodePlots = "3.8.4"
