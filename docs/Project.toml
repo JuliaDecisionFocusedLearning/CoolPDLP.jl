@@ -15,4 +15,5 @@ CoolPDLP = {path = ".."}
 [compat]
 HiGHS = "1.24.1"
 Literate = "2.21.0"
+MathOptBenchmarkInstances = "0.1.0"
 UnicodePlots = "3.8.4"
