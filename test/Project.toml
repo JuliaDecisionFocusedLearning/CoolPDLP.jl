@@ -30,6 +30,7 @@ CoolPDLP = {path = ".."}
 [compat]
 Adapt = "4.7.0"
 Aqua = "0.8.14"
+ExplicitImports = "1.15.0"
 HiGHS = "1.24.1"
 MathOptBenchmarkInstances = "0.1.0"
 Test = "1"
