@@ -18,7 +18,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: StridedVecOrMat{T}, S <: BatchedNumber, B,
+        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber, B,
         Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"

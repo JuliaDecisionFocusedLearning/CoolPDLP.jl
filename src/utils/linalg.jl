@@ -16,7 +16,7 @@ one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 Return the Euclidean norm of `x`, or one norm per column if `x` is batched.
 """
 colnorm(v::AbstractVector) = norm(v)
-colnorm(m::AbstractMatrix) = vec(sqrt.(sum(abs2, m; dims = 1)))
+colnorm(m::AbstractMatrix) = norm.(eachcol(m))
 
 """
     colsum(x)

@@ -29,9 +29,9 @@ end
 
 function Base.show(io::IO, err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    rel_primal = format_error(@. primal / primal_scale)
-    rel_dual = format_error(@. dual / dual_scale)
-    rel_gap = format_error(@. gap / gap_scale)
+    rel_primal = format_error(primal ./ primal_scale)
+    rel_dual = format_error(dual ./ dual_scale)
+    rel_gap = format_error(gap ./ gap_scale)
     return print(
         io, """KKT relative errors: primal $rel_primal, dual $rel_dual, gap $rel_gap"""
     )

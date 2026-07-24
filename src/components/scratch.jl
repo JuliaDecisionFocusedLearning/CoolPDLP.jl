@@ -1,4 +1,4 @@
-@kwdef struct Scratch{T <: Number, V <: StridedVecOrMat{T}, S <: BatchedNumber, R, C}
+@kwdef struct Scratch{T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber, R, C}
     "primal scratch (length `nvar`)"
     x::V
     "dual scratch (length `ncons`)"

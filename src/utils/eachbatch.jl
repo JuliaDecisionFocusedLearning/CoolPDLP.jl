@@ -34,11 +34,11 @@ const BatchedNumber = Union{Number, AbstractVector{<:Number}}
 
 Return `val` itself if the array `x` is not batched, or one copy of `val` per column of `x` otherwise.
 """
-batch_expand(::StridedVector, val::Number) = val
-function batch_expand(x::StridedMatrix, val::Number)
+batch_expand(::AbstractVector, val::Number) = val
+function batch_expand(x::AbstractMatrix, val::Number)
     return fill!(allocate(get_backend(x), typeof(val), size(x, 2)), val)
 end
-batch_expand(x::StridedMatrix, val::AbstractVector) = adapt(get_backend(x), val)
+batch_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
 """
     batch_row(val)

@@ -20,9 +20,9 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        Vo <: StridedVecOrMat{T},
-        Vv <: StridedVecOrMat{T},
-        Vc <: StridedVecOrMat{T},
+        Vo <: AbstractVecOrMat{T},
+        Vv <: AbstractVecOrMat{T},
+        Vc <: AbstractVecOrMat{T},
         V <: AbstractVector{T},
         M <: AbstractArray{T},
         Mt <: AbstractArray{T},
@@ -68,7 +68,7 @@ struct MILP{
             D1 = Diagonal(one!(similar(lc, size(lc, 1)))),
             D2 = Diagonal(one!(similar(lv, size(lv, 1)))),
             int_var = zero!(similar(c, Bool, size(c, 1))),
-            var_names = map(string, 1:size(c, 1)),
+            var_names = map(string, axes(c, 1)),
             dataset = "",
             name = "",
             path = ""

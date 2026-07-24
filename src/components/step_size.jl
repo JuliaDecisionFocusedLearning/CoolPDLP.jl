@@ -32,11 +32,13 @@ function primal_weight_init(milp::MILP{T}, params::StepSizeParameters) where {T}
     c_norm = colnorm(c)
     combined_bounds = map(combine, lc, uc)
     combined_norm = colnorm(combined_bounds)
-    return @. ifelse(
-        (c_norm > zero_tol) & (combined_norm > zero_tol),
-        c_norm / combined_norm,
-        one(T)
-    )
+    return broadcast(c_norm, combined_norm) do c_norm, combined_norm
+        if c_norm > zero_tol && combined_norm > zero_tol
+            c_norm / combined_norm
+        else
+            one(T)
+        end
+    end
 end
 
 """
@@ -79,7 +81,11 @@ function primal_weight_update!(
     Δx = colnorm!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
     Δy = colnorm!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
-    return batch_apply!(ω, Δx, Δy, ω) do δx, δy, w
-        ifelse((δx > zero_tol) & (δy > zero_tol), exp(θ * log(δy / δx) + (1 - θ) * log(w)), w)
+    return batch_apply!(ω, Δx, Δy, ω) do Δx, Δy, w
+        if Δx > zero_tol && Δy > zero_tol
+            exp(θ * log(Δy / Δx) + (1 - θ) * log(w))
+        else
+            w
+        end
     end
 end

@@ -46,7 +46,7 @@ objective_value(x, milp::MILP) = coldot(x, milp.c)
 
 $(TYPEDFIELDS)
 """
-mutable struct PrimalDualSolution{T <: Number, V <: StridedVecOrMat{T}}
+mutable struct PrimalDualSolution{T <: Number, V <: AbstractVecOrMat{T}}
     "primal solution"
     const x::V
     "dual solution"
