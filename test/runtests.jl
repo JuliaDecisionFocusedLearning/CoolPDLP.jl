@@ -52,6 +52,9 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
             using pocl_jll, OpenCL
             include("gpu/moi.jl")
             test_moi(CoolPDLP.GPUSparseMatrixCSR, OpenCLBackend())
+
+            include("gpu/batching.jl")
+            test_batching(CoolPDLP.GPUSparseMatrixCSR, OpenCLBackend())
         end
     end
 end
