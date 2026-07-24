@@ -41,7 +41,7 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct ConvergenceStats{T <: Number}
+mutable struct ConvergenceStats{T <: BatchedNumber}
     "current KKT error"
     err::KKTErrors{T}
     "time at which the algorithm started, in seconds"
@@ -56,8 +56,7 @@ mutable struct ConvergenceStats{T <: Number}
     const error_history::Vector{Tuple{Int, KKTErrors{T}}}
 
     function ConvergenceStats(
-            ::Type{T};
-            err = KKTErrors(T),
+            err::KKTErrors{T};
             starting_time = time(),
             time_elapsed = 0.0,
             kkt_passes = 0,
@@ -75,6 +74,17 @@ mutable struct ConvergenceStats{T <: Number}
     end
 end
 
+function batch(stats::ConvergenceStats, i::Int)
+    return ConvergenceStats(
+        batch(stats.err, i);
+        starting_time = stats.starting_time,
+        time_elapsed = stats.time_elapsed,
+        kkt_passes = stats.kkt_passes,
+        termination_status = stats.termination_status,
+        error_history = [(passes, batch(err, i)) for (passes, err) in stats.error_history],
+    )
+end
+
 function Base.show(io::IO, stats::ConvergenceStats)
     (; err, time_elapsed, kkt_passes, termination_status) = stats
     return print(
@@ -89,7 +99,8 @@ end
 function termination_status(stats::ConvergenceStats, params::TerminationParameters)
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    if relative(err) <= termination_reltol
+    rel_err = relative(err)
+    if batch_all(@. rel_err <= termination_reltol)
         return OPTIMAL
     elseif time_elapsed >= time_limit
         return TIME_LIMIT

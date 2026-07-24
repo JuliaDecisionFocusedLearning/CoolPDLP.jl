@@ -26,16 +26,35 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct RestartStats{T <: Number}
-    restart_from_avg::Bool
+mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{Bool}}}
+    "whether to restart from the average solution, column by column"
+    restart_from_avg::B
     err_candidate::KKTErrors{T}
     err_candidate_last::KKTErrors{T}
     err_restart::KKTErrors{T}
 
-    function RestartStats(::Type{T}) where {T}
-        return new{T}(false, KKTErrors(T), KKTErrors(T), KKTErrors(T))
+    function RestartStats(
+            restart_from_avg::B,
+            err_candidate::KKTErrors{T},
+            err_candidate_last::KKTErrors{T},
+            err_restart::KKTErrors{T},
+        ) where {T, B}
+        return new{T, B}(restart_from_avg, err_candidate, err_candidate_last, err_restart)
     end
 end
+
+function RestartStats(sol::PrimalDualSolution)
+    return RestartStats(
+        batch_expand(sol.x, false), KKTErrors(sol), KKTErrors(sol), KKTErrors(sol)
+    )
+end
+
+batch(stats::RestartStats, i::Int) = RestartStats(
+    batch_num(stats.restart_from_avg, i),
+    batch(stats.err_candidate, i),
+    batch(stats.err_candidate_last, i),
+    batch(stats.err_restart, i),
+)
 
 function should_restart(
         stats::RestartStats, step_sizes::StepSizes, iteration::IterationCounter, params::RestartParameters,
@@ -45,13 +64,16 @@ function should_restart(
     (; sufficient_decay, necessary_decay, artificial_decay) = params
     (; inner, total) = iteration
 
-    sufficient = absolute(err_candidate, ω) <= sufficient_decay * absolute(err_restart, ω)
-    necessary = absolute(err_candidate, ω) <= necessary_decay * absolute(err_restart, ω)
-    no_local_progress = absolute(err_candidate, ω) > absolute(err_candidate_last, ω)
+    candidate = absolute(err_candidate, ω)
+    candidate_last = absolute(err_candidate_last, ω)
+    restart = absolute(err_restart, ω)
+
+    sufficient = @. candidate <= sufficient_decay * restart
+    necessary = @. candidate <= necessary_decay * restart
+    no_local_progress = @. candidate > candidate_last
     long_inner_loop = inner >= artificial_decay * total
 
-    restart_criterion = sufficient ||
-        (necessary && no_local_progress) ||
-        long_inner_loop
-    return restart_criterion
+    # the whole batch restarts at once, so every column has to agree
+    restart_criterion = batch_all(@. sufficient | (necessary & no_local_progress))
+    return restart_criterion || long_inner_loop
 end

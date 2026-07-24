@@ -18,7 +18,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: DenseVecOrMat{T},
+        T <: Number, V <: StridedVecOrMat{T}, S <: BatchedNumber, B,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -31,15 +31,15 @@ $(TYPEDFIELDS)
     "solution from last restart"
     sol_restart::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{T}
+    step_sizes::StepSizes{S}
     "scratch space"
-    scratch::Scratch{T, V}
+    scratch::Scratch{T, V, S}
     "iteration counter"
     iteration::IterationCounter
     "restart stats"
-    restart_stats::RestartStats{T}
+    restart_stats::RestartStats{S, B}
     "convergence stats"
-    stats::ConvergenceStats{T}
+    stats::ConvergenceStats{S}
 end
 
 batch_size((; sol)::PDLPState) = batch_size(sol)
@@ -50,16 +50,16 @@ function batch(state::PDLPState, i::Int)
         batch(state.sol_avg, i),
         batch(state.sol_avg_last, i),
         batch(state.sol_restart, i),
-        state.step_sizes,
+        batch(state.step_sizes, i),
         batch(state.scratch, i),
         state.iteration,
-        state.restart_stats,
-        state.stats,
+        batch(state.restart_stats, i),
+        batch(state.stats, i),
     )
 end
 
 function initialize(
-        milp::MILP{T, V},
+        milp::MILP{T},
         sol::PrimalDualSolution{T, V},
         algo::Algorithm{:PDLP, T};
         starting_time::Float64
@@ -68,13 +68,13 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    η = fixed_stepsize(milp, algo.step_size)
-    ω = primal_weight_init(milp, algo.step_size)
+    η = batch_expand(sol.x, fixed_stepsize(milp, algo.step_size))
+    ω = batch_expand(sol.x, primal_weight_init(milp, algo.step_size))
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
-    restart_stats = RestartStats(T)
-    stats = ConvergenceStats(T; starting_time)
+    restart_stats = RestartStats(sol)
+    stats = ConvergenceStats(KKTErrors(sol); starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
         step_sizes, scratch, iteration, restart_stats, stats
@@ -92,7 +92,7 @@ function solve!(
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = prog_showvalues(state))
+            next!(prog; showvalues = () -> prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
@@ -106,7 +106,7 @@ end
 
 function step!(
         state::PDLPState{T, V},
-        milp::MILP{T, V},
+        milp::MILP{T},
     ) where {T, V}
     # switch pointers
     state.sol, state.sol_last = state.sol_last, state.sol
@@ -116,7 +116,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ, σ = η / ω, η * ω
+    τ = rowvec(batch_apply!(/, scratch.b1, η, ω))
+    σ = rowvec(batch_apply!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
@@ -135,14 +136,13 @@ function step!(
 end
 
 function update_average!(state::PDLPState)
-    (; sol, sol_avg, sol_avg_last, step_sizes) = state
+    (; sol, sol_avg, sol_avg_last, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
     copy!(sol_avg_last, sol_avg)
-    axpby!(
-        η / (η + η_sum), sol,
-        η_sum / (η + η_sum), sol_avg
-    )
-    step_sizes.η_sum += η
+    weight_new = batch_apply!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
+    weight_avg = batch_apply!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
+    axpby!(weight_new, sol, weight_avg, sol_avg)
+    add_stepsize!(step_sizes)
     return nothing
 end
 
@@ -159,21 +159,14 @@ function restart_check!(
 
     err = kkt_errors!(scratch, sol, milp)
     err_avg = kkt_errors!(scratch, sol_avg, milp)
-    if absolute(err, ω) < absolute(err_avg, ω)
-        restart_stats.restart_from_avg = false
-        restart_stats.err_candidate = err
-    else
-        restart_stats.restart_from_avg = true
-        restart_stats.err_candidate = err_avg
-    end
+    from_avg = absolute(err_avg, ω) .<= absolute(err, ω)
+    restart_stats.restart_from_avg = from_avg
+    restart_stats.err_candidate = batch_select(from_avg, err_avg, err)
 
     err_last = kkt_errors!(scratch, sol_last, milp)
     err_avg_last = kkt_errors!(scratch, sol_avg_last, milp)
-    if absolute(err_last, ω) < absolute(err_avg_last, ω)
-        restart_stats.err_candidate_last = err_last
-    else
-        restart_stats.err_candidate_last = err_avg_last
-    end
+    from_avg_last = absolute(err_avg_last, ω) .<= absolute(err_last, ω)
+    restart_stats.err_candidate_last = batch_select(from_avg_last, err_avg_last, err_last)
 
     restart_stats.err_restart = kkt_errors!(scratch, sol_restart, milp)
 
@@ -186,19 +179,14 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
         step_sizes, iteration, scratch, restart_stats,
     ) = state
 
-    # identify candidate
-    if restart_stats.restart_from_avg
-        sol_cand = sol_avg
-    else
-        sol_cand = sol
-    end
+    # identify candidate, column by column
+    batch_select!(sol, restart_stats.restart_from_avg, sol_avg)
     # update step sizes (must be done before losing previous restart)
-    step_sizes.η_sum = zero(T)
+    reset_stepsize!(step_sizes)
     step_sizes.ω = primal_weight_update!(
-        scratch, step_sizes, sol_cand, sol_restart, algo.step_size
+        scratch, step_sizes, sol, sol_restart, algo.step_size
     )
     # update solutions
-    sol !== sol_cand && copy!(sol, sol_cand)
     zero!(sol_avg)
     copy!(sol_restart, sol)
     # update counters

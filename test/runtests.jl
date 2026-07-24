@@ -20,6 +20,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
             startswith(folder, "opencl") && continue
             @testset verbose = true "$folder" begin
                 for file in readdir(joinpath(@__DIR__, folder))
+                    endswith(file, ".jl") || continue
                     @testset "$file" begin
                         include(joinpath(@__DIR__, folder, file))
                     end

@@ -131,13 +131,14 @@ end
 
 abstract type AbstractState{T, V} end
 
+# passed to ProgressMeter as a callable, so that nothing is computed unless it is displayed
 function prog_showvalues(state::AbstractState)
     err = state.stats.err
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
     # @sprintf induces string formatting overhead in hot loops
-    rel_primal = primal / primal_scale
-    rel_dual = dual / dual_scale
-    rel_gap = gap / gap_scale
+    rel_primal = @. primal / primal_scale
+    rel_dual = @. dual / dual_scale
+    rel_gap = @. gap / gap_scale
     return (
         ("primal", rel_primal),
         ("dual", rel_dual),

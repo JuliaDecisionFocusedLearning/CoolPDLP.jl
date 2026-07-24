@@ -10,6 +10,38 @@ sametype_transpose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
+"""
+    colnorm(x)
+
+Return the Euclidean norm of `x`, or one norm per column if `x` is batched.
+"""
+colnorm(v::AbstractVector) = norm(v)
+colnorm(m::AbstractMatrix) = vec(sqrt.(sum(abs2, m; dims = 1)))
+
+"""
+    colsum(x)
+
+Return the sum of `x`, or one sum per column if `x` is batched.
+"""
+colsum(v::AbstractVector) = sum(v)
+colsum(m::AbstractMatrix) = vec(sum(m; dims = 1))
+
+"""
+    coldot(a, b)
+
+Return the scalar product of `a` and `b`, or one scalar product per column if either is batched.
+"""
+coldot(a::AbstractVector, b::AbstractVector) = dot(a, b)
+coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = colsum(a .* b)
+
+"""
+    rowvec(x)
+
+Turn a per-column quantity into something that broadcasts along the batch dimension.
+"""
+rowvec(x::Number) = x
+rowvec(v::AbstractVector) = transpose(v)
+
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 
@@ -102,6 +134,16 @@ function spectral_norm(
     KᵀK = Symmetrized(K, Kᵀ)
     λ, _ = powm!(KᵀK, x0; kwargs...)
     return sqrt(λ)
+end
+
+function spectral_norm(
+        K::AbstractArray{<:Number, 3},
+        Kᵀ::AbstractArray{<:Number, 3};
+        kwargs...
+    )
+    return map(axes(K, 3)) do k
+        spectral_norm(view(K, :, :, k), view(Kᵀ, :, :, k); kwargs...)
+    end
 end
 
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)

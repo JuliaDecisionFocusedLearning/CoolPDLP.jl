@@ -22,21 +22,21 @@ end
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
     (; invnorm_scaling) = params
-    η = T(invnorm_scaling) * inv(spectral_norm(A, At))
-    return η
+    norm_A = spectral_norm(A, At)
+    return @. T(invnorm_scaling) * inv(norm_A)
 end
 
 function primal_weight_init(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; c, lc, uc) = milp
     (; zero_tol) = params
-    c_norm = norm(c)
+    c_norm = colnorm(c)
     combined_bounds = map(combine, lc, uc)
-    combined_norm = norm(combined_bounds)
-    if c_norm > zero_tol && combined_norm > zero_tol
-        return c_norm / combined_norm
-    else
-        return one(T)
-    end
+    combined_norm = colnorm(combined_bounds)
+    return @. ifelse(
+        (c_norm > zero_tol) & (combined_norm > zero_tol),
+        c_norm / combined_norm,
+        one(T)
+    )
 end
 
 """
@@ -46,7 +46,7 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct StepSizes{T <: Number}
+@kwdef mutable struct StepSizes{T <: BatchedNumber}
     "step size"
     η::T
     "cumulated step size since last restart"
@@ -54,6 +54,18 @@ $(TYPEDFIELDS)
     "primal weight"
     ω::T
 end
+
+batch(step_sizes::StepSizes, i::Int) = StepSizes(
+    batch_num(step_sizes.η, i),
+    batch_num(step_sizes.η_sum, i),
+    batch_num(step_sizes.ω, i),
+)
+
+add_stepsize!(step_sizes::StepSizes{<:Number}) = (step_sizes.η_sum += step_sizes.η; nothing)
+add_stepsize!(step_sizes::StepSizes{<:AbstractVector}) = (step_sizes.η_sum .+= step_sizes.η; nothing)
+
+reset_stepsize!(step_sizes::StepSizes{<:Number}) = (step_sizes.η_sum = zero(step_sizes.η_sum); nothing)
+reset_stepsize!(step_sizes::StepSizes{<:AbstractVector}) = (zero!(step_sizes.η_sum); nothing)
 
 function primal_weight_update!(
         scratch::Scratch,
@@ -64,12 +76,12 @@ function primal_weight_update!(
     )
     (; ω) = step_sizes
     (; primal_weight_damping, zero_tol) = params
-    Δx = norm(@. scratch.x = sol_cand.x - sol_restart.x)
-    Δy = norm(@. scratch.y = sol_cand.y - sol_restart.y)
+    Δx = colnorm(@. scratch.x = sol_cand.x - sol_restart.x)
+    Δy = colnorm(@. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
-    if Δx > zero_tol && Δy > zero_tol
-        return exp(θ * log(Δy / Δx) + (1 - θ) * log(ω))
-    else
-        return ω
-    end
+    return @. ifelse(
+        (Δx > zero_tol) & (Δy > zero_tol),
+        exp(θ * log(Δy / Δx) + (1 - θ) * log(ω)),
+        ω
+    )
 end

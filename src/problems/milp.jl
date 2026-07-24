@@ -20,9 +20,9 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        Vo <: DenseVecOrMat{T},
-        Vv <: DenseVecOrMat{T},
-        Vc <: DenseVecOrMat{T},
+        Vo <: StridedVecOrMat{T},
+        Vv <: StridedVecOrMat{T},
+        Vc <: StridedVecOrMat{T},
         V <: AbstractVector{T},
         M <: AbstractArray{T},
         Mt <: AbstractArray{T},
@@ -65,10 +65,10 @@ struct MILP{
             At = sametype_transpose(A),
             lc,
             uc,
-            D1 = Diagonal(one!(similar(lc))),
-            D2 = Diagonal(one!(similar(lv))),
-            int_var = zero!(similar(c, Bool)),
-            var_names = map(string, eachindex(c)),
+            D1 = Diagonal(one!(similar(lc, size(lc, 1)))),
+            D2 = Diagonal(one!(similar(lv, size(lv, 1)))),
+            int_var = zero!(similar(c, Bool, size(c, 1))),
+            var_names = map(string, 1:size(c, 1)),
             dataset = "",
             name = "",
             path = ""
@@ -153,13 +153,13 @@ function MILP(qps::QPSData; kwargs...)
     )
 end
 
-function Base.show(io::IO, milp::MILP{T, V, M, Mt}) where {T, V, M, Mt}
+function Base.show(io::IO, milp::MILP{T, Vo, Vv, Vc, V, M, Mt}) where {T, Vo, Vv, Vc, V, M, Mt}
     return print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
           - values $T
-          - vectors $V
+          - vectors $(Vo == Vv == Vc ? Vo : (Vo, Vv, Vc))
           - matrices $(M == Mt ? M : (M, Mt))
         - variables: $(nbvar(milp))
           - $(nbvar_cont(milp)) continuous
