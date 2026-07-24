@@ -13,6 +13,7 @@ using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
 using StableRNGs: StableRNG
 
 # standard libraries
+using Base.Broadcast: broadcasted, instantiate
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
 using Printf: @sprintf
 using Random: randn!

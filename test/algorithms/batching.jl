@@ -1,5 +1,6 @@
 using CoolPDLP
-using CoolPDLP: EachBatch, Scratch, batch, batch_size, initialize, kkt_errors!, relative, step!
+using CoolPDLP: EachBatch, KKTErrors, Scratch, batch, batch_size, initialize, kkt_errors!,
+    relative, restart!, restart_check!, step!, termination_check!
 using LinearAlgebra
 using Random
 using SparseArrays
@@ -37,11 +38,11 @@ sol_batch = PrimalDualSolution(milp_batch)
 end
 
 @testset "KKT errors per column" begin
-    err_batch = kkt_errors!(Scratch(sol_batch), sol_batch, milp_batch)
+    err_batch = kkt_errors!(KKTErrors(sol_batch), Scratch(sol_batch), sol_batch, milp_batch)
     @test err_batch.primal isa Vector{Float64}
     @test length(err_batch.primal) == nbatch
     for i in 1:nbatch
-        err = kkt_errors!(Scratch(sols[i]), sols[i], milps[i])
+        err = kkt_errors!(KKTErrors(sols[i]), Scratch(sols[i]), sols[i], milps[i])
         @test batch(err_batch, i) ≈ err
         @test relative(err_batch)[i] ≈ relative(err)
     end
@@ -74,6 +75,29 @@ end
     end
     for i in 1:nbatch
         @test batch(state_batch, i).sol ≈ states[i].sol
+    end
+end
+
+function run_iterations!(state, milp, algo, n)
+    for _ in 1:n
+        step!(state, milp)
+        termination_check!(state, milp, algo)
+        restart_check!(state, milp, algo) && restart!(state, algo)
+    end
+    return nothing
+end
+
+function iteration_allocations(state, milp, algo)
+    run_iterations!(state, milp, algo, 5)
+    return @allocated run_iterations!(state, milp, algo, 20)
+end
+
+@testset "Allocation-free iterations" begin
+    algo = PDLP(; record_error_history = false)
+    @testset "batch size $(size(sol.x, 2))" for (milp, sol) in
+            ((milps[1], sols[1]), (milp_batch, sol_batch))
+        state = initialize(milp, copy(sol), algo; starting_time = time())
+        @test iteration_allocations(state, milp, algo) == 0
     end
 end
 

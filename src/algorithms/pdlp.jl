@@ -19,6 +19,7 @@ $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
         T <: Number, V <: StridedVecOrMat{T}, S <: BatchedNumber, B,
+        Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -33,7 +34,7 @@ $(TYPEDFIELDS)
     "step sizes"
     step_sizes::StepSizes{S}
     "scratch space"
-    scratch::Scratch{T, V, S}
+    scratch::Sc
     "iteration counter"
     iteration::IterationCounter
     "restart stats"
@@ -156,21 +157,42 @@ function restart_check!(
         step_sizes, scratch, iteration, restart_stats,
     ) = state
     (; ω) = step_sizes
+    (; err_candidate, err_candidate_last, err_restart, err_other) = restart_stats
 
-    err = kkt_errors!(scratch, sol, milp)
-    err_avg = kkt_errors!(scratch, sol_avg, milp)
-    from_avg = absolute(err_avg, ω) .<= absolute(err, ω)
-    restart_stats.restart_from_avg = from_avg
-    restart_stats.err_candidate = batch_select(from_avg, err_avg, err)
+    restart_stats.restart_from_avg, restart_stats.abs_candidate = best_errors!(
+        err_candidate, err_other, restart_stats.restart_from_avg, restart_stats.abs_candidate,
+        scratch, sol, sol_avg, milp, ω,
+    )
+    _, restart_stats.abs_candidate_last = best_errors!(
+        err_candidate_last, err_other, scratch.cond, restart_stats.abs_candidate_last,
+        scratch, sol_last, sol_avg_last, milp, ω,
+    )
 
-    err_last = kkt_errors!(scratch, sol_last, milp)
-    err_avg_last = kkt_errors!(scratch, sol_avg_last, milp)
-    from_avg_last = absolute(err_avg_last, ω) .<= absolute(err_last, ω)
-    restart_stats.err_candidate_last = batch_select(from_avg_last, err_avg_last, err_last)
+    kkt_errors!(err_restart, scratch, sol_restart, milp)
+    restart_stats.abs_restart = absolute!(restart_stats.abs_restart, err_restart, ω)
 
-    restart_stats.err_restart = kkt_errors!(scratch, sol_restart, milp)
+    return should_restart(restart_stats, iteration, algo.restart)
+end
 
-    return should_restart(restart_stats, step_sizes, iteration, algo.restart)
+"""
+    best_errors!(err, other, cond, abs_err, scratch, sol1, sol2, milp, ω)
+
+Keep the smaller of the KKT errors of `sol1` and `sol2` inside `err`, column by column.
+
+Return the columns where `sol2` won and the corresponding absolute errors.
+"""
+function best_errors!(
+        err::KKTErrors, other::KKTErrors, cond, abs_err,
+        scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
+        milp::MILP, ω::BatchedNumber,
+    )
+    kkt_errors!(err, scratch, sol1, milp)
+    kkt_errors!(other, scratch, sol2, milp)
+    abs1 = absolute!(scratch.b1, err, ω)
+    abs2 = absolute!(scratch.b2, other, ω)
+    cond = batch_apply!(<=, cond, abs2, abs1)
+    batch_select!(err, cond, other)
+    return cond, batch_apply!(min, abs_err, abs1, abs2)
 end
 
 function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}

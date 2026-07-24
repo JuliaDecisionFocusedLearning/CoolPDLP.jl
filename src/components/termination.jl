@@ -96,11 +96,12 @@ function Base.show(io::IO, stats::ConvergenceStats)
     )
 end
 
-function termination_status(stats::ConvergenceStats, params::TerminationParameters)
+function termination_status(
+        stats::ConvergenceStats, params::TerminationParameters, dest::BatchedNumber
+    )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    rel_err = relative(err)
-    if batch_all(@. rel_err <= termination_reltol)
+    if batch_all(<=(termination_reltol), relative!(dest, err))
         return OPTIMAL
     elseif time_elapsed >= time_limit
         return TIME_LIMIT

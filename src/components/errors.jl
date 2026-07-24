@@ -1,11 +1,13 @@
 """
     KKTErrors
 
+Mutable so that [`kkt_errors!`](@ref) can refill it without allocating.
+
 # Fields
 
 $(TYPEDFIELDS)
 """
-@kwdef struct KKTErrors{T <: BatchedNumber}
+@kwdef mutable struct KKTErrors{T <: BatchedNumber}
     "primal feasibility error"
     primal::T
     "characteristic scale of the primal constraint RHS"
@@ -71,34 +73,74 @@ batch(err::KKTErrors, i::Int) = KKTErrors(
     batch_num(err.gap_scale, i),
 )
 
-"""
-    batch_select(cond, err1, err2)
+Base.copy(err::KKTErrors) = KKTErrors(
+    copy(err.primal),
+    copy(err.primal_scale),
+    copy(err.dual),
+    copy(err.dual_scale),
+    copy(err.gap),
+    copy(err.gap_scale),
+)
 
-Take the errors of `err1` where `cond` holds and those of `err2` elsewhere, column by column.
 """
-function batch_select(cond, err1::KKTErrors, err2::KKTErrors)
-    pick(e1, e2) = ifelse.(cond, e1, e2)
-    return KKTErrors(
-        pick(err1.primal, err2.primal),
-        pick(err1.primal_scale, err2.primal_scale),
-        pick(err1.dual, err2.dual),
-        pick(err1.dual_scale, err2.dual_scale),
-        pick(err1.gap, err2.gap),
-        pick(err1.gap_scale, err2.gap_scale),
-    )
+    batch_select!(err, cond, other)
+
+Replace the errors of `err` by those of `other` in the columns where `cond` holds.
+"""
+function batch_select!(err::KKTErrors, cond, other::KKTErrors)
+    pick(e, o) = batch_apply!(ifelse, e, cond, o, e)
+    err.primal = pick(err.primal, other.primal)
+    err.primal_scale = pick(err.primal_scale, other.primal_scale)
+    err.dual = pick(err.dual, other.dual)
+    err.dual_scale = pick(err.dual_scale, other.dual_scale)
+    err.gap = pick(err.gap, other.gap)
+    err.gap_scale = pick(err.gap_scale, other.gap_scale)
+    return err
 end
 
-function relative(err::KKTErrors)
+"""
+    relative!(dest, err)
+
+Compute the largest relative KKT error, column by column, into `dest`.
+"""
+function relative!(::Number, err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    return @. max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
+    return max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
 end
 
-function absolute(err::KKTErrors, ω::BatchedNumber)
+function relative!(dest::AbstractVector, err::KKTErrors)
+    (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
+    @. dest = max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
+    return dest
+end
+
+relative(err::KKTErrors) = relative!(batch_similar(err.primal), err)
+
+"""
+    absolute!(dest, err, ω)
+
+Compute the absolute KKT error for primal weight `ω`, column by column, into `dest`.
+"""
+function absolute!(::Number, err::KKTErrors, ω::BatchedNumber)
     (; primal, dual, gap) = err
-    return @. sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+    return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
 end
 
+function absolute!(dest::AbstractVector, err::KKTErrors, ω::BatchedNumber)
+    (; primal, dual, gap) = err
+    @. dest = sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+    return dest
+end
+
+absolute(err::KKTErrors, ω::BatchedNumber) = absolute!(batch_similar(err.primal), err, ω)
+
+"""
+    kkt_errors!(err, scratch, sol, milp)
+
+Fill `err` with the KKT errors of `sol`, one value per column of the batch.
+"""
 function kkt_errors!(
+        err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
@@ -112,16 +154,18 @@ function kkt_errors!(
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
-    primal = colnorm(primal_diff)
+    err.primal = colnorm!(err.primal, scratch, primal_diff)
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
-    primal_scale = one(T) .+ colnorm(rescaled_combined_bounds)
+    err.primal_scale = colnorm!(err.primal_scale, scratch, rescaled_combined_bounds)
+    err.primal_scale = batch_apply!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
-    dual = colnorm(dual_diff)
+    err.dual = colnorm!(err.dual, scratch, dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    dual_scale = one(T) .+ colnorm(rescaled_obj)
+    err.dual_scale = colnorm!(err.dual_scale, scratch, rescaled_obj)
+    err.dual_scale = batch_apply!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
@@ -132,21 +176,12 @@ function kkt_errors!(
     pv = @. scratch.z = (
         safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
-    pc_sum = colsum(pc)
-    pv_sum = colsum(pv)
-    cx = colsum(@. scratch.x = c * x)
-    dobj = @. pc_sum + pv_sum
+    pc_sum = colsum!(scratch.b1, scratch, pc)
+    pv_sum = colsum!(scratch.b2, scratch, pv)
+    dobj = batch_apply!(+, scratch.b1, pc_sum, pv_sum)
+    cx = colsum!(scratch.b2, scratch, @. scratch.x = c * x)
 
-    gap = @. abs(cx - dobj)
-    gap_scale = @. one(T) + abs(dobj) + abs(cx)
-
-    err = KKTErrors(;
-        primal,
-        dual,
-        gap,
-        primal_scale,
-        dual_scale,
-        gap_scale,
-    )
+    err.gap = batch_apply!((a, b) -> abs(a - b), err.gap, cx, dobj)
+    err.gap_scale = batch_apply!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
     return err
 end

@@ -41,13 +41,38 @@ end
 batch_expand(x::StridedMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
 """
-    batch_apply!(f, dest, a, b)
+    batch_row(val)
+
+Return a `1 × nbatch` alias of the per-column quantity `val`, suitable as a reduction destination.
+"""
+batch_row(val::Number) = val
+batch_row(val::AbstractVector) = reshape(val, 1, length(val))
+
+"""
+    batch_similar(val)
+
+Return an uninitialized per-column quantity with the same shape as `val`.
+"""
+batch_similar(val::Number) = val
+batch_similar(val::AbstractVector) = similar(val)
+
+"""
+    batch_apply!(f, dest, args...)
 
 Apply `f` to per-column quantities, storing the result inside `dest` when batched.
+
+The result is returned rather than only written, because `dest` is a plain number without batching.
 """
 batch_apply!(f::F, ::Number, a::Number, b::Number) where {F} = f(a, b)
 function batch_apply!(f::F, dest::AbstractVector, a::BatchedNumber, b::BatchedNumber) where {F}
     dest .= f.(a, b)
+    return dest
+end
+batch_apply!(f::F, ::Number, a::Number, b::Number, c::Number) where {F} = f(a, b, c)
+function batch_apply!(
+        f::F, dest::AbstractVector, a::BatchedNumber, b::BatchedNumber, c::BatchedNumber
+    ) where {F}
+    dest .= f.(a, b, c)
     return dest
 end
 
@@ -60,9 +85,13 @@ batch_num(val::Number, ::Int) = val
 batch_num(val::AbstractVector, i::Int) = val[i]
 
 """
-    batch_all(cond)
+    batch_all(f, args...)
 
-Reduce a per-column condition to a single decision for the whole batch.
+Reduce the per-column conditions `f(args...)` to a single decision for the whole batch.
 """
-batch_all(cond::Bool) = cond
-batch_all(cond::AbstractVector{Bool}) = all(cond)
+batch_all(f::F, a::Number) where {F} = f(a)
+batch_all(f::F, a::AbstractVector) where {F} = all(f, a)
+batch_all(f::F, a::Number, b::Number, c::Number) where {F} = f(a, b, c)
+function batch_all(f::F, a::AbstractVector, b::AbstractVector, c::AbstractVector) where {F}
+    return mapreduce(identity, &, instantiate(broadcasted(f, a, b, c)); init = true)
+end

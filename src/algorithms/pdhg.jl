@@ -24,6 +24,7 @@ $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
         T <: Number, V <: StridedVecOrMat{T}, S <: BatchedNumber,
+        Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -32,7 +33,7 @@ $(TYPEDFIELDS)
     "step sizes"
     step_sizes::StepSizes{S}
     "scratch space"
-    scratch::Scratch{T, V, S}
+    scratch::Sc
     "convergence stats"
     stats::ConvergenceStats{S}
 end

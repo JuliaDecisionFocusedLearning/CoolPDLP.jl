@@ -76,12 +76,10 @@ function primal_weight_update!(
     )
     (; ω) = step_sizes
     (; primal_weight_damping, zero_tol) = params
-    Δx = colnorm(@. scratch.x = sol_cand.x - sol_restart.x)
-    Δy = colnorm(@. scratch.y = sol_cand.y - sol_restart.y)
+    Δx = colnorm!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
+    Δy = colnorm!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
-    return @. ifelse(
-        (Δx > zero_tol) & (Δy > zero_tol),
-        exp(θ * log(Δy / Δx) + (1 - θ) * log(ω)),
-        ω
-    )
+    return batch_apply!(ω, Δx, Δy, ω) do δx, δy, w
+        ifelse((δx > zero_tol) & (δy > zero_tol), exp(θ * log(δy / δx) + (1 - θ) * log(w)), w)
+    end
 end

@@ -21,8 +21,8 @@ prec = CoolPDLP.pdlp_preconditioner(milp, params)
 milp_p = CoolPDLP.precondition(milp, prec)
 sol_p = CoolPDLP.precondition(sol, prec)
 
-err = CoolPDLP.kkt_errors!(scratch, sol, milp)
-err_p = CoolPDLP.kkt_errors!(scratch, sol_p, milp_p)
+err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp)
+err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
 
 @testset "Correct KKT errors" begin
     @test err.primal ≈ norm(A * x - CoolPDLP.clamp.(A * x, lc, uc))
