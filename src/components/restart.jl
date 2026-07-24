@@ -63,23 +63,23 @@ mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{
 end
 
 function RestartStats(sol::PrimalDualSolution{T}) where {T}
-    nan() = batch_expand(sol.x, convert(T, NaN))
+    nan() = batched_expand(sol.x, convert(T, NaN))
     return RestartStats(
-        batch_expand(sol.x, false),
+        batched_expand(sol.x, false),
         KKTErrors(sol), KKTErrors(sol), KKTErrors(sol), KKTErrors(sol),
         nan(), nan(), nan(),
     )
 end
 
-batch(stats::RestartStats, i::Int) = RestartStats(
-    batch_num(stats.restart_from_avg, i),
-    batch(stats.err_candidate, i),
-    batch(stats.err_candidate_last, i),
-    batch(stats.err_restart, i),
-    batch(stats.err_other, i),
-    batch_num(stats.abs_candidate, i),
-    batch_num(stats.abs_candidate_last, i),
-    batch_num(stats.abs_restart, i),
+instance(stats::RestartStats, i::Int) = RestartStats(
+    instance_num(stats.restart_from_avg, i),
+    instance(stats.err_candidate, i),
+    instance(stats.err_candidate_last, i),
+    instance(stats.err_restart, i),
+    instance(stats.err_other, i),
+    instance_num(stats.abs_candidate, i),
+    instance_num(stats.abs_candidate_last, i),
+    instance_num(stats.abs_restart, i),
 )
 
 """
@@ -96,9 +96,9 @@ function should_restart(
     (; sufficient_decay, necessary_decay, artificial_decay) = params
     (; inner, total) = iteration
 
-    candidate = batch_mean(abs_candidate)
-    candidate_last = batch_mean(abs_candidate_last)
-    restart = batch_mean(abs_restart)
+    candidate = batched_mean(abs_candidate)
+    candidate_last = batched_mean(abs_candidate_last)
+    restart = batched_mean(abs_restart)
 
     sufficient = candidate <= sufficient_decay * restart
     necessary = candidate <= necessary_decay * restart

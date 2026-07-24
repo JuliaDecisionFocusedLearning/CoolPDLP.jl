@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: EachBatch, KKTErrors, Scratch, batch, batch_size, initialize, kkt_errors!,
+using CoolPDLP: EachInstance, KKTErrors, Scratch, instance, nbinstances, initialize, kkt_errors!,
     relative, restart!, restart_check!, step!, termination_check!
 using LinearAlgebra
 using Random
@@ -30,9 +30,9 @@ milp_batch = MILP(;
 sol_batch = PrimalDualSolution(milp_batch)
 
 @testset "Batch iteration" begin
-    @test batch_size(milp_batch) == nbatch
-    @test length(EachBatch(milp_batch)) == nbatch
-    for (i, milp) in enumerate(EachBatch(milp_batch))
+    @test nbinstances(milp_batch) == nbatch
+    @test length(EachInstance(milp_batch)) == nbatch
+    for (i, milp) in enumerate(EachInstance(milp_batch))
         @test milp ≈ milps[i]
     end
 end
@@ -43,7 +43,7 @@ end
     @test length(err_batch.primal) == nbatch
     for i in 1:nbatch
         err = kkt_errors!(KKTErrors(sols[i]), Scratch(sols[i]), sols[i], milps[i])
-        @test batch(err_batch, i) ≈ err
+        @test instance(err_batch, i) ≈ err
         @test relative(err_batch)[i] ≈ relative(err)
     end
 end
@@ -57,7 +57,7 @@ end
         state = initialize(milps[i], sols[i], algo; starting_time = time())
         @test η[i] ≈ state.step_sizes.η
         @test ω[i] ≈ state.step_sizes.ω
-        @test batch(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
+        @test instance(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
     end
 end
 
@@ -74,7 +74,7 @@ end
         end
     end
     for i in 1:nbatch
-        @test batch(state_batch, i).sol ≈ states[i].sol
+        @test instance(state_batch, i).sol ≈ states[i].sol
     end
 end
 

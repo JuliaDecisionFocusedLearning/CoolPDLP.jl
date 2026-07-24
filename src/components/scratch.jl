@@ -18,31 +18,31 @@
 end
 
 function Scratch(sol::PrimalDualSolution{T}) where {T}
-    red_vec = batch_expand(sol.x, zero(T))
+    red_vec = batched_expand(sol.x, zero(T))
     return Scratch(
         similar(sol.x),
         similar(sol.y),
         similar(sol.x),
-        batch_expand(sol.x, zero(T)),
-        batch_expand(sol.x, zero(T)),
-        batch_row(red_vec),
+        batched_expand(sol.x, zero(T)),
+        batched_expand(sol.x, zero(T)),
+        batched_row(red_vec),
         red_vec,
-        batch_expand(sol.x, false),
+        batched_expand(sol.x, false),
     )
 end
 
-batch_size((; x)::Scratch) = size(x, 2)
-function batch(scratch::Scratch, i::Int)
-    red_vec = batch_num(scratch.red_vec, i)
+nbinstances((; x)::Scratch) = size(x, 2)
+function instance(scratch::Scratch, i::Int)
+    red_vec = instance_num(scratch.red_vec, i)
     return Scratch(
-        batch_vec(scratch.x, i),
-        batch_vec(scratch.y, i),
-        batch_vec(scratch.z, i),
-        batch_num(scratch.b1, i),
-        batch_num(scratch.b2, i),
-        batch_row(red_vec),
+        instance_vec(scratch.x, i),
+        instance_vec(scratch.y, i),
+        instance_vec(scratch.z, i),
+        instance_num(scratch.b1, i),
+        instance_num(scratch.b2, i),
+        batched_row(red_vec),
         red_vec,
-        batch_num(scratch.cond, i),
+        instance_num(scratch.cond, i),
     )
 end
 

@@ -43,19 +43,19 @@ $(TYPEDFIELDS)
     stats::ConvergenceStats{S}
 end
 
-batch_size((; sol)::PDLPState) = batch_size(sol)
-function batch(state::PDLPState, i::Int)
+nbinstances((; sol)::PDLPState) = nbinstances(sol)
+function instance(state::PDLPState, i::Int)
     return PDLPState(
-        batch(state.sol, i),
-        batch(state.sol_last, i),
-        batch(state.sol_avg, i),
-        batch(state.sol_avg_last, i),
-        batch(state.sol_restart, i),
-        batch(state.step_sizes, i),
-        batch(state.scratch, i),
+        instance(state.sol, i),
+        instance(state.sol_last, i),
+        instance(state.sol_avg, i),
+        instance(state.sol_avg_last, i),
+        instance(state.sol_restart, i),
+        instance(state.step_sizes, i),
+        instance(state.scratch, i),
         state.iteration,
-        batch(state.restart_stats, i),
-        batch(state.stats, i),
+        instance(state.restart_stats, i),
+        instance(state.stats, i),
     )
 end
 
@@ -69,8 +69,8 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    η = batch_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    ω = batch_expand(sol.x, primal_weight_init(milp, algo.step_size))
+    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
+    ω = batched_expand(sol.x, primal_weight_init(milp, algo.step_size))
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
@@ -117,8 +117,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = rowvec(batch_apply!(/, scratch.b1, η, ω))
-    σ = rowvec(batch_apply!(*, scratch.b2, η, ω))
+    τ = rowvec(batched_apply!(/, scratch.b1, η, ω))
+    σ = rowvec(batched_apply!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
@@ -140,8 +140,8 @@ function update_average!(state::PDLPState)
     (; sol, sol_avg, sol_avg_last, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
     copy!(sol_avg_last, sol_avg)
-    weight_new = batch_apply!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
-    weight_avg = batch_apply!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
+    weight_new = batched_apply!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
+    weight_avg = batched_apply!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
     axpby!(weight_new, sol, weight_avg, sol_avg)
     add_stepsize!(step_sizes)
     return nothing
@@ -190,9 +190,9 @@ function best_errors!(
     kkt_errors!(other, scratch, sol2, milp)
     abs1 = absolute!(scratch.b1, err, ω)
     abs2 = absolute!(scratch.b2, other, ω)
-    cond = batch_apply!(<=, cond, abs2, abs1)
-    batch_select!(err, cond, other)
-    return cond, batch_apply!(min, abs_err, abs1, abs2)
+    cond = batched_apply!(<=, cond, abs2, abs1)
+    batched_select!(err, cond, other)
+    return cond, batched_apply!(min, abs_err, abs1, abs2)
 end
 
 function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
@@ -202,7 +202,7 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
     ) = state
 
     # identify candidate, column by column
-    batch_select!(sol, restart_stats.restart_from_avg, sol_avg)
+    batched_select!(sol, restart_stats.restart_from_avg, sol_avg)
     # update step sizes (must be done before losing previous restart)
     reset_stepsize!(step_sizes)
     step_sizes.ω = primal_weight_update!(

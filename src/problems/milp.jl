@@ -81,12 +81,12 @@ struct MILP{
         else
             size(lv, 2) == size(uv, 2) || throw(DimensionMismatch("Batch size not consistent"))
             size(lc, 2) == size(uc, 2) || throw(DimensionMismatch("Batch size not consistent"))
-            batch_size = 1
+            nbinst = 1
             for v in (c, lv, lc)
                 size(v, 2) == 1 && continue
-                if batch_size == 1
-                    batch_size = size(v, 2)
-                elseif batch_size != size(v, 2)
+                if nbinst == 1
+                    nbinst = size(v, 2)
+                elseif nbinst != size(v, 2)
                     throw(DimensionMismatch("Batch size not consistent"))
                 end
             end
@@ -234,18 +234,18 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
     )
 end
 
-function batch_size((; c, lv, lc, A)::MILP)
+function nbinstances((; c, lv, lc, A)::MILP)
     return max(size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
 end
-function batch(milp::MILP, i::Int)
+function instance(milp::MILP, i::Int)
     return MILP(;
-        c = batch_vec(milp.c, i),
-        lv = batch_vec(milp.lv, i),
-        uv = batch_vec(milp.uv, i),
-        A = batch_mat(milp.A, i),
-        At = batch_mat(milp.At, i),
-        lc = batch_vec(milp.lc, i),
-        uc = batch_vec(milp.uc, i),
+        c = instance_vec(milp.c, i),
+        lv = instance_vec(milp.lv, i),
+        uv = instance_vec(milp.uv, i),
+        A = instance_mat(milp.A, i),
+        At = instance_mat(milp.At, i),
+        lc = instance_vec(milp.lc, i),
+        uc = instance_vec(milp.uc, i),
         D1 = milp.D1,
         D2 = milp.D2,
         int_var = milp.int_var,

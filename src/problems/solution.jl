@@ -97,16 +97,16 @@ function colaxpby!(a::BatchedNumber, x::AbstractMatrix, b::BatchedNumber, y::Abs
 end
 
 """
-    batch_select!(sol, cond, sol_other)
+    batched_select!(sol, cond, sol_other)
 
 Overwrite the columns of `sol` for which `cond` holds with those of `sol_other`.
 """
-function batch_select!(sol::PrimalDualSolution, cond::Bool, sol_other::PrimalDualSolution)
+function batched_select!(sol::PrimalDualSolution, cond::Bool, sol_other::PrimalDualSolution)
     cond && copy!(sol, sol_other)
     return sol
 end
 
-function batch_select!(
+function batched_select!(
         sol::PrimalDualSolution, cond::AbstractVector{Bool}, sol_other::PrimalDualSolution
     )
     condr = rowvec(cond)
@@ -123,10 +123,10 @@ function PrimalDualSolution(milp::MILP)
     return PrimalDualSolution(zero(milp.lv), zero(milp.lc))
 end
 
-batch_size((; x)::PrimalDualSolution) = size(x, 2)
-function batch(sol::PrimalDualSolution, i::Int)
+nbinstances((; x)::PrimalDualSolution) = size(x, 2)
+function instance(sol::PrimalDualSolution, i::Int)
     return PrimalDualSolution(
-        batch_vec(sol.x, i),
-        batch_vec(sol.y, i),
+        instance_vec(sol.x, i),
+        instance_vec(sol.y, i),
     )
 end

@@ -57,10 +57,10 @@ $(TYPEDFIELDS)
     ω::T
 end
 
-batch(step_sizes::StepSizes, i::Int) = StepSizes(
-    batch_num(step_sizes.η, i),
-    batch_num(step_sizes.η_sum, i),
-    batch_num(step_sizes.ω, i),
+instance(step_sizes::StepSizes, i::Int) = StepSizes(
+    instance_num(step_sizes.η, i),
+    instance_num(step_sizes.η_sum, i),
+    instance_num(step_sizes.ω, i),
 )
 
 add_stepsize!(step_sizes::StepSizes{<:Number}) = (step_sizes.η_sum += step_sizes.η; nothing)
@@ -81,7 +81,7 @@ function primal_weight_update!(
     Δx = colnorm!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
     Δy = colnorm!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
-    return batch_apply!(ω, Δx, Δy, ω) do Δx, Δy, w
+    return batched_apply!(ω, Δx, Δy, ω) do Δx, Δy, w
         if Δx > zero_tol && Δy > zero_tol
             exp(θ * log(Δy / Δx) + (1 - θ) * log(w))
         else

@@ -38,14 +38,14 @@ $(TYPEDFIELDS)
     stats::ConvergenceStats{S}
 end
 
-batch_size((; sol)::PDHGState) = batch_size(sol)
-function batch(state::PDHGState, i::Int)
+nbinstances((; sol)::PDHGState) = nbinstances(sol)
+function instance(state::PDHGState, i::Int)
     return PDHGState(
-        batch(state.sol, i),
-        batch(state.sol_last, i),
-        batch(state.step_sizes, i),
-        batch(state.scratch, i),
-        batch(state.stats, i),
+        instance(state.sol, i),
+        instance(state.sol_last, i),
+        instance(state.step_sizes, i),
+        instance(state.scratch, i),
+        instance(state.stats, i),
     )
 end
 
@@ -56,8 +56,8 @@ function initialize(
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
-    η = batch_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    ω = batch_expand(sol.x, one(T))
+    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
+    ω = batched_expand(sol.x, one(T))
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     stats = ConvergenceStats(KKTErrors(sol); starting_time)
@@ -97,8 +97,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = rowvec(batch_apply!(/, scratch.b1, η, ω))
-    σ = rowvec(batch_apply!(*, scratch.b2, η, ω))
+    τ = rowvec(batched_apply!(/, scratch.b1, η, ω))
+    σ = rowvec(batched_apply!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)

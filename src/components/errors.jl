@@ -60,17 +60,17 @@ function KKTErrors(::Type{T}) where {T}
 end
 
 function KKTErrors(sol::PrimalDualSolution{T}) where {T}
-    nan() = batch_expand(sol.x, convert(T, NaN))
+    nan() = batched_expand(sol.x, convert(T, NaN))
     return KKTErrors(nan(), nan(), nan(), nan(), nan(), nan())
 end
 
-batch(err::KKTErrors, i::Int) = KKTErrors(
-    batch_num(err.primal, i),
-    batch_num(err.primal_scale, i),
-    batch_num(err.dual, i),
-    batch_num(err.dual_scale, i),
-    batch_num(err.gap, i),
-    batch_num(err.gap_scale, i),
+instance(err::KKTErrors, i::Int) = KKTErrors(
+    instance_num(err.primal, i),
+    instance_num(err.primal_scale, i),
+    instance_num(err.dual, i),
+    instance_num(err.dual_scale, i),
+    instance_num(err.gap, i),
+    instance_num(err.gap_scale, i),
 )
 
 Base.copy(err::KKTErrors) = KKTErrors(
@@ -83,12 +83,12 @@ Base.copy(err::KKTErrors) = KKTErrors(
 )
 
 """
-    batch_select!(err, cond, other)
+    batched_select!(err, cond, other)
 
 Replace the errors of `err` by those of `other` in the columns where `cond` holds.
 """
-function batch_select!(err::KKTErrors, cond, other::KKTErrors)
-    pick(e, o) = batch_apply!(ifelse, e, cond, o, e)
+function batched_select!(err::KKTErrors, cond, other::KKTErrors)
+    pick(e, o) = batched_apply!(ifelse, e, cond, o, e)
     err.primal = pick(err.primal, other.primal)
     err.primal_scale = pick(err.primal_scale, other.primal_scale)
     err.dual = pick(err.dual, other.dual)
@@ -114,7 +114,7 @@ function relative!(dest::AbstractVector, err::KKTErrors)
     return dest
 end
 
-relative(err::KKTErrors) = relative!(batch_similar(err.primal), err)
+relative(err::KKTErrors) = relative!(batched_similar(err.primal), err)
 
 """
     absolute!(dest, err, ω)
@@ -132,7 +132,7 @@ function absolute!(dest::AbstractVector, err::KKTErrors, ω::BatchedNumber)
     return dest
 end
 
-absolute(err::KKTErrors, ω::BatchedNumber) = absolute!(batch_similar(err.primal), err, ω)
+absolute(err::KKTErrors, ω::BatchedNumber) = absolute!(batched_similar(err.primal), err, ω)
 
 """
     kkt_errors!(err, scratch, sol, milp)
@@ -158,14 +158,14 @@ function kkt_errors!(
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
     err.primal_scale = colnorm!(err.primal_scale, scratch, rescaled_combined_bounds)
-    err.primal_scale = batch_apply!(+, err.primal_scale, one(T), err.primal_scale)
+    err.primal_scale = batched_apply!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
     err.dual = colnorm!(err.dual, scratch, dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
     err.dual_scale = colnorm!(err.dual_scale, scratch, rescaled_obj)
-    err.dual_scale = batch_apply!(+, err.dual_scale, one(T), err.dual_scale)
+    err.dual_scale = batched_apply!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
@@ -178,10 +178,10 @@ function kkt_errors!(
     )
     pc_sum = colsum!(scratch.b1, scratch, pc)
     pv_sum = colsum!(scratch.b2, scratch, pv)
-    dobj = batch_apply!(+, scratch.b1, pc_sum, pv_sum)
+    dobj = batched_apply!(+, scratch.b1, pc_sum, pv_sum)
     cx = colsum!(scratch.b2, scratch, @. scratch.x = c * x)
 
-    err.gap = batch_apply!((a, b) -> abs(a - b), err.gap, cx, dobj)
-    err.gap_scale = batch_apply!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
+    err.gap = batched_apply!((a, b) -> abs(a - b), err.gap, cx, dobj)
+    err.gap_scale = batched_apply!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
     return err
 end
