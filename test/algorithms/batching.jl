@@ -95,7 +95,7 @@ end
 @testset "Allocation-free iterations" begin
     algo = PDLP(; record_error_history = false)
     @testset "batch size $(size(sol.x, 2))" for (milp, sol) in
-            ((milps[1], sols[1]), (milp_batch, sol_batch))
+        ((milps[1], sols[1]), (milp_batch, sol_batch))
         state = initialize(milp, copy(sol), algo; starting_time = time())
         @test iteration_allocations(state, milp, algo) == 0
     end
