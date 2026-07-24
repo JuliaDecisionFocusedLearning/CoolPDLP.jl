@@ -91,7 +91,11 @@ Reduce the per-column conditions `f(args...)` to a single decision for the whole
 """
 batch_all(f::F, a::Number) where {F} = f(a)
 batch_all(f::F, a::AbstractVector) where {F} = all(f, a)
-batch_all(f::F, a::Number, b::Number, c::Number) where {F} = f(a, b, c)
-function batch_all(f::F, a::AbstractVector, b::AbstractVector, c::AbstractVector) where {F}
-    return mapreduce(identity, &, instantiate(broadcasted(f, a, b, c)); init = true)
-end
+
+"""
+    batch_mean(val)
+
+Average a per-column quantity over the whole batch, yielding a single number.
+"""
+batch_mean(val::Number) = val
+batch_mean(val::AbstractVector) = sum(val) / length(val)

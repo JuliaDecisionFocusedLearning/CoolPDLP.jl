@@ -82,6 +82,13 @@ batch(stats::RestartStats, i::Int) = RestartStats(
     batch_num(stats.abs_restart, i),
 )
 
+"""
+    should_restart(stats, iteration, params)
+
+Decide whether the whole batch restarts, based on the fixed-point residual averaged over the columns.
+
+Since every instance of the batch restarts at the same time, the three usual criteria (sufficient decay, necessary decay without local progress, long inner loop) are applied to the mean of the per-column absolute KKT errors instead of requiring each column to agree.
+"""
 function should_restart(
         stats::RestartStats, iteration::IterationCounter, params::RestartParameters,
     )
@@ -89,15 +96,13 @@ function should_restart(
     (; sufficient_decay, necessary_decay, artificial_decay) = params
     (; inner, total) = iteration
 
-    # the whole batch restarts at once, so every column has to agree
-    restart_criterion = batch_all(
-        abs_candidate, abs_candidate_last, abs_restart
-    ) do candidate, candidate_last, restart
-        sufficient = candidate <= sufficient_decay * restart
-        necessary = candidate <= necessary_decay * restart
-        no_local_progress = candidate > candidate_last
-        return sufficient | (necessary & no_local_progress)
-    end
+    candidate = batch_mean(abs_candidate)
+    candidate_last = batch_mean(abs_candidate_last)
+    restart = batch_mean(abs_restart)
+
+    sufficient = candidate <= sufficient_decay * restart
+    necessary = candidate <= necessary_decay * restart
+    no_local_progress = candidate > candidate_last
     long_inner_loop = inner >= artificial_decay * total
-    return restart_criterion || long_inner_loop
+    return sufficient || (necessary && no_local_progress) || long_inner_loop
 end
