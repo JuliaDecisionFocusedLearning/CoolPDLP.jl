@@ -35,7 +35,12 @@ end
     for (A, b, c) in collect(zip(A_candidates, b_candidates, c_candidates))
         test_sparse_matrix(M; A, b, c, α, β)
         # test β is a strong zero, e.g. c should never be read since it may be uninitialized and contain NaNs
-        c′ = fill!(similar(c), NaN)
+        c′ = similar(c)
+        fill!(c′, NaN)
         test_sparse_matrix(M; A, b, c = c′, α, β = 0.0)
+        copy!(c′, c)
+        test_sparse_matrix(M; A, b, c = c′, α = 1.0, β)
+        fill!(c′, NaN)
+        test_sparse_matrix(M; A, b, c = c′, α = 1.0, β = 0.0)
     end
 end
