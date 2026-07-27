@@ -80,9 +80,17 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
-    c .*= β
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
-    kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange = length(A.nzval))
+    if iszero(β)
+        zero!(c)
+    elseif !isone(β)
+        c .*= β
+    end
+    if isone(α)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, One(); ndrange = length(A.nzval))
+    else
+        kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange = length(A.nzval))
+    end
     return c
 end

@@ -25,7 +25,7 @@ function test_sparse_matrix(::Type{M}; A, b, c, α, β) where {M}
     @test @allowscalar SparseMatrixCSC(A_jl) == A
     @test nnz(A_jl) == nnz(A)
     @test get_backend(A_jl) isa JLBackend
-    @test mul!(copy(c_jl), A_jl, b_jl, α, β) ≈ α * A * b + β * c
+    @test mul!(copy(c_jl), A_jl, b_jl, α, β) ≈ mul!(copy(c), A, b, α, β)
     @test @allowscalar Matrix(CoolPDLP.sametype_transpose(A_jl)) == transpose(A)
     @test typeof(CoolPDLP.sametype_transpose(A_jl)) == typeof(At_jl)
     return nothing
@@ -34,5 +34,8 @@ end
 @testset for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
     for (A, b, c) in collect(zip(A_candidates, b_candidates, c_candidates))
         test_sparse_matrix(M; A, b, c, α, β)
+        # test β is a strong zero, e.g. c should never be read since it may be uninitialized and contain NaNs
+        c′ = fill!(similar(c), NaN)
+        test_sparse_matrix(M; A, b, c = c′, α, β = 0.0)
     end
 end

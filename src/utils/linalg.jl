@@ -10,6 +10,13 @@ sametype_transpose(A::AbstractMatrix) = convert(typeof(A), transpose(A))
 zero!(x::AbstractArray) = fill!(x, zero(eltype(x)))
 one!(x::AbstractArray) = fill!(x, one(eltype(x)))
 
+# helpers for `mul!` implementations
+struct One <: Number end
+Base.:*(::One, x::Number) = x
+struct Zero <: Number end
+Base.:*(::Zero, ::Number) = Zero()
+Base.:+(x::Number, ::Zero) = x
+
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 
