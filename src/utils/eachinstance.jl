@@ -43,13 +43,18 @@ end
 batched_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
 """
-    batched_zeros(x, n, nbinstances)
+    batched_zeros(x, n, nbinstances, Val(batched))
 
 Allocate a zeroed vector of length `n` with the same array type as `x`, or a matrix holding
-one such column per instance if the batch contains more than one.
+one such column per instance when `batched` is `true`.
+
+Batching is passed as a `Val` because the number of instances is only known at run time,
+while the shape of the result must be inferrable.
 """
-function batched_zeros(x::AbstractVecOrMat, n::Int, nbinstances::Int)
-    dims = nbinstances == 1 ? (n,) : (n, nbinstances)
+function batched_zeros(
+        x::AbstractVecOrMat, n::Int, nbinstances::Int, ::Val{batched}
+    ) where {batched}
+    dims = batched ? (n, nbinstances) : (n,)
     return zero!(similar(x, dims))
 end
 

@@ -237,6 +237,18 @@ end
 function nbinstances((; c, lv, lc, A)::MILP)
     return max(size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
 end
+
+"""
+    isbatched(milp)
+
+Return whether `milp` holds a batch of instances rather than a single one.
+
+Unlike [`nbinstances`](@ref), this only depends on the type of `milp`, so it is a constant as
+far as inference is concerned and the shape of the arrays attached to `milp` follows from it.
+"""
+function isbatched((; c, lv, lc, A)::MILP)
+    return ndims(c) > 1 || ndims(lv) > 1 || ndims(lc) > 1 || ndims(A) > 2
+end
 function instance(milp::MILP, i::Int)
     return MILP(;
         c = instance_vec(milp.c, i),

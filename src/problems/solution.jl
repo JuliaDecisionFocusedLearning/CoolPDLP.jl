@@ -126,10 +126,11 @@ end
 Build the zero solution of `milp`, with one column per instance if `milp` is batched.
 """
 function PrimalDualSolution(milp::MILP)
+    batched = Val(isbatched(milp))
     nbinst = nbinstances(milp)
     return PrimalDualSolution(
-        batched_zeros(milp.lv, nbvar(milp), nbinst),
-        batched_zeros(milp.lc, nbcons(milp), nbinst),
+        batched_zeros(milp.lv, nbvar(milp), nbinst, batched),
+        batched_zeros(milp.lc, nbcons(milp), nbinst, batched),
     )
 end
 

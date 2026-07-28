@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: nbinstances
+using CoolPDLP: BatchedGPUSparseMatrixCSR, isbatched, nbinstances
 using HiGHS: HiGHS
 using JLArrays
 using LinearAlgebra
@@ -31,29 +31,43 @@ end
     single = (c = randn(6), lv = -ones(6), uv = ones(6), lc = -ones(4), uc = ones(4))
     batch(v) = repeat(v, 1, nbatch)
 
+    A_csr = GPUSparseMatrixCSR(A)
+    A_batched = BatchedGPUSparseMatrixCSR(
+        A_csr.m, A_csr.n, A_csr.rowptr, A_csr.colval, repeat(A_csr.nzval, 1, nbatch)
+    )
+
     # the batch dimension must be picked up from whichever fields carry it
     @testset "$name" for (name, kw) in (
-            "objective" => (; single..., c = batch(single.c)),
-            "variable bounds" => (; single..., lv = batch(single.lv), uv = batch(single.uv)),
-            "constraint bounds" => (; single..., lc = batch(single.lc), uc = batch(single.uc)),
+            "objective" => (; single..., A, c = batch(single.c)),
+            "variable bounds" => (; single..., A, lv = batch(single.lv), uv = batch(single.uv)),
+            "constraint bounds" => (; single..., A, lc = batch(single.lc), uc = batch(single.uc)),
+            "matrix" => (; single..., A = A_batched, At = A_batched),
         )
-        milp = MILP(; kw..., A, int_var)
-        sol = PrimalDualSolution(milp)
+        milp = MILP(; kw..., int_var)
+        @test isbatched(milp)
         @test nbinstances(milp) == nbatch
+        # the number of instances is only known at run time, but its shape must be inferrable
+        sol = @inferred PrimalDualSolution(milp)
+        @test sol isa PrimalDualSolution{Float64, Matrix{Float64}}
         @test nbinstances(sol) == nbatch
         @test size(sol.x) == (6, nbatch)
         @test size(sol.y) == (4, nbatch)
         @test iszero(sol.x) && iszero(sol.y)
-        @test size(solve(milp, PDLP(; max_kkt_passes = 100))[1].x) == (6, nbatch)
     end
 
     @testset "unbatched" begin
         milp = MILP(; single..., A, int_var)
-        sol = PrimalDualSolution(milp)
+        @test !isbatched(milp)
         @test nbinstances(milp) == 1
-        @test sol.x isa Vector{Float64}
+        sol = @inferred PrimalDualSolution(milp)
+        @test sol isa PrimalDualSolution{Float64, Vector{Float64}}
         @test size(sol.x) == (6,)
         @test size(sol.y) == (4,)
+    end
+
+    @testset "solve keeps the batch" begin
+        milp = MILP(; single..., c = batch(single.c), A, int_var)
+        @test size(solve(milp, PDLP(; max_kkt_passes = 100))[1].x) == (6, nbatch)
     end
 end
 
