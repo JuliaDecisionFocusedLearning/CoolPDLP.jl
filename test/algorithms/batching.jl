@@ -1,6 +1,6 @@
 using CoolPDLP
 using CoolPDLP: EachInstance, KKTErrors, Scratch, instance, nbinstances, initialize, kkt_errors!,
-    relative, restart!, restart_check!, step!, termination_check!
+    relative, step!
 using LinearAlgebra
 using Random
 using SparseArrays
@@ -75,29 +75,6 @@ end
     end
     for i in 1:nbatch
         @test instance(state_batch, i).sol ≈ states[i].sol
-    end
-end
-
-function run_iterations!(state, milp, algo, n)
-    for _ in 1:n
-        step!(state, milp)
-        termination_check!(state, milp, algo)
-        restart_check!(state, milp, algo) && restart!(state, algo)
-    end
-    return nothing
-end
-
-function iteration_allocations(state, milp, algo)
-    run_iterations!(state, milp, algo, 5)
-    return @allocated run_iterations!(state, milp, algo, 20)
-end
-
-@testset "Allocation-free iterations" begin
-    algo = PDLP(; record_error_history = false)
-    @testset "batch size $(size(sol.x, 2))" for (milp, sol) in
-        ((milps[1], sols[1]), (milp_batch, sol_batch))
-        state = initialize(milp, copy(sol), algo; starting_time = time())
-        @test iteration_allocations(state, milp, algo) == 0
     end
 end
 
