@@ -26,6 +26,8 @@ instance_mat(a::AbstractArray{T, 3}, i::Int) where {T} = view(a, :, :, i)
     BatchedNumber
 
 Type of a quantity which is scalar without batching, and holds one value per instance otherwise.
+
+Combine such quantities with `BangBang.broadcast!!(f, dest, args...)`, which writes into `dest` when batched and returns a fresh number otherwise, so the result must always be used.
 """
 const BatchedNumber = Union{Number, AbstractVector{<:Number}}
 
@@ -44,6 +46,8 @@ batched_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), v
     batched_row(val)
 
 Return a `1 × nbinstances` alias of the per-instance quantity `val`, suitable as a reduction destination.
+
+Preallocated in [`Scratch`](@ref) rather than reshaped on the fly, because `reshape` allocates an array header on every call.
 """
 batched_row(val::Number) = val
 batched_row(val::AbstractVector) = reshape(val, 1, length(val))
@@ -55,26 +59,6 @@ Return an uninitialized per-instance quantity with the same shape as `val`.
 """
 batched_similar(val::Number) = val
 batched_similar(val::AbstractVector) = similar(val)
-
-"""
-    batched_apply!(f, dest, args...)
-
-Apply `f` to per-instance quantities, storing the result inside `dest` when batched.
-
-The result is returned rather than only written, because `dest` is a plain number without batching.
-"""
-batched_apply!(f::F, ::Number, a::Number, b::Number) where {F} = f(a, b)
-function batched_apply!(f::F, dest::AbstractVector, a::BatchedNumber, b::BatchedNumber) where {F}
-    dest .= f.(a, b)
-    return dest
-end
-batched_apply!(f::F, ::Number, a::Number, b::Number, c::Number) where {F} = f(a, b, c)
-function batched_apply!(
-        f::F, dest::AbstractVector, a::BatchedNumber, b::BatchedNumber, c::BatchedNumber
-    ) where {F}
-    dest .= f.(a, b, c)
-    return dest
-end
 
 """
     instance_num(val, i)

@@ -63,13 +63,24 @@ instance(step_sizes::StepSizes, i::Int) = StepSizes(
     instance_num(step_sizes.ω, i),
 )
 
-add_stepsize!(step_sizes::StepSizes{<:Number}) = (step_sizes.η_sum += step_sizes.η; nothing)
-add_stepsize!(step_sizes::StepSizes{<:AbstractVector}) = (step_sizes.η_sum .+= step_sizes.η; nothing)
+function add_stepsize!(step_sizes::StepSizes)
+    (; η, η_sum) = step_sizes
+    step_sizes.η_sum = add!!(η_sum, η)
+    return nothing
+end
 
-reset_stepsize!(step_sizes::StepSizes{<:Number}) = (step_sizes.η_sum = zero(step_sizes.η_sum); nothing)
-reset_stepsize!(step_sizes::StepSizes{<:AbstractVector}) = (zero!(step_sizes.η_sum); nothing)
+function reset_stepsize!(step_sizes::StepSizes)
+    (; η_sum) = step_sizes
+    step_sizes.η_sum = broadcast!!(zero, η_sum, η_sum)
+    return nothing
+end
 
-function primal_weight_update!(
+"""
+    primal_weight_update!!(scratch, step_sizes, sol_cand, sol_restart, params)
+
+Compute the new primal weight, column by column, into `step_sizes.ω`.
+"""
+function primal_weight_update!!(
         scratch::Scratch,
         step_sizes::StepSizes,
         sol_cand::PrimalDualSolution,
@@ -78,10 +89,10 @@ function primal_weight_update!(
     )
     (; ω) = step_sizes
     (; primal_weight_damping, zero_tol) = params
-    Δx = colnorm!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
-    Δy = colnorm!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
+    Δx = colnorm!!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
+    Δy = colnorm!!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
-    return batched_apply!(ω, Δx, Δy, ω) do Δx, Δy, w
+    return broadcast!!(ω, Δx, Δy, ω) do Δx, Δy, w
         if Δx > zero_tol && Δy > zero_tol
             exp(θ * log(Δy / Δx) + (1 - θ) * log(w))
         else

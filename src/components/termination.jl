@@ -101,7 +101,7 @@ function termination_status(
     )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    if batched_all(<=(termination_reltol), relative!(dest, err))
+    if batched_all(<=(termination_reltol), relative!!(dest, err))
         return OPTIMAL
     elseif time_elapsed >= time_limit
         return TIME_LIMIT

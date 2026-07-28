@@ -34,14 +34,6 @@ Return the scalar product of `a` and `b`, or one scalar product per column if ei
 coldot(a::AbstractVector, b::AbstractVector) = dot(a, b)
 coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = colsum(a .* b)
 
-"""
-    rowvec(x)
-
-Turn a per-column quantity into something that broadcasts along the batch dimension.
-"""
-rowvec(x::Number) = x
-rowvec(v::AbstractVector) = transpose(v)
-
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 

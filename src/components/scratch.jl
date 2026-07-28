@@ -47,24 +47,27 @@ function instance(scratch::Scratch, i::Int)
 end
 
 """
-    colnorm!(dest, scratch, x)
+    colnorm!!(dest, scratch, x)
 
 Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, into `dest`.
+
+`scratch` supplies the preallocated `1 × nbinstances` reduction destination: reducing straight
+into `reshape(dest, 1, :)` would allocate an array header on every call.
 """
-colnorm!(::Number, ::Scratch, v::AbstractVector) = norm(v)
-function colnorm!(dest::AbstractVector, scratch::Scratch, m::AbstractMatrix)
+colnorm!!(::Number, ::Scratch, v::AbstractVector) = norm(v)
+function colnorm!!(dest::AbstractVector, scratch::Scratch, m::AbstractMatrix)
     sum!(abs2, scratch.red, m)
     dest .= sqrt.(scratch.red_vec)
     return dest
 end
 
 """
-    colsum!(dest, scratch, x)
+    colsum!!(dest, scratch, x)
 
 Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
 """
-colsum!(::Number, ::Scratch, v::AbstractVector) = sum(v)
-function colsum!(dest::AbstractVector, scratch::Scratch, m::AbstractMatrix)
+colsum!!(::Number, ::Scratch, v::AbstractVector) = sum(v)
+function colsum!!(dest::AbstractVector, scratch::Scratch, m::AbstractMatrix)
     sum!(scratch.red, m)
     dest .= scratch.red_vec
     return dest

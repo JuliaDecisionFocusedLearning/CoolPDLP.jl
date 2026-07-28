@@ -88,7 +88,7 @@ Base.copy(err::KKTErrors) = KKTErrors(
 Replace the errors of `err` by those of `other` in the columns where `cond` holds.
 """
 function batched_select!(err::KKTErrors, cond, other::KKTErrors)
-    pick(e, o) = batched_apply!(ifelse, e, cond, o, e)
+    pick(e, o) = broadcast!!(ifelse, e, cond, o, e)
     err.primal = pick(err.primal, other.primal)
     err.primal_scale = pick(err.primal_scale, other.primal_scale)
     err.dual = pick(err.dual, other.dual)
@@ -99,40 +99,34 @@ function batched_select!(err::KKTErrors, cond, other::KKTErrors)
 end
 
 """
-    relative!(dest, err)
+    relative!!(dest, err)
 
 Compute the largest relative KKT error, column by column, into `dest`.
 """
-function relative!(::Number, err::KKTErrors)
+function relative!!(dest::BatchedNumber, err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    return max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
+    return broadcast!!(
+        dest, primal, primal_scale, dual, dual_scale, gap, gap_scale
+    ) do p, ps, d, ds, g, gs
+        max(p / ps, d / ds, g / gs)
+    end
 end
 
-function relative!(dest::AbstractVector, err::KKTErrors)
-    (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    @. dest = max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
-    return dest
-end
-
-relative(err::KKTErrors) = relative!(batched_similar(err.primal), err)
+relative(err::KKTErrors) = relative!!(batched_similar(err.primal), err)
 
 """
-    absolute!(dest, err, ω)
+    absolute!!(dest, err, ω)
 
 Compute the absolute KKT error for primal weight `ω`, column by column, into `dest`.
 """
-function absolute!(::Number, err::KKTErrors, ω::BatchedNumber)
+function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
     (; primal, dual, gap) = err
-    return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+    return broadcast!!(dest, primal, dual, gap, ω) do p, d, g, w
+        sqrt(w^2 * p^2 + inv(w^2) * d^2 + g^2)
+    end
 end
 
-function absolute!(dest::AbstractVector, err::KKTErrors, ω::BatchedNumber)
-    (; primal, dual, gap) = err
-    @. dest = sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
-    return dest
-end
-
-absolute(err::KKTErrors, ω::BatchedNumber) = absolute!(batched_similar(err.primal), err, ω)
+absolute(err::KKTErrors, ω::BatchedNumber) = absolute!!(batched_similar(err.primal), err, ω)
 
 """
     kkt_errors!(err, scratch, sol, milp)
@@ -157,18 +151,18 @@ function kkt_errors!(
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
-    err.primal = colnorm!(err.primal, scratch, primal_diff)
+    err.primal = colnorm!!(err.primal, scratch, primal_diff)
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
-    err.primal_scale = colnorm!(err.primal_scale, scratch, rescaled_combined_bounds)
-    err.primal_scale = batched_apply!(+, err.primal_scale, one(T), err.primal_scale)
+    err.primal_scale = colnorm!!(err.primal_scale, scratch, rescaled_combined_bounds)
+    err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
-    err.dual = colnorm!(err.dual, scratch, dual_diff)
+    err.dual = colnorm!!(err.dual, scratch, dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    err.dual_scale = colnorm!(err.dual_scale, scratch, rescaled_obj)
-    err.dual_scale = batched_apply!(+, err.dual_scale, one(T), err.dual_scale)
+    err.dual_scale = colnorm!!(err.dual_scale, scratch, rescaled_obj)
+    err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
@@ -179,12 +173,12 @@ function kkt_errors!(
     pv = @. scratch.z = (
         safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
-    pc_sum = colsum!(scratch.b1, scratch, pc)
-    pv_sum = colsum!(scratch.b2, scratch, pv)
-    dobj = batched_apply!(+, scratch.b1, pc_sum, pv_sum)
-    cx = colsum!(scratch.b2, scratch, @. scratch.x = c * x)
+    pc_sum = colsum!!(scratch.b1, scratch, pc)
+    pv_sum = colsum!!(scratch.b2, scratch, pv)
+    dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum)
+    cx = colsum!!(scratch.b2, scratch, @. scratch.x = c * x)
 
-    err.gap = batched_apply!((a, b) -> abs(a - b), err.gap, cx, dobj)
-    err.gap_scale = batched_apply!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
+    err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, cx, dobj)
+    err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
     return err
 end

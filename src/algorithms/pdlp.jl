@@ -117,8 +117,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = rowvec(batched_apply!(/, scratch.b1, η, ω))
-    σ = rowvec(batched_apply!(*, scratch.b2, η, ω))
+    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
+    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)
@@ -140,8 +140,8 @@ function update_average!(state::PDLPState)
     (; sol, sol_avg, sol_avg_last, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
     copy!(sol_avg_last, sol_avg)
-    weight_new = batched_apply!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
-    weight_avg = batched_apply!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
+    weight_new = broadcast!!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
+    weight_avg = broadcast!!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
     axpby!(weight_new, sol, weight_avg, sol_avg)
     add_stepsize!(step_sizes)
     return nothing
@@ -169,7 +169,7 @@ function restart_check!(
     )
 
     kkt_errors!(err_restart, scratch, sol_restart, milp)
-    restart_stats.abs_restart = absolute!(restart_stats.abs_restart, err_restart, ω)
+    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
 
     return should_restart(restart_stats, iteration, algo.restart)
 end
@@ -188,11 +188,11 @@ function best_errors!(
     )
     kkt_errors!(err, scratch, sol1, milp)
     kkt_errors!(other, scratch, sol2, milp)
-    abs1 = absolute!(scratch.b1, err, ω)
-    abs2 = absolute!(scratch.b2, other, ω)
-    cond = batched_apply!(<=, cond, abs2, abs1)
+    abs1 = absolute!!(scratch.b1, err, ω)
+    abs2 = absolute!!(scratch.b2, other, ω)
+    cond = broadcast!!(<=, cond, abs2, abs1)
     batched_select!(err, cond, other)
-    return cond, batched_apply!(min, abs_err, abs1, abs2)
+    return cond, broadcast!!(min, abs_err, abs1, abs2)
 end
 
 function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
@@ -205,7 +205,7 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
     batched_select!(sol, restart_stats.restart_from_avg, sol_avg)
     # update step sizes (must be done before losing previous restart)
     reset_stepsize!(step_sizes)
-    step_sizes.ω = primal_weight_update!(
+    step_sizes.ω = primal_weight_update!!(
         scratch, step_sizes, sol, sol_restart, algo.step_size
     )
     # update solutions

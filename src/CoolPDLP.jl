@@ -3,6 +3,7 @@ module CoolPDLP
 # external dependencies
 using Adapt: Adapt, adapt
 using Atomix: Atomix
+using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!

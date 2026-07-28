@@ -97,8 +97,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = rowvec(batched_apply!(/, scratch.b1, η, ω))
-    σ = rowvec(batched_apply!(*, scratch.b2, η, ω))
+    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
+    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)

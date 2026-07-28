@@ -89,10 +89,15 @@ function LinearAlgebra.axpby!(
     return y
 end
 
-colaxpby!(a::Number, x::AbstractVector, b::Number, y::AbstractVector) = axpby!(a, x, b, y)
-function colaxpby!(a::BatchedNumber, x::AbstractMatrix, b::BatchedNumber, y::AbstractMatrix)
-    ar, br = rowvec(a), rowvec(b)
-    @. y = ar * x + br * y
+# broadcast rather than `axpby!`: the BLAS wrapper boxes its scalars into `Ref`s, which
+# only the optimizer removes, so `LinearAlgebra.axpby!` allocates at reduced optimization
+function colaxpby!(
+        a::BatchedNumber, x::AbstractVecOrMat, b::BatchedNumber, y::AbstractVecOrMat
+    )
+    ar, br = transpose(a), transpose(b)
+    broadcast!!(y, ar, x, br, y) do a, x, b, y
+        a * x + b * y
+    end
     return y
 end
 
@@ -101,17 +106,13 @@ end
 
 Overwrite the columns of `sol` for which `cond` holds with those of `sol_other`.
 """
-function batched_select!(sol::PrimalDualSolution, cond::Bool, sol_other::PrimalDualSolution)
-    cond && copy!(sol, sol_other)
-    return sol
-end
-
 function batched_select!(
-        sol::PrimalDualSolution, cond::AbstractVector{Bool}, sol_other::PrimalDualSolution
+        sol::PrimalDualSolution, cond::Union{Bool, AbstractVector{Bool}},
+        sol_other::PrimalDualSolution,
     )
-    condr = rowvec(cond)
-    @. sol.x = ifelse(condr, sol_other.x, sol.x)
-    @. sol.y = ifelse(condr, sol_other.y, sol.y)
+    condr = transpose(cond)
+    broadcast!!(ifelse, sol.x, condr, sol_other.x, sol.x)
+    broadcast!!(ifelse, sol.y, condr, sol_other.y, sol.y)
     return sol
 end
 
