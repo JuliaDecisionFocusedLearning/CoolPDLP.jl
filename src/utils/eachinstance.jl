@@ -81,7 +81,8 @@ Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, int
 """
 colnorm!!(::Number, v::AbstractVector) = norm(v)
 function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
-    dest .= norm.(eachcol(m))
+    sum!(abs2, transpose(dest), m)
+    dest .= sqrt.(dest)
     return dest
 end
 
@@ -92,6 +93,6 @@ Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
 """
 colsum!!(::Number, v::AbstractVector) = sum(v)
 function colsum!!(dest::AbstractVector, m::AbstractMatrix)
-    dest .= sum.(eachcol(m))
+    sum!(transpose(dest), m)
     return dest
 end
