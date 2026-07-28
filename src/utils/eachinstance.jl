@@ -43,16 +43,6 @@ end
 batched_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
 """
-    batched_row(val)
-
-Return a `1 × nbinstances` alias of the per-instance quantity `val`, suitable as a reduction destination.
-
-Preallocated in [`Scratch`](@ref) rather than reshaped on the fly, because `reshape` allocates an array header on every call.
-"""
-batched_row(val::Number) = val
-batched_row(val::AbstractVector) = reshape(val, 1, length(val))
-
-"""
     batched_similar(val)
 
 Return an uninitialized per-instance quantity with the same shape as `val`.
@@ -83,3 +73,25 @@ Average a per-instance quantity over all the instances, yielding a single number
 """
 batched_mean(val::Number) = val
 batched_mean(val::AbstractVector) = sum(val) / length(val)
+
+"""
+    colnorm!!(dest, x)
+
+Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, into `dest`.
+"""
+colnorm!!(::Number, v::AbstractVector) = norm(v)
+function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
+    dest .= norm.(eachcol(m))
+    return dest
+end
+
+"""
+    colsum!!(dest, x)
+
+Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
+"""
+colsum!!(::Number, v::AbstractVector) = sum(v)
+function colsum!!(dest::AbstractVector, m::AbstractMatrix)
+    dest .= sum.(eachcol(m))
+    return dest
+end

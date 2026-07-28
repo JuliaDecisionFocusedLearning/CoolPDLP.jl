@@ -89,8 +89,8 @@ function primal_weight_update!!(
     )
     (; ω) = step_sizes
     (; primal_weight_damping, zero_tol) = params
-    Δx = colnorm!!(scratch.b1, scratch, @. scratch.x = sol_cand.x - sol_restart.x)
-    Δy = colnorm!!(scratch.b2, scratch, @. scratch.y = sol_cand.y - sol_restart.y)
+    Δx = colnorm!!(scratch.b1, @. scratch.x = sol_cand.x - sol_restart.x)
+    Δy = colnorm!!(scratch.b2, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
     return broadcast!!(ω, Δx, Δy, ω) do Δx, Δy, w
         if Δx > zero_tol && Δy > zero_tol

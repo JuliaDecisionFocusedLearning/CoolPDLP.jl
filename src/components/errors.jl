@@ -151,17 +151,17 @@ function kkt_errors!(
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
-    err.primal = colnorm!!(err.primal, scratch, primal_diff)
+    err.primal = colnorm!!(err.primal, primal_diff)
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
-    err.primal_scale = colnorm!!(err.primal_scale, scratch, rescaled_combined_bounds)
+    err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds)
     err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
-    err.dual = colnorm!!(err.dual, scratch, dual_diff)
+    err.dual = colnorm!!(err.dual, dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    err.dual_scale = colnorm!!(err.dual_scale, scratch, rescaled_obj)
+    err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj)
     err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
@@ -173,10 +173,10 @@ function kkt_errors!(
     pv = @. scratch.z = (
         safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
-    pc_sum = colsum!!(scratch.b1, scratch, pc)
-    pv_sum = colsum!!(scratch.b2, scratch, pv)
+    pc_sum = colsum!!(scratch.b1, pc)
+    pv_sum = colsum!!(scratch.b2, pv)
     dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum)
-    cx = colsum!!(scratch.b2, scratch, @. scratch.x = c * x)
+    cx = colsum!!(scratch.b2, @. scratch.x = c * x)
 
     err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, cx, dobj)
     err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
