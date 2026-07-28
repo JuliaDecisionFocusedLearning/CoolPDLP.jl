@@ -1,5 +1,5 @@
 using Adapt
-using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR
+using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR, spectral_norm
 using GPUArraysCore
 using JLArrays
 using KernelAbstractions
@@ -61,4 +61,33 @@ end
     end
 
     @test mul!(copy(lhs_jl), A_batched, rhs_jl, 1.0, 0.0) ≈ expected
+end
+
+@testset "Batched CSR slices on the CPU" begin
+    batches = 4
+    pattern = sprand(8, 6, 0.35)
+    As = map(1:batches) do _
+        SparseMatrixCSC(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), rand(nnz(pattern)))
+    end
+    function stack_csr(Ms)
+        csrs = map(GPUSparseMatrixCSR, Ms)
+        ref = first(csrs)
+        return BatchedGPUSparseMatrixCSR(
+            ref.m, ref.n, ref.rowptr, ref.colval, reduce(hcat, map(A -> A.nzval, csrs))
+        )
+    end
+    A_batched = stack_csr(As)
+    At_batched = stack_csr(map(A -> SparseMatrixCSC(transpose(A)), As))
+    rhs = rand(size(pattern, 2))
+
+    # unlike a GPU slice, a CPU one is a `SubArray` rather than a `DenseVector`
+    for k in 1:batches
+        slice = view(A_batched, :, :, k)
+        @test slice isa GPUSparseMatrixCSR
+        @test SparseMatrixCSC(slice) ≈ As[k]
+        @test mul!(zeros(size(pattern, 1)), slice, rhs) ≈ As[k] * rhs
+        @test mul!(zeros(size(pattern, 1), 2), slice, repeat(rhs, 1, 2)) ≈ As[k] * repeat(rhs, 1, 2)
+    end
+
+    @test spectral_norm(A_batched, At_batched) ≈ map(A -> opnorm(Matrix(A)), As) rtol = 1.0e-3
 end

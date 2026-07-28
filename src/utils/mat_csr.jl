@@ -10,7 +10,7 @@ $(TYPEDFIELDS)
 struct GPUSparseMatrixCSR{
         T <: Number,
         Ti <: Integer,
-        V <: DenseVector{T},
+        V <: AbstractVector{T},
         Vi <: DenseVector{Ti},
     } <: AbstractGPUSparseArrayCSR{T, Ti, 2}
     m::Int
@@ -107,11 +107,11 @@ function sametype_transpose(A::GPUSparseMatrixCSR)
 end
 
 @kernel function spmv_csr!(
-        c::DenseVector{T},
+        c::AbstractVector{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
-        A_nzval::DenseVector{T},
-        b::DenseVector{T},
+        A_nzval::AbstractVector{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -143,12 +143,12 @@ end
 end
 
 function LinearAlgebra.mul!(
-        c::V,
-        A::GPUSparseMatrixCSR{T, Ti, V},
-        b::V,
+        c::AbstractVector{T},
+        A::GPUSparseMatrixCSR{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
+    ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
@@ -169,11 +169,11 @@ function LinearAlgebra.mul!(
 end
 
 @kernel function spmm_csr!(
-        c::DenseMatrix{T},
+        c::AbstractMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
-        A_nzval::DenseVector{T},
-        b::DenseMatrix{T},
+        A_nzval::AbstractVector{T},
+        b::AbstractMatrix{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -205,12 +205,12 @@ end
 end
 
 function LinearAlgebra.mul!(
-        c::M,
-        A::GPUSparseMatrixCSR{T, Ti, V},
-        b::M,
+        c::AbstractMatrix{T},
+        A::GPUSparseMatrixCSR{T},
+        b::AbstractMatrix{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, M <: DenseMatrix{T}, V <: DenseVector{T}}
+    ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))

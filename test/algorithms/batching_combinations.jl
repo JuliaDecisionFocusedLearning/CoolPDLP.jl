@@ -100,27 +100,21 @@ end
 batched_matrix(milp::MILP) = milp.A isa BatchedGPUSparseMatrixCSR
 
 """
-    initialize_batch(milp_batch, sol_batch, algo, milp_single)
+    same_instance(m1, m2)
 
-Initialize the state of `algo` on `milp_batch`.
-
-`initialize` derives the step size from `spectral_norm(A, At)`, which slices the constraint
-matrix instance by instance. On the CPU a slice of a `BatchedGPUSparseMatrixCSR` is a
-`SubArray`, which the `GPUSparseMatrixCSR` constructor rejects, so when the matrix is batched
-the step size is taken from `milp_single` instead and the single-instance states are aligned
-with the result afterwards.
+Compare two MILPs which may hold their constraint matrix in different formats.
 """
-function initialize_batch(milp_batch::MILP, sol_batch, algo, milp_single::MILP)
-    milp = if batched_matrix(milp_batch)
-        MILP(;
-            milp_batch.c, milp_batch.lv, milp_batch.uv,
-            A = milp_single.A, At = milp_single.At,
-            milp_batch.lc, milp_batch.uc, milp_batch.int_var,
-        )
-    else
-        milp_batch
-    end
-    return initialize(milp, sol_batch, algo; starting_time = time())
+function same_instance(m1::MILP, m2::MILP)
+    return (
+        m1.c ≈ m2.c &&
+            m1.lv ≈ m2.lv &&
+            m1.uv ≈ m2.uv &&
+            SparseMatrixCSC(m1.A) ≈ SparseMatrixCSC(m2.A) &&
+            SparseMatrixCSC(m1.At) ≈ SparseMatrixCSC(m2.At) &&
+            m1.lc ≈ m2.lc &&
+            m1.uc ≈ m2.uc &&
+            m1.int_var == m2.int_var
+    )
 end
 
 @testset verbose = true "Batching $(combination_name(batched))" for batched in all_combinations()
@@ -131,13 +125,8 @@ end
         @test nbinstances(milp_batch) == nbinst
         @test length(EachInstance(milp_batch)) == nbinst
         @test nbinstances(PrimalDualSolution(milp_batch)) == nbinst
-        if batched_matrix(milp_batch)
-            # slicing a batched CPU matrix is not supported, see `initialize_batch`
-            @test_broken instance(milp_batch, 1) isa MILP
-        else
-            for (i, milp) in enumerate(EachInstance(milp_batch))
-                @test milp ≈ milps[i]
-            end
+        for (i, milp) in enumerate(EachInstance(milp_batch))
+            @test same_instance(milp, milps[i])
         end
     end
 
@@ -156,34 +145,23 @@ end
 
     @testset "Step sizes per instance" begin
         algo = PDLP()
-        if batched_matrix(milp_batch)
-            # the step size needs the spectral norm of each instance, see `initialize_batch`
-            @test_broken length(
-                initialize(milp_batch, copy(sol_batch), algo; starting_time = time()).step_sizes.η
-            ) == NBATCH
-        else
-            state_batch = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())
-            (; η, ω) = state_batch.step_sizes
-            @test length(η) == length(ω) == NBATCH
-            for i in 1:NBATCH
-                state = initialize(milps[i], copy(sols[i]), algo; starting_time = time())
-                @test η[i] ≈ state.step_sizes.η
-                @test ω[i] ≈ state.step_sizes.ω
-                @test instance(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
-            end
+        state_batch = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())
+        (; η, ω) = state_batch.step_sizes
+        @test length(η) == length(ω) == NBATCH
+        for i in 1:NBATCH
+            state = initialize(milps[i], copy(sols[i]), algo; starting_time = time())
+            @test η[i] ≈ state.step_sizes.η
+            @test ω[i] ≈ state.step_sizes.ω
+            @test instance(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
         end
     end
 
     @testset "Iterates match single solves" begin
         @testset "$alg" for alg in (PDHG, PDLP)
             algo = alg(; record_error_history = false)
-            state_batch = initialize_batch(milp_batch, copy(sol_batch), algo, milps[1])
+            state_batch = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())
             states = map(1:NBATCH) do i
-                state = initialize(milps[i], copy(sols[i]), algo; starting_time = time())
-                # the batched step sizes may come from another instance, see `initialize_batch`
-                state.step_sizes.η = state_batch.step_sizes.η[i]
-                state.step_sizes.ω = state_batch.step_sizes.ω[i]
-                return state
+                initialize(milps[i], copy(sols[i]), algo; starting_time = time())
             end
             for _ in 1:NSTEPS
                 step!(state_batch, milp_batch)
