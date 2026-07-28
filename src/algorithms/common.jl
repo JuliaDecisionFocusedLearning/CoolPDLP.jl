@@ -204,7 +204,7 @@ function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
-    sol_init_cpu = PrimalDualSolution(zero(milp_init_cpu.lv), zero(milp_init_cpu.lc))
+    sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
 end
 

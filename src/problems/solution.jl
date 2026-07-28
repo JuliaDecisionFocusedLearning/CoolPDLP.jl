@@ -120,8 +120,17 @@ function Base.isapprox(sol1::PrimalDualSolution, sol2::PrimalDualSolution; kwarg
     return isapprox(sol1.x, sol2.x; kwargs...) && isapprox(sol1.y, sol2.y; kwargs...)
 end
 
+"""
+    PrimalDualSolution(milp)
+
+Build the zero solution of `milp`, with one column per instance if `milp` is batched.
+"""
 function PrimalDualSolution(milp::MILP)
-    return PrimalDualSolution(zero(milp.lv), zero(milp.lc))
+    nbinst = nbinstances(milp)
+    return PrimalDualSolution(
+        batched_zeros(milp.lv, nbvar(milp), nbinst),
+        batched_zeros(milp.lc, nbcons(milp), nbinst),
+    )
 end
 
 nbinstances((; x)::PrimalDualSolution) = size(x, 2)

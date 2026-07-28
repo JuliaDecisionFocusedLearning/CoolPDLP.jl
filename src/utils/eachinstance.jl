@@ -43,6 +43,17 @@ end
 batched_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
 """
+    batched_zeros(x, n, nbinstances)
+
+Allocate a zeroed vector of length `n` with the same array type as `x`, or a matrix holding
+one such column per instance if the batch contains more than one.
+"""
+function batched_zeros(x::AbstractVecOrMat, n::Int, nbinstances::Int)
+    dims = nbinstances == 1 ? (n,) : (n, nbinstances)
+    return zero!(similar(x, dims))
+end
+
+"""
     batched_similar(val)
 
 Return an uninitialized per-instance quantity with the same shape as `val`.

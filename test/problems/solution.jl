@@ -1,8 +1,10 @@
 using CoolPDLP
+using CoolPDLP: nbinstances
 using HiGHS: HiGHS
 using JLArrays
 using LinearAlgebra
 using JuMP: JuMP, MOI
+using SparseArrays
 using Test
 
 @testset "Cube MILP" begin
@@ -20,6 +22,39 @@ using Test
     @test @test_warn "Constraints not satisfied" !is_feasible([0.0, 0.0], milp)
     @test @test_warn "Variable bounds not satisfied" !is_feasible([2.0, -1.0], milp)
     @test objective_value([1.0, 1.0], milp) == 3
+end
+
+@testset "Zero solution of a batch" begin
+    nbatch = 3
+    A = sprandn(4, 6, 0.5)
+    int_var = zeros(Bool, 6)
+    single = (c = randn(6), lv = -ones(6), uv = ones(6), lc = -ones(4), uc = ones(4))
+    batch(v) = repeat(v, 1, nbatch)
+
+    # the batch dimension must be picked up from whichever fields carry it
+    @testset "$name" for (name, kw) in (
+            "objective" => (; single..., c = batch(single.c)),
+            "variable bounds" => (; single..., lv = batch(single.lv), uv = batch(single.uv)),
+            "constraint bounds" => (; single..., lc = batch(single.lc), uc = batch(single.uc)),
+        )
+        milp = MILP(; kw..., A, int_var)
+        sol = PrimalDualSolution(milp)
+        @test nbinstances(milp) == nbatch
+        @test nbinstances(sol) == nbatch
+        @test size(sol.x) == (6, nbatch)
+        @test size(sol.y) == (4, nbatch)
+        @test iszero(sol.x) && iszero(sol.y)
+        @test size(solve(milp, PDLP(; max_kkt_passes = 100))[1].x) == (6, nbatch)
+    end
+
+    @testset "unbatched" begin
+        milp = MILP(; single..., A, int_var)
+        sol = PrimalDualSolution(milp)
+        @test nbinstances(milp) == 1
+        @test sol.x isa Vector{Float64}
+        @test size(sol.x) == (6,)
+        @test size(sol.y) == (4,)
+    end
 end
 
 @testset "Comparison with JuMP" begin

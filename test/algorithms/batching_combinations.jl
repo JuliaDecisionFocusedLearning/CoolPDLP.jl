@@ -91,8 +91,8 @@ function make_batch(batched)
     xs = [randn(n) for _ in 1:NBATCH]
     ys = [randn(m) for _ in 1:NBATCH]
     sols = map(PrimalDualSolution, xs, ys)
-    # `PrimalDualSolution(milp_batch)` follows the shape of `lv` and `lc`, which are not
-    # batched in every combination, so the batched starting point is built explicitly
+    # unlike the zero solution `PrimalDualSolution(milp_batch)`, this starting point holds a
+    # different value in every column
     sol_batch = PrimalDualSolution(reduce(hcat, xs), reduce(hcat, ys))
     return milps, sols, milp_batch, sol_batch
 end
@@ -130,6 +130,7 @@ end
     @testset "Batch iteration" begin
         @test nbinstances(milp_batch) == nbinst
         @test length(EachInstance(milp_batch)) == nbinst
+        @test nbinstances(PrimalDualSolution(milp_batch)) == nbinst
         if batched_matrix(milp_batch)
             # slicing a batched CPU matrix is not supported, see `initialize_batch`
             @test_broken instance(milp_batch, 1) isa MILP
