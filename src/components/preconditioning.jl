@@ -146,6 +146,18 @@ end
 function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
     (; A, At) = milp
     (; chambolle_pock_alpha, ruiz_iter) = params
+    if ndims(A) > 2
+        throw(
+            ArgumentError(
+                """
+                Preconditioning does not support batched constraint matrices, because a `MILP` \
+                holds a single pair of scalings `D1` and `D2` for the whole batch. Either share \
+                one constraint matrix between the instances of the batch, or bypass \
+                `preprocess` and `solve` by driving `initialize` and `step!` yourself.\
+                """
+            )
+        )
+    end
     cons = ConstraintMatrix(A, At)
     prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
     cons_r = precondition(cons, prec_r)

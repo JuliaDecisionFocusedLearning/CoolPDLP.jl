@@ -197,8 +197,8 @@ end
         @testset "$alg" for alg in (PDHG, PDLP)
             algo = alg(; termination_reltol = 1.0e-6, max_kkt_passes = 2000)
             if batched_matrix(milp_batch)
-                # preconditioning expects a two-dimensional constraint matrix
-                @test_broken solve(milp_batch, copy(sol_batch), algo) isa Tuple
+                # a batch shares a single preconditioner, so it needs a single matrix
+                @test_throws "batched constraint matrices" solve(milp_batch, copy(sol_batch), algo)
             else
                 sol, stats = solve(milp_id, sol_id, algo)
                 sol_single, stats_single = solve(milps[1], sols[1], algo)
