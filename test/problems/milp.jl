@@ -1,4 +1,5 @@
 using CoolPDLP
+using CoolPDLP: instance
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -39,6 +40,36 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc, uc, int_var = vcat(int_var, false)
     )
+    # Batch size issues
+    @test_nowarn MILP(;
+        c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 3),
+    )
+    @test_throws DimensionMismatch MILP(;
+        c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 2), uc = repeat(uc, 1, 2),
+    )
+    @test_throws DimensionMismatch MILP(;
+        c, lv = repeat(lv, 1, 3), uv = repeat(uv, 1, 2), A, At, lc, uc,
+    )
+    @test_throws DimensionMismatch MILP(;
+        c, lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 2),
+    )
+end
+
+@testset "Batched objective value" begin
+    nbatch = 3
+    milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
+    milp_batch = MILP(;
+        c = reduce(hcat, [k .* milp.c for k in 1:nbatch]),
+        milp.lv, milp.uv, milp.A, milp.lc, milp.uc, milp.int_var,
+    )
+    x = randn(nbvar(milp), nbatch)
+
+    obj = objective_value(x, milp_batch)
+    @test obj isa Vector{Float64}
+    @test length(obj) == nbatch
+    for i in 1:nbatch
+        @test obj[i] ≈ objective_value(x[:, i], instance(milp_batch, i))
+    end
 end
 
 @testset "Compare against JuMP" begin

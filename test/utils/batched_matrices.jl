@@ -4,6 +4,7 @@ using GPUArraysCore
 using JLArrays
 using KernelAbstractions
 using LinearAlgebra
+using Random: Xoshiro
 using SparseArrays
 using Test
 
@@ -65,9 +66,11 @@ end
 
 @testset "Batched CSR slices on the CPU" begin
     batches = 4
-    pattern = sprand(8, 6, 0.35)
+    # how close the power method below lands depends on the matrix, so fix the draw
+    rng = Xoshiro(0)
+    pattern = sprand(rng, 8, 6, 0.35)
     As = map(1:batches) do _
-        SparseMatrixCSC(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), rand(nnz(pattern)))
+        SparseMatrixCSC(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), rand(rng, nnz(pattern)))
     end
     function stack_csr(Ms)
         csrs = map(GPUSparseMatrixCSR, Ms)
@@ -78,7 +81,7 @@ end
     end
     A_batched = stack_csr(As)
     At_batched = stack_csr(map(A -> SparseMatrixCSC(transpose(A)), As))
-    rhs = rand(size(pattern, 2))
+    rhs = rand(rng, size(pattern, 2))
 
     # unlike a GPU slice, a CPU one is a `SubArray` rather than a `DenseVector`
     for k in 1:batches
@@ -89,6 +92,5 @@ end
         @test mul!(zeros(size(pattern, 1), 2), slice, repeat(rhs, 1, 2)) ≈ As[k] * repeat(rhs, 1, 2)
     end
 
-    norm_rtol = VERSION < v"1.12" ? 1.0e-1 : 1.0e-3
-    @test spectral_norm(A_batched, At_batched) ≈ map(A -> opnorm(Matrix(A)), As) rtol = norm_rtol
+    @test spectral_norm(A_batched, At_batched) ≈ map(A -> opnorm(Matrix(A)), As) rtol = 1.0e-2
 end

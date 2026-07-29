@@ -126,8 +126,6 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
     end
 end
 
-absolute(err::KKTErrors, ω::BatchedNumber) = absolute!!(batched_similar(err.primal), err, ω)
-
 """
     kkt_errors!(err, scratch, sol, milp)
 

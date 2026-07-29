@@ -19,20 +19,12 @@ colnorm(v::AbstractVector) = norm(v)
 colnorm(m::AbstractMatrix) = norm.(eachcol(m))
 
 """
-    colsum(x)
-
-Return the sum of `x`, or one sum per column if `x` is batched.
-"""
-colsum(v::AbstractVector) = sum(v)
-colsum(m::AbstractMatrix) = vec(sum(m; dims = 1))
-
-"""
     coldot(a, b)
 
 Return the scalar product of `a` and `b`, or one scalar product per column if either is batched.
 """
 coldot(a::AbstractVector, b::AbstractVector) = dot(a, b)
-coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = colsum(a .* b)
+coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = vec(sum(a .* b; dims = 1))
 
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
