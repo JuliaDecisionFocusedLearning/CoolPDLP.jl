@@ -50,6 +50,49 @@ end
     @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
 end
 
+@testset "Limit statuses" begin
+    function limited_model(attributes...)
+        model = JuMP.Model(CoolPDLP.Optimizer)
+        JuMP.set_silent(model)
+        JuMP.set_attribute(model, "termination_reltol", 0.0)
+        for (name, value) in attributes
+            JuMP.set_attribute(model, name, value)
+        end
+        JuMP.@variable(model, x >= 0)
+        JuMP.@variable(model, 0 <= y <= 3)
+        JuMP.@objective(model, Min, 12x + 20y)
+        JuMP.@constraint(model, 6x + 8y >= 100)
+        JuMP.optimize!(model)
+        return model
+    end
+
+    model = limited_model("max_kkt_passes" => 100)
+    @test JuMP.termination_status(model) == MOI.ITERATION_LIMIT
+    @test JuMP.primal_status(model) == MOI.UNKNOWN_RESULT_STATUS
+    @test JuMP.dual_status(model) == MOI.UNKNOWN_RESULT_STATUS
+    @test JuMP.raw_status(model) == "ITERATION_LIMIT"
+
+    model = limited_model("time_limit" => 0.0)
+    @test JuMP.termination_status(model) == MOI.TIME_LIMIT
+    @test JuMP.primal_status(model) == MOI.UNKNOWN_RESULT_STATUS
+    @test JuMP.dual_status(model) == MOI.UNKNOWN_RESULT_STATUS
+    @test JuMP.solve_time(model) >= 0
+end
+
+@testset "Maximization" begin
+    model = JuMP.Model(CoolPDLP.Optimizer)
+    JuMP.set_silent(model)
+    JuMP.@variable(model, 0 <= x <= 4)
+    JuMP.@variable(model, 0 <= y <= 3)
+    JuMP.@objective(model, Max, 12x + 20y)
+    JuMP.@constraint(model, 6x + 8y <= 48)
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
+    @test JuMP.objective_value(model) ≈ 12 * 4 + 20 * 3 atol = 1.0e-2
+    @test JuMP.value(x) ≈ 4 atol = 1.0e-2
+    @test JuMP.value(y) ≈ 3 atol = 1.0e-2
+end
+
 @testset "Float32" begin
     # model/return in Float64, solve in Float32
     model = JuMP.Model(CoolPDLP.Optimizer)
