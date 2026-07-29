@@ -1,9 +1,7 @@
 using CoolPDLP
 using CoolPDLP: EachInstance, batched_all, batched_expand, batched_mean, batched_similar,
-    batched_zeros, colnorm!!, colsum!!, instance, instance_mat, instance_num, instance_vec,
-    nbinstances
+    batched_zeros, instance, instance_mat, instance_num, instance_vec, nbinstances
 using JLArrays
-using LinearAlgebra
 using Random
 using Test
 
@@ -56,19 +54,6 @@ end
     @test batched_zeros(jl(v), 5, 3, Val(true)) isa JLArray{Float64, 2}
     @test @inferred(batched_zeros(v, 5, 3, Val(false))) isa Vector{Float64}
     @test @inferred(batched_zeros(v, 5, 3, Val(true))) isa Matrix{Float64}
-end
-
-@testset "Column reductions" begin
-    v, m = randn(4), randn(4, 3)
-
-    @test colnorm!!(0.0, v) ≈ norm(v)
-    @test colsum!!(0.0, v) ≈ sum(v)
-
-    dest = zeros(3)
-    @test colnorm!!(dest, m) === dest
-    @test dest ≈ norm.(eachcol(m))
-    @test colsum!!(dest, m) === dest
-    @test dest ≈ sum.(eachcol(m))
 end
 
 @testset "EachInstance of a batched MILP" begin
