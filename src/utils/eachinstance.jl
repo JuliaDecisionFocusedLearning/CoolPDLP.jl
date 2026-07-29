@@ -100,26 +100,3 @@ Average a per-instance quantity over all the instances, yielding a single number
 """
 batched_mean(val::Number) = val
 batched_mean(val::AbstractVector) = sum(val) / length(val)
-
-"""
-    colnorm!!(dest, x)
-
-Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, into `dest`.
-"""
-colnorm!!(::Number, v::AbstractVector) = norm(v)
-function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
-    sum!(abs2, transpose(dest), m)
-    dest .= sqrt.(dest)
-    return dest
-end
-
-"""
-    colsum!!(dest, x)
-
-Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
-"""
-colsum!!(::Number, v::AbstractVector) = sum(v)
-function colsum!!(dest::AbstractVector, m::AbstractMatrix)
-    sum!(transpose(dest), m)
-    return dest
-end
