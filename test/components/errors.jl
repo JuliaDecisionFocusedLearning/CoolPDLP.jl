@@ -36,3 +36,25 @@ end
 @testset "Invariance by preconditioning" begin
     @test err_p ≈ err
 end
+
+@testset "Error display" begin
+    nbatch = 3
+    batch(v) = repeat(v, 1, nbatch)
+    milp_batch = MILP(;
+        c = batch(c), lv = batch(lv), uv = batch(uv), A, At,
+        lc = batch(lc), uc = batch(uc),
+    )
+    sol_batch = PrimalDualSolution(batch(x), batch(y))
+    err_batch = CoolPDLP.kkt_errors!(
+        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch
+    )
+
+    str, str_batch = sprint(show, err), sprint(show, err_batch)
+    @test startswith(str, "KKT relative errors: ")
+    @test startswith(str_batch, "KKT relative errors: ")
+    # a single value per error without batching, one per instance with it
+    @test !occursin('[', str)
+    lists = [m.match for m in eachmatch(r"\[[^\]]*\]", str_batch)]
+    @test length(lists) == 3
+    @test all(list -> count(==(','), list) == nbatch - 1, lists)
+end

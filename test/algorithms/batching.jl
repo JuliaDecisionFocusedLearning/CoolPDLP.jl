@@ -1,6 +1,6 @@
 using CoolPDLP
 using CoolPDLP: EachInstance, KKTErrors, Scratch, instance, nbinstances, initialize, kkt_errors!,
-    relative, step!
+    primal_weight_update!!, prog_showvalues, relative, step!
 using LinearAlgebra
 using Random
 using SparseArrays
@@ -58,6 +58,32 @@ end
         @test η[i] ≈ state.step_sizes.η
         @test ω[i] ≈ state.step_sizes.ω
         @test instance(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
+    end
+end
+
+@testset "Primal weight left alone without movement" begin
+    algo = PDLP()
+    state = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())
+    ω = copy(state.step_sizes.ω)
+    # the candidate sits exactly on the restart point, so there is nothing to learn from it
+    updated = primal_weight_update!!(
+        state.scratch, state.step_sizes, state.sol, state.sol, algo.step_size
+    )
+    @test updated == ω
+end
+
+@testset "Progress values per column" begin
+    algo = PDLP()
+    @testset "batch size $(size(sol.x, 2))" for (milp, sol) in
+        ((milps[1], sols[1]), (milp_batch, sol_batch))
+        state = initialize(milp, copy(sol), algo; starting_time = time())
+        kkt_errors!(state.stats.err, state.scratch, state.sol, milp)
+        values = prog_showvalues(state)
+        @test map(first, values) == ("primal", "dual", "gap")
+        for (_, value) in values
+            @test length(value) == nbinstances(state)
+            @test all(isfinite.(value))
+        end
     end
 end
 

@@ -47,6 +47,8 @@ end
 
     @test size(A_batched) == (A_csr.m, A_csr.n, batches)
     @test nnz(A_batched) == length(A_csr.nzval) * batches
+    @test nonzeros(A_batched) === A_batched.nzval
+    @test nonzeros(A_csr) === A_csr.nzval
 
     for k in 1:batches
         slice = view(A_batched, :, :, k)
