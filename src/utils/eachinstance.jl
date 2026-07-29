@@ -1,4 +1,15 @@
+"""
+    nbinstances(x)
+
+Return the number of problem instances batched inside `x`.
+"""
 function nbinstances end
+
+"""
+    instance(x, i)
+
+Return the `i`-th instance of the batch held by `x`, sharing its memory whenever possible.
+"""
 function instance end
 
 struct EachInstance{ElTy, T} <: AbstractVector{ElTy}
