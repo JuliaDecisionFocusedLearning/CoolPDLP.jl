@@ -107,11 +107,11 @@ function sametype_transpose(A::GPUSparseMatrixCSR)
 end
 
 @kernel function spmv_csr!(
-        c::AbstractVector{T},
+        c::DenseVector{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::AbstractVector{T},
-        b::AbstractVector{T},
+        b::DenseVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -143,9 +143,9 @@ end
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractVector{T},
+        c::DenseVector{T},
         A::GPUSparseMatrixCSR{T},
-        b::AbstractVector{T},
+        b::DenseVector{T},
         α::Number,
         β::Number
     ) where {T <: Number}
@@ -169,11 +169,11 @@ function LinearAlgebra.mul!(
 end
 
 @kernel function spmm_csr!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::AbstractVector{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -205,9 +205,9 @@ end
 end
 
 function LinearAlgebra.mul!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A::GPUSparseMatrixCSR{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
         β::Number
     ) where {T <: Number}
