@@ -48,12 +48,8 @@ jobs:
         with:
           coverage: ${{ matrix.group != 'Perf' }}
       - uses: julia-actions/julia-processcoverage@v1
-        if: matrix.group != 'Perf'
       - uses: codecov/codecov-action@v7
-        if: matrix.group != 'Perf'
         with:
           files: lcov.info
-          # one flag per group, so that the uploads can be told apart and merged
-          flags: ${{ matrix.group }}-julia-${{ matrix.version }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
