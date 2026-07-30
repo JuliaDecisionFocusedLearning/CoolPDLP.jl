@@ -17,7 +17,7 @@ milps = map(milps_init) do m
 end
 sols = map(PrimalDualSolution, milps)
 
-stack_batch(f) = reduce(hcat, map(f, milps))
+stack_batch(f) = stack(f, milps)
 milp_batch = MILP(;
     c = stack_batch(m -> m.c),
     lv = stack_batch(m -> m.lv),

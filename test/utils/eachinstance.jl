@@ -61,7 +61,7 @@ end
     milps = [CoolPDLP.random_milp_and_sol(5, 8, 0.5)[1] for _ in 1:nbatch]
     A, int_var = milps[1].A, milps[1].int_var
     milps = map(m -> MILP(; m.c, m.lv, m.uv, A, m.lc, m.uc, int_var), milps)
-    stack_batch(f) = reduce(hcat, map(f, milps))
+    stack_batch(f) = stack(f, milps)
     milp_batch = MILP(;
         c = stack_batch(m -> m.c),
         lv = stack_batch(m -> m.lv),

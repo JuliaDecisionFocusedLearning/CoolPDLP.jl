@@ -22,7 +22,7 @@ function test_batching(matrix_type, backend; nbatch = 3)
         MILP(; c = m.c, lv = m.lv, uv = m.uv, A, lc = m.lc, uc = m.uc, int_var)
     end
 
-    stack_batch(f) = reduce(hcat, map(f, milps))
+    stack_batch(f) = stack(f, milps)
     milp_batch = MILP(;
         c = stack_batch(m -> m.c),
         lv = stack_batch(m -> m.lv),
