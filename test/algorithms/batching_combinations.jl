@@ -130,6 +130,20 @@ end
         end
     end
 
+    @testset "Display" begin
+        str = sprint(show, milp_batch)
+        @test startswith(str, "MILP instance")
+        # the counts describe one instance, not the whole batch
+        @test occursin("- constraints: $(nbcons(milps[1]))", str)
+        @test occursin("- nonzeros: $(nnz(milps[1].A))", str)
+        if :consbounds in batched
+            @test !occursin("equalities", str)
+            @test_throws ArgumentError nbcons_eq(milp_batch)
+        else
+            @test occursin("- $(nbcons_eq(milps[1])) equalities", str)
+        end
+    end
+
     @testset "KKT errors per instance" begin
         err_batch = kkt_errors!(KKTErrors(sol_batch), Scratch(sol_batch), sol_batch, milp_batch)
         @test err_batch.primal isa Vector{Float64}

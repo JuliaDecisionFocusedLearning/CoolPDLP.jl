@@ -72,6 +72,27 @@ end
     end
 end
 
+@testset "Batched constraint counts" begin
+    nbatch = 3
+    A = sparse([1.0 0.0; 0.0 1.0; 1.0 1.0; 1.0 -1.0])
+    lc, uc = [1.0, 2.0, -Inf, 0.0], [1.0, 2.0, 5.0, 3.0]
+    c, lv, uv = [1.0, 1.0], zeros(2), fill(10.0, 2)
+    milp = MILP(; c, lv, uv, A, lc, uc)
+    milp_obj = MILP(; c = repeat(c, 1, nbatch), lv, uv, A, lc, uc)
+    milp_cons = MILP(;
+        c, lv, uv, A, lc = repeat(lc, 1, nbatch), uc = repeat(uc, 1, nbatch),
+    )
+
+    @test nbcons(milp) == nbcons(milp_obj) == nbcons(milp_cons) == 4
+    @test nbcons_eq(milp) == nbcons_eq(milp_obj) == 2
+    @test nbcons_ineq(milp) == nbcons_ineq(milp_obj) == 2
+    # the split between equalities and inequalities may vary across a batch
+    @test_throws ArgumentError nbcons_eq(milp_cons)
+    @test_throws ArgumentError nbcons_ineq(milp_cons)
+    @test !occursin("equalities", string(milp_cons))
+    @test occursin("2 equalities", string(milp_obj))
+end
+
 @testset "Compare against JuMP" begin
     function jump_nbcons(model)
         eq, ineq = 0, 0

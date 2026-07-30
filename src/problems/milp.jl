@@ -154,7 +154,7 @@ function MILP(qps::QPSData; kwargs...)
 end
 
 function Base.show(io::IO, milp::MILP{T, Vo, Vv, Vc, V, M, Mt}) where {T, Vo, Vv, Vc, V, M, Mt}
-    return print(
+    print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
@@ -164,11 +164,14 @@ function Base.show(io::IO, milp::MILP{T, Vo, Vv, Vc, V, M, Mt}) where {T, Vo, Vv
         - variables: $(nbvar(milp))
           - $(nbvar_cont(milp)) continuous
           - $(nbvar_int(milp)) integer
-        - constraints: $(nbcons(milp))
-          - $(nbcons_ineq(milp)) inequalities
-          - $(nbcons_eq(milp)) equalities
-        - nonzeros: $(mynnz(milp.A))"""
+        - constraints: $(nbcons(milp))"""
     )
+    if ndims(milp.lc) == 1
+        print(io, "\n  - $(nbcons_ineq(milp)) inequalities")
+        print(io, "\n  - $(nbcons_eq(milp)) equalities")
+    end
+    print(io, "\n- nonzeros: $(mynnz(milp.A))")
+    return nothing
 end
 
 KernelAbstractions.get_backend(milp::MILP) = get_backend(milp.c)
@@ -205,8 +208,19 @@ nbcons(milp::MILP) = size(milp.A, 1)
     nbcons_eq(milp)
 
 Return the number of equality constraints in `milp`.
+
+Throw an `ArgumentError` if the constraint bounds of `milp` are batched, since the number may then differ from one instance to the next.
 """
-nbcons_eq(milp::MILP) = mapreduce(==, +, milp.lc, milp.uc)
+function nbcons_eq(milp::MILP)
+    if ndims(milp.lc) > 1
+        throw(
+            ArgumentError(
+                "Cannot count equality constraints with batched constraint bounds, pick a single instance first"
+            )
+        )
+    end
+    return mapreduce(==, +, milp.lc, milp.uc)
+end
 
 """
     nbcons_ineq(milp)
