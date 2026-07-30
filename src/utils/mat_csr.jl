@@ -124,12 +124,22 @@ end
     c[i] = α * s + β * c[i]
 end
 
-@kernel function spbmv_csr!(
+"""
+    batchval(v, k, batch_idx)
+
+Read entry `k` of the `batch_idx`-th instance of `v`, which holds either one value per instance or a single value shared by the whole batch.
+
+Both methods resolve at compile time, so a kernel using them costs the same as one indexing its operands directly.
+"""
+@inline batchval(v::AbstractVector, k, ::Integer) = v[k]
+@inline batchval(m::AbstractMatrix, k, batch_idx::Integer) = m[k, batch_idx]
+
+@kernel function spmm_csr!(
         c::DenseMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
-        A_nzval::DenseMatrix{T},
-        b::DenseVector{T},
+        A_nzval::AbstractVecOrMat{T},
+        b::AbstractVecOrMat{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -137,7 +147,7 @@ end
     s = zero(T)
     for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
         j = A_colval[k]
-        s += A_nzval[k, batch_idx] * b[j]
+        s += batchval(A_nzval, k, batch_idx) * batchval(b, j, batch_idx)
     end
     c[i, batch_idx] = α * s + β * c[i, batch_idx]
 end
@@ -163,45 +173,9 @@ function LinearAlgebra.mul!(
         β::Number
     ) where {T <: Number, Ti, M <: DenseMatrix{T}, V <: DenseVector{T}}
     backend = common_backend(c, A, b)
-    kernel! = spbmv_csr!(backend)
+    kernel! = spmm_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
     return c
-end
-
-@kernel function spmm_csr!(
-        c::DenseMatrix{T},
-        A_rowptr::DenseVector{Ti},
-        A_colval::DenseVector{Ti},
-        A_nzval::AbstractVector{T},
-        b::DenseMatrix{T},
-        α::Number,
-        β::Number
-    ) where {T, Ti}
-    i, batch_idx = @index(Global, NTuple)
-    s = zero(T)
-    for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
-        j = A_colval[k]
-        s += A_nzval[k] * b[j, batch_idx]
-    end
-    c[i, batch_idx] = α * s + β * c[i, batch_idx]
-end
-
-@kernel function spbmm_csr!(
-        c::DenseMatrix{T},
-        A_rowptr::DenseVector{Ti},
-        A_colval::DenseVector{Ti},
-        A_nzval::DenseMatrix{T},
-        b::DenseMatrix{T},
-        α::Number,
-        β::Number
-    ) where {T, Ti}
-    i, batch_idx = @index(Global, NTuple)
-    s = zero(T)
-    for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
-        j = A_colval[k]
-        s += A_nzval[k, batch_idx] * b[j, batch_idx]
-    end
-    c[i, batch_idx] = α * s + β * c[i, batch_idx]
 end
 
 function LinearAlgebra.mul!(
@@ -225,7 +199,7 @@ function LinearAlgebra.mul!(
         β::Number
     ) where {T <: Number, Ti, M <: DenseMatrix{T}}
     backend = common_backend(c, A, b)
-    kernel! = spbmm_csr!(backend)
+    kernel! = spmm_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
     return c
 end
