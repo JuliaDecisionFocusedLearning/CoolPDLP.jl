@@ -78,19 +78,12 @@ struct MILP{
             throw(DimensionMismatch("Variable size not consistent"))
         elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2))
             throw(DimensionMismatch("Constraint size not consistent"))
-        else
-            size(lv, 2) == size(uv, 2) || throw(DimensionMismatch("Batch size not consistent"))
-            size(lc, 2) == size(uc, 2) || throw(DimensionMismatch("Batch size not consistent"))
-            size(A, 3) == size(At, 3) || throw(DimensionMismatch("Batch size not consistent"))
-            nbinst = 1
-            for nb in (size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
-                nb == 1 && continue
-                if nbinst == 1
-                    nbinst = nb
-                elseif nbinst != nb
-                    throw(DimensionMismatch("Batch size not consistent"))
-                end
-            end
+            # each pair of bounds, and the matrix with its transpose, must be batched together
+        elseif !(size(lv, 2) == size(uv, 2) && size(lc, 2) == size(uc, 2) && size(A, 3) == size(At, 3))
+            throw(DimensionMismatch("Batch size not consistent"))
+            # whatever is batched must agree on the number of instances
+        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, lc, A)))
+            throw(DimensionMismatch("Batch size not consistent"))
         end
 
         T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
@@ -249,9 +242,14 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
     )
 end
 
-function nbinstances((; c, lv, lc, A)::MILP)
-    return max(size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
-end
+"""
+    batch_sizes(c, lv, lc, A)
+
+Return the number of instances carried by each field group of a [`MILP`](@ref) which can be batched, `1` meaning shared by the whole batch.
+"""
+batch_sizes(c, lv, lc, A) = (size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
+
+nbinstances((; c, lv, lc, A)::MILP) = maximum(batch_sizes(c, lv, lc, A))
 
 """
     isbatched(milp)

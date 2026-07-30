@@ -49,7 +49,7 @@ Return `val` itself if the array `x` is not batched, or one copy of `val` per in
 """
 batched_expand(::AbstractVector, val::Number) = val
 function batched_expand(x::AbstractMatrix, val::Number)
-    return fill!(allocate(get_backend(x), typeof(val), size(x, 2)), val)
+    return fill!(similar(x, typeof(val), size(x, 2)), val)
 end
 batched_expand(x::AbstractMatrix, val::AbstractVector) = adapt(get_backend(x), val)
 
