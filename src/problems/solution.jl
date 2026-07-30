@@ -1,7 +1,7 @@
 """
     is_feasible(x, milp[; cons_tol=1e-6, int_tol=1e-5, verbose=true])
 
-Check whether solution vector `x` is feasible for `milp`.
+Check whether solution vector `x` is feasible for `milp`, returning one verdict per column if `x` holds a batch of solutions.
 
 # Keyword arguments
 
@@ -9,8 +9,15 @@ Check whether solution vector `x` is feasible for `milp`.
 - `int_tol`: tolerance for integrality requirements
 - `verbose`: whether to display warnings
 """
+function is_feasible(x::AbstractMatrix, milp::MILP; kwargs...)
+    # a copy rather than a view, because the matrix-vector kernels need a dense vector
+    return map(axes(x, 2)) do i
+        is_feasible(x[:, i], instance(milp, i); kwargs...)
+    end
+end
+
 function is_feasible(
-        x, milp::MILP;
+        x::AbstractVector, milp::MILP;
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
     )
     (; lv, uv, A, lc, uc, int_var) = milp

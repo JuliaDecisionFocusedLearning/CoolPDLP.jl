@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, isbatched, nbinstances
+using CoolPDLP: BatchedGPUSparseMatrixCSR, instance, isbatched, nbinstances
 using HiGHS: HiGHS
 using JLArrays
 using LinearAlgebra
@@ -68,6 +68,45 @@ end
     @testset "solve keeps the batch" begin
         milp = MILP(; single..., c = batch(single.c), A, int_var)
         @test size(solve(milp, PDLP(; max_kkt_passes = 100))[1].x) == (6, nbatch)
+    end
+end
+
+@testset "Feasibility of a batch" begin
+    nbatch = 3
+    c, lv, uv = [1.0, 2.0], zeros(2), 2 .* ones(2)
+    A, At = sparse([1.0 1.0]), sparse(reshape([1.0, 1.0], 2, 1))
+    lc, uc = [1.0], [1.0]
+    int_var = [true, false]
+    batch(v) = repeat(v, 1, nbatch)
+    stack_csr(M) = (
+        csr = GPUSparseMatrixCSR(M);
+        BatchedGPUSparseMatrixCSR(
+            csr.m, csr.n, csr.rowptr, csr.colval, repeat(csr.nzval, 1, nbatch)
+        )
+    )
+
+    # one feasible column, then a bound violation, then a constraint violation
+    x = [1.0 2.0 0.0; 0.0 -1.0 0.0]
+
+    @testset "$name" for (name, kw) in (
+            "objective" => (; c = batch(c), lv, uv, A, At, lc, uc),
+            "variable bounds" => (; c, lv = batch(lv), uv = batch(uv), A, At, lc, uc),
+            "constraint bounds" => (; c, lv, uv, A, At, lc = batch(lc), uc = batch(uc)),
+            "matrix" => (; c, lv, uv, A = stack_csr(A), At = stack_csr(At), lc, uc),
+        )
+        milp = MILP(; kw..., int_var)
+        feas = is_feasible(x, milp; verbose = false)
+        @test feas isa Vector{Bool}
+        @test feas == [true, false, false]
+        for i in 1:nbatch
+            @test feas[i] == is_feasible(x[:, i], instance(milp, i); verbose = false)
+        end
+    end
+
+    @testset "warnings" begin
+        milp = MILP(; c = batch(c), lv, uv, A, At, lc, uc, int_var)
+        @test @test_warn "Variable bounds not satisfied" is_feasible(x, milp) ==
+            [true, false, false]
     end
 end
 
