@@ -81,12 +81,13 @@ struct MILP{
         else
             size(lv, 2) == size(uv, 2) || throw(DimensionMismatch("Batch size not consistent"))
             size(lc, 2) == size(uc, 2) || throw(DimensionMismatch("Batch size not consistent"))
+            size(A, 3) == size(At, 3) || throw(DimensionMismatch("Batch size not consistent"))
             nbinst = 1
-            for v in (c, lv, lc)
-                size(v, 2) == 1 && continue
+            for nb in (size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
+                nb == 1 && continue
                 if nbinst == 1
-                    nbinst = size(v, 2)
-                elseif nbinst != size(v, 2)
+                    nbinst = nb
+                elseif nbinst != nb
                     throw(DimensionMismatch("Batch size not consistent"))
                 end
             end

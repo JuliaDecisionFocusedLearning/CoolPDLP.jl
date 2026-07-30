@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: instance
+using CoolPDLP: BatchedGPUSparseMatrixCSR, GPUSparseMatrixCSR, instance
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -52,6 +52,22 @@ using Test
     )
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 2),
+    )
+    # the batch dimension of the constraint matrix counts too
+    stack_csr(M, nb) = (
+        csr = GPUSparseMatrixCSR(M);
+        BatchedGPUSparseMatrixCSR(
+            csr.m, csr.n, csr.rowptr, csr.colval, repeat(csr.nzval, 1, nb)
+        )
+    )
+    @test_nowarn MILP(;
+        c = repeat(c, 1, 3), lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 3), lc, uc,
+    )
+    @test_throws DimensionMismatch MILP(;
+        c = repeat(c, 1, 5), lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 3), lc, uc,
+    )
+    @test_throws DimensionMismatch MILP(;
+        c, lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 2), lc, uc,
     )
 end
 
