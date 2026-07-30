@@ -63,6 +63,14 @@ end
     @test dest ≈ sum.(eachcol(m))
 end
 
+@testset "Nonzero count" begin
+    A = sprand(10, 8, 0.4)
+    @test CoolPDLP.mynnz(A) == nnz(A)
+    @test CoolPDLP.mynnz(Matrix(A)) == 80
+    # a batched matrix reports the count of a single instance
+    @test CoolPDLP.mynnz(randn(10, 8, 3)) == 80
+end
+
 @testset "Column norm" begin
     A = sprand(10, 10, 0.6)
     for j in axes(A, 2)

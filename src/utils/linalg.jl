@@ -158,5 +158,6 @@ column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(
 
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
+mynnz(A::AbstractArray{<:Number, 3}) = mynnz(instance_mat(A, 1))
 
 indtype(::AbstractSparseMatrix{T, Ti}) where {T, Ti} = Ti

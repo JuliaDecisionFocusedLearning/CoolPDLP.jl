@@ -1,5 +1,5 @@
 using Adapt
-using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR, spectral_norm
+using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR, mynnz, spectral_norm
 using GPUArraysCore
 using JLArrays
 using KernelAbstractions
@@ -47,6 +47,7 @@ end
 
     @test size(A_batched) == (A_csr.m, A_csr.n, batches)
     @test nnz(A_batched) == length(A_csr.nzval) * batches
+    @test mynnz(A_batched) == length(A_csr.nzval)
     @test nonzeros(A_batched) === A_batched.nzval
     @test nonzeros(A_csr) === A_csr.nzval
 
