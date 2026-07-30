@@ -1,4 +1,4 @@
-@kwdef struct Scratch{T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber, C <: Union{Bool, AbstractVector{Bool}}}
+@kwdef struct Scratch{T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber}
     "primal scratch (length `nvar`)"
     x::V
     "dual scratch (length `ncons`)"
@@ -9,8 +9,6 @@
     b1::S
     "per-column scratch (one entry per batch column)"
     b2::S
-    "per-column condition scratch"
-    cond::C
 end
 
 function Scratch(sol::PrimalDualSolution{T}) where {T}
@@ -20,7 +18,6 @@ function Scratch(sol::PrimalDualSolution{T}) where {T}
         similar(sol.x),
         batched_expand(sol.x, zero(T)),
         batched_expand(sol.x, zero(T)),
-        batched_expand(sol.x, false),
     )
 end
 
@@ -32,6 +29,5 @@ function instance(scratch::Scratch, i::Int)
         instance_vec(scratch.z, i),
         instance_num(scratch.b1, i),
         instance_num(scratch.b2, i),
-        instance_num(scratch.cond, i),
     )
 end

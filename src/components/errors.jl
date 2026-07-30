@@ -48,17 +48,6 @@ function Base.isapprox(err1::KKTErrors, err2::KKTErrors; kwargs...)
     )
 end
 
-function KKTErrors(::Type{T}) where {T}
-    return KKTErrors(
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-    )
-end
-
 function KKTErrors(sol::PrimalDualSolution{T}) where {T}
     nan() = batched_expand(sol.x, convert(T, NaN))
     return KKTErrors(nan(), nan(), nan(), nan(), nan(), nan())
@@ -81,22 +70,6 @@ Base.copy(err::KKTErrors) = KKTErrors(
     copy(err.gap),
     copy(err.gap_scale),
 )
-
-"""
-    batched_select!(err, cond, other)
-
-Replace the errors of `err` by those of `other` in the columns where `cond` holds.
-"""
-function batched_select!(err::KKTErrors, cond, other::KKTErrors)
-    pick(e, o) = broadcast!!(ifelse, e, cond, o, e)
-    err.primal = pick(err.primal, other.primal)
-    err.primal_scale = pick(err.primal_scale, other.primal_scale)
-    err.dual = pick(err.dual, other.dual)
-    err.dual_scale = pick(err.dual_scale, other.dual_scale)
-    err.gap = pick(err.gap, other.gap)
-    err.gap_scale = pick(err.gap_scale, other.gap_scale)
-    return err
-end
 
 """
     relative!!(dest, err)

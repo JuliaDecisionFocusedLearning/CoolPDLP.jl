@@ -29,13 +29,9 @@ $(TYPEDFIELDS)
 mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{Bool}}}
     "whether to restart from the average solution, column by column"
     restart_from_avg::B
-    "KKT errors of the restart candidate"
-    err_candidate::KKTErrors{T}
-    "KKT errors of the previous restart candidate"
-    err_candidate_last::KKTErrors{T}
-    "KKT errors at the last restart"
-    err_restart::KKTErrors{T}
-    "buffer for the KKT errors of the discarded candidate"
+    "scratch for the KKT errors of a candidate"
+    err::KKTErrors{T}
+    "scratch for the KKT errors of the candidate it is compared against"
     err_other::KKTErrors{T}
     "absolute error of the restart candidate"
     abs_candidate::T
@@ -43,39 +39,20 @@ mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{
     abs_candidate_last::T
     "absolute error at the last restart"
     abs_restart::T
-
-    function RestartStats(
-            restart_from_avg::B,
-            err_candidate::KKTErrors{T},
-            err_candidate_last::KKTErrors{T},
-            err_restart::KKTErrors{T},
-            err_other::KKTErrors{T},
-            abs_candidate::T,
-            abs_candidate_last::T,
-            abs_restart::T,
-        ) where {T, B}
-        return new{T, B}(
-            restart_from_avg,
-            err_candidate, err_candidate_last, err_restart, err_other,
-            abs_candidate, abs_candidate_last, abs_restart,
-        )
-    end
 end
 
 function RestartStats(sol::PrimalDualSolution{T}) where {T}
     nan() = batched_expand(sol.x, convert(T, NaN))
     return RestartStats(
         batched_expand(sol.x, false),
-        KKTErrors(sol), KKTErrors(sol), KKTErrors(sol), KKTErrors(sol),
+        KKTErrors(sol), KKTErrors(sol),
         nan(), nan(), nan(),
     )
 end
 
 instance(stats::RestartStats, i::Int) = RestartStats(
     instance_num(stats.restart_from_avg, i),
-    instance(stats.err_candidate, i),
-    instance(stats.err_candidate_last, i),
-    instance(stats.err_restart, i),
+    instance(stats.err, i),
     instance(stats.err_other, i),
     instance_num(stats.abs_candidate, i),
     instance_num(stats.abs_candidate_last, i),

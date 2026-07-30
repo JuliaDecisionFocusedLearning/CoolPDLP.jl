@@ -157,42 +157,43 @@ function restart_check!(
         step_sizes, scratch, iteration, restart_stats,
     ) = state
     (; ω) = step_sizes
-    (; err_candidate, err_candidate_last, err_restart, err_other) = restart_stats
+    (; err, err_other) = restart_stats
 
-    restart_stats.restart_from_avg, restart_stats.abs_candidate = best_errors!(
-        err_candidate, err_other, restart_stats.restart_from_avg, restart_stats.abs_candidate,
-        scratch, sol, sol_avg, milp, ω,
+    restart_stats.abs_candidate, abs1, abs2 = best_error!!(
+        restart_stats.abs_candidate, err, err_other, scratch, sol, sol_avg, milp, ω,
     )
-    _, restart_stats.abs_candidate_last = best_errors!(
-        err_candidate_last, err_other, scratch.cond, restart_stats.abs_candidate_last,
+    restart_stats.restart_from_avg = broadcast!!(
+        <=, restart_stats.restart_from_avg, abs2, abs1,
+    )
+    restart_stats.abs_candidate_last, _, _ = best_error!!(
+        restart_stats.abs_candidate_last, err, err_other,
         scratch, sol_last, sol_avg_last, milp, ω,
     )
 
-    kkt_errors!(err_restart, scratch, sol_restart, milp)
-    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
+    kkt_errors!(err, scratch, sol_restart, milp)
+    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err, ω)
 
     return should_restart(restart_stats, iteration, algo.restart)
 end
 
 """
-    best_errors!(err, other, cond, abs_err, scratch, sol1, sol2, milp, ω)
+    best_error!!(abs_err, err, other, scratch, sol1, sol2, milp, ω)
 
-Keep the smaller of the KKT errors of `sol1` and `sol2` inside `err`, column by column.
+Compute the absolute KKT errors of `sol1` and `sol2` column by column, using `err` and `other` as scratch, and keep the smaller of the two in `abs_err`.
 
-Return the columns where `sol2` won and the corresponding absolute errors.
+Return `abs_err` together with both absolute errors, which live in the scratch space and stay valid only until the next call.
 """
-function best_errors!(
-        err::KKTErrors, other::KKTErrors, cond, abs_err,
+function best_error!!(
+        abs_err, err::KKTErrors, other::KKTErrors,
         scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
         milp::MILP, ω::BatchedNumber,
     )
+    # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
     kkt_errors!(err, scratch, sol1, milp)
     kkt_errors!(other, scratch, sol2, milp)
     abs1 = absolute!!(scratch.b1, err, ω)
     abs2 = absolute!!(scratch.b2, other, ω)
-    cond = broadcast!!(<=, cond, abs2, abs1)
-    batched_select!(err, cond, other)
-    return cond, broadcast!!(min, abs_err, abs1, abs2)
+    return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 
 function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
