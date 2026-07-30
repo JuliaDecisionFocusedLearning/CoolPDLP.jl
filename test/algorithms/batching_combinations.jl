@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, EachInstance, GPUSparseMatrixCSR, KKTErrors, Scratch,
+using CoolPDLP: BatchedGPUSparseMatrixCSR, EachInstance, KKTErrors, Scratch,
     initialize, instance, kkt_errors!, nbinstances, relative, sametype_transpose, step!
 using LinearAlgebra
 using Random
@@ -24,19 +24,6 @@ function all_combinations()
 end
 
 combination_name(batched) = isempty(batched) ? "nothing" : join(batched, " + ")
-
-"""
-    batched_csr(As)
-
-Stack matrices sharing a single sparsity pattern into one batched CSR matrix.
-"""
-function batched_csr(As)
-    csrs = map(GPUSparseMatrixCSR, As)
-    ref = first(csrs)
-    @assert all(A -> A.rowptr == ref.rowptr && A.colval == ref.colval, csrs)
-    nzval = reduce(hcat, map(A -> A.nzval, csrs))
-    return BatchedGPUSparseMatrixCSR(ref.m, ref.n, ref.rowptr, ref.colval, nzval)
-end
 
 """
     make_batch(batched)
@@ -74,14 +61,18 @@ function make_batch(batched)
         MILP(; f.c, f.lv, f.uv, f.A, f.lc, f.uc, int_var)
     end
 
-    stack_batch(getter) = reduce(hcat, map(getter, fields))
+    stack_batch(getter) = stack(getter, fields)
     group(g, getter) = g in batched ? stack_batch(getter) : getter(fields[1])
     milp_batch = MILP(;
         c = group(:objective, f -> f.c),
         lv = group(:varbounds, f -> f.lv),
         uv = group(:varbounds, f -> f.uv),
-        A = :matrix in batched ? batched_csr(As) : pattern,
-        At = :matrix in batched ? batched_csr(map(sametype_transpose, As)) : sametype_transpose(pattern),
+        A = :matrix in batched ? BatchedGPUSparseMatrixCSR(As) : pattern,
+        At = if :matrix in batched
+            BatchedGPUSparseMatrixCSR(map(sametype_transpose, As))
+        else
+            sametype_transpose(pattern)
+        end,
         lc = group(:consbounds, f -> f.lc),
         uc = group(:consbounds, f -> f.uc),
         int_var,
@@ -93,7 +84,7 @@ function make_batch(batched)
     sols = map(PrimalDualSolution, xs, ys)
     # unlike the zero solution `PrimalDualSolution(milp_batch)`, this starting point holds a
     # different value in every column
-    sol_batch = PrimalDualSolution(reduce(hcat, xs), reduce(hcat, ys))
+    sol_batch = PrimalDualSolution(stack(xs), stack(ys))
     return milps, sols, milp_batch, sol_batch
 end
 

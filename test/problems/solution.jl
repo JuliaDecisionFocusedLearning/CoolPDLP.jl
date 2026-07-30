@@ -31,10 +31,7 @@ end
     single = (c = randn(6), lv = -ones(6), uv = ones(6), lc = -ones(4), uc = ones(4))
     batch(v) = repeat(v, 1, nbatch)
 
-    A_csr = GPUSparseMatrixCSR(A)
-    A_batched = BatchedGPUSparseMatrixCSR(
-        A_csr.m, A_csr.n, A_csr.rowptr, A_csr.colval, repeat(A_csr.nzval, 1, nbatch)
-    )
+    A_batched = BatchedGPUSparseMatrixCSR(A, nbatch)
 
     # the batch dimension must be picked up from whichever fields carry it
     @testset "$name" for (name, kw) in (
@@ -78,12 +75,6 @@ end
     lc, uc = [1.0], [1.0]
     int_var = [true, false]
     batch(v) = repeat(v, 1, nbatch)
-    stack_csr(M) = (
-        csr = GPUSparseMatrixCSR(M);
-        BatchedGPUSparseMatrixCSR(
-            csr.m, csr.n, csr.rowptr, csr.colval, repeat(csr.nzval, 1, nbatch)
-        )
-    )
 
     # one feasible column, then a bound violation, then a constraint violation
     x = [1.0 2.0 0.0; 0.0 -1.0 0.0]
@@ -92,7 +83,12 @@ end
             "objective" => (; c = batch(c), lv, uv, A, At, lc, uc),
             "variable bounds" => (; c, lv = batch(lv), uv = batch(uv), A, At, lc, uc),
             "constraint bounds" => (; c, lv, uv, A, At, lc = batch(lc), uc = batch(uc)),
-            "matrix" => (; c, lv, uv, A = stack_csr(A), At = stack_csr(At), lc, uc),
+            "matrix" => (;
+                c, lv, uv,
+                A = BatchedGPUSparseMatrixCSR(A, nbatch),
+                At = BatchedGPUSparseMatrixCSR(At, nbatch),
+                lc, uc,
+            ),
         )
         milp = MILP(; kw..., int_var)
         feas = is_feasible(x, milp; verbose = false)

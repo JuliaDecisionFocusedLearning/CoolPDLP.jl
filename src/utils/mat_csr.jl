@@ -93,6 +93,35 @@ function GPUSparseMatrixCSR(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     return GPUSparseMatrixCSR(At_csc.n, At_csc.m, At_csc.colptr, At_csc.rowval, At_csc.nzval)
 end
 
+"""
+    BatchedGPUSparseMatrixCSR(As)
+
+Stack matrices sharing a single sparsity pattern into one batched matrix.
+"""
+function BatchedGPUSparseMatrixCSR(As::AbstractVector{<:AbstractMatrix})
+    ref = GPUSparseMatrixCSR(first(As))
+    nzval = stack(As) do A
+        csr = GPUSparseMatrixCSR(A)
+        if csr.rowptr != ref.rowptr || csr.colval != ref.colval
+            throw(
+                ArgumentError("The instances of a batch must share a single sparsity pattern")
+            )
+        end
+        return csr.nzval
+    end
+    return BatchedGPUSparseMatrixCSR(ref.m, ref.n, ref.rowptr, ref.colval, nzval)
+end
+
+"""
+    BatchedGPUSparseMatrixCSR(A, nbinstances)
+
+Repeat `A` into a batch of `nbinstances` identical matrices.
+"""
+function BatchedGPUSparseMatrixCSR(A::AbstractMatrix, nbinstances::Integer)
+    (; m, n, rowptr, colval, nzval) = GPUSparseMatrixCSR(A)
+    return BatchedGPUSparseMatrixCSR(m, n, rowptr, colval, repeat(nzval, 1, nbinstances))
+end
+
 function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCSR)
     At_csc = SparseMatrixCSC(A.n, A.m, Vector(A.rowptr), Vector(A.colval), Vector(A.nzval))
     return SparseMatrixCSC(transpose(At_csc))

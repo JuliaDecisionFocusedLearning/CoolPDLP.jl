@@ -28,7 +28,7 @@ end
     A_jl = adapt(JLBackend(), A_csr)
     rhs_jl = jl(rhs)
     lhs_jl = jl(lhs)
-    expected = α * dense_from_csr(A_csr.m, A_csr.n, A_csr.rowptr, A_csr.colval, A_csr.nzval) * rhs + β * lhs
+    expected = α * A * rhs + β * lhs
 
     @test mul!(copy(lhs_jl), A_jl, rhs_jl, α, β) ≈ expected
 end
@@ -75,15 +75,8 @@ end
     As = map(1:batches) do _
         SparseMatrixCSC(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), rand(rng, nnz(pattern)))
     end
-    function stack_csr(Ms)
-        csrs = map(GPUSparseMatrixCSR, Ms)
-        ref = first(csrs)
-        return BatchedGPUSparseMatrixCSR(
-            ref.m, ref.n, ref.rowptr, ref.colval, reduce(hcat, map(A -> A.nzval, csrs))
-        )
-    end
-    A_batched = stack_csr(As)
-    At_batched = stack_csr(map(A -> SparseMatrixCSC(transpose(A)), As))
+    A_batched = BatchedGPUSparseMatrixCSR(As)
+    At_batched = BatchedGPUSparseMatrixCSR(map(A -> SparseMatrixCSC(transpose(A)), As))
     rhs = rand(rng, size(pattern, 2))
 
     # unlike a GPU slice, a CPU one is a `SubArray` rather than a `DenseVector`

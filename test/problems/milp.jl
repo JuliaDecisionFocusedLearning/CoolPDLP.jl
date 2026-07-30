@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, GPUSparseMatrixCSR, instance
+using CoolPDLP: BatchedGPUSparseMatrixCSR, instance
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -54,20 +54,15 @@ using Test
         c, lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 2),
     )
     # the batch dimension of the constraint matrix counts too
-    stack_csr(M, nb) = (
-        csr = GPUSparseMatrixCSR(M);
-        BatchedGPUSparseMatrixCSR(
-            csr.m, csr.n, csr.rowptr, csr.colval, repeat(csr.nzval, 1, nb)
-        )
-    )
+    A3, At3 = BatchedGPUSparseMatrixCSR(A, 3), BatchedGPUSparseMatrixCSR(At, 3)
     @test_nowarn MILP(;
-        c = repeat(c, 1, 3), lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 3), lc, uc,
+        c = repeat(c, 1, 3), lv, uv, A = A3, At = At3, lc, uc,
     )
     @test_throws DimensionMismatch MILP(;
-        c = repeat(c, 1, 5), lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 3), lc, uc,
+        c = repeat(c, 1, 5), lv, uv, A = A3, At = At3, lc, uc,
     )
     @test_throws DimensionMismatch MILP(;
-        c, lv, uv, A = stack_csr(A, 3), At = stack_csr(At, 2), lc, uc,
+        c, lv, uv, A = A3, At = BatchedGPUSparseMatrixCSR(At, 2), lc, uc,
     )
 end
 
@@ -75,7 +70,7 @@ end
     nbatch = 3
     milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
     milp_batch = MILP(;
-        c = reduce(hcat, [k .* milp.c for k in 1:nbatch]),
+        c = stack(k -> k .* milp.c, 1:nbatch),
         milp.lv, milp.uv, milp.A, milp.lc, milp.uc, milp.int_var,
     )
     x = randn(nbvar(milp), nbatch)
