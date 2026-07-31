@@ -8,11 +8,16 @@ using Test
 include("../fixtures.jl")
 
 """
-    test_batching(matrix_type, backend; nbatch = 3)
+    test_batching(matrix_type, backend; nbatch=3, broken=false)
 
 Check that a batch of problems living on `backend` behaves like the same problems handled one at a time.
+
+Pass `broken` for a backend which cannot reduce into a `Transpose` destination, which the
+column reductions need. Only JLArrays is in that case, and only until
+<https://github.com/JuliaGPU/GPUArrays.jl/pull/754> is released: to undo, delete the keyword
+argument and every other line mentioning `broken`, here and in `runtests.jl`.
 """
-function test_batching(matrix_type, backend; nbatch = 3)
+function test_batching(matrix_type, backend; nbatch = 3, broken = false)
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(
         20, 30, 0.4, nbatch; batched = filter(!=(:A), BATCHABLE)
@@ -37,7 +42,8 @@ function test_batching(matrix_type, backend; nbatch = 3)
         end
     end
 
-    @testset "KKT errors per instance" begin
+    broken && @test_broken kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev) isa KKTErrors
+    broken || @testset "KKT errors per instance" begin
         err_batch = kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev)
         @test length(err_batch.primal) == nbatch
         rel_batch = Array(relative(err_batch))
@@ -73,17 +79,19 @@ function test_batching(matrix_type, backend; nbatch = 3)
         end
     end
 
-    @testset "Identical batch matches single solve" begin
-        repeat_batch(v) = repeat(v, 1, nbatch)
-        milp_id = MILP(;
-            c = repeat_batch(milps[1].c),
-            lv = repeat_batch(milps[1].lv),
-            uv = repeat_batch(milps[1].uv),
-            milps[1].A,
-            lc = repeat_batch(milps[1].lc),
-            uc = repeat_batch(milps[1].uc),
-            milps[1].int_var,
-        )
+    # every instance of this batch holds the first problem, so it must solve like it alone
+    repeat_batch(v) = repeat(v, 1, nbatch)
+    milp_id = MILP(;
+        c = repeat_batch(milps[1].c),
+        lv = repeat_batch(milps[1].lv),
+        uv = repeat_batch(milps[1].uv),
+        milps[1].A,
+        lc = repeat_batch(milps[1].lc),
+        uc = repeat_batch(milps[1].uc),
+        milps[1].int_var,
+    )
+    broken && @test_broken solve(milp_id, PDHG(Float64, Int, matrix_type; backend)) isa Tuple
+    broken || @testset "Identical batch matches single solve" begin
         @testset "$alg" for alg in (PDHG, PDLP)
             algo_solve = alg(Float64, Int, matrix_type; backend, max_kkt_passes = 200)
             sol, stats = solve(milp_id, algo_solve)

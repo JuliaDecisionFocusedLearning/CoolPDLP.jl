@@ -27,6 +27,10 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
                 end
             end
         end
+        @testset "Batching on JLArrays" begin
+            # `broken = true` goes away with https://github.com/JuliaGPU/GPUArrays.jl/pull/754
+            test_batching(GPUSparseMatrixCSR, JLBackend(); broken = true)
+        end
     end
     if GROUP == "MOI" || isnothing(GROUP)
         @testset "MOI Wrapper" begin
