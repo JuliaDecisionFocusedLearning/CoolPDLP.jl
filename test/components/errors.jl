@@ -40,10 +40,7 @@ end
 @testset "Error display" begin
     nbatch = 3
     batch(v) = repeat(v, 1, nbatch)
-    milp_batch = MILP(;
-        c = batch(c), lv = batch(lv), uv = batch(uv), A, At,
-        lc = batch(lc), uc = batch(uc),
-    )
+    milp_batch = MILP(; c = batch(c), lv, uv, A, At, lc, uc)
     sol_batch = PrimalDualSolution(batch(x), batch(y))
     err_batch = CoolPDLP.kkt_errors!(
         CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch

@@ -75,7 +75,6 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A = A3, At = BatchedGPUSparseMatrixCSR(At, 2), lc, uc,
     )
-    # a batched transpose is derived like any other
     milp3 = MILP(; c = repeat(c, 1, 3), lv, uv, A = A3, lc, uc)
     @test nonzeros(milp3.At) ≈ nonzeros(At3)
 end
@@ -153,6 +152,16 @@ end;
     qps, path = read_instance(Netlib, "seba")
     milp = MILP(qps; path, name = "seba")
     @test startswith(string(milp), "MILP instance seba")
+
+    nbatch = 3
+    milp_batch = MILP(;
+        milp.c, milp.lv, milp.uv, A = BatchedGPUSparseMatrixCSR(milp.A, nbatch),
+        milp.lc, milp.uc, milp.int_var, milp.var_names,
+    )
+    str = string(milp_batch)
+    # the counts describe one instance, not the whole batch
+    @test occursin("- constraints: $(nbcons(milp))", str)
+    @test occursin("- nonzeros: $(nnz(milp.A))", str)
 end
 
 @testset "Approx" begin

@@ -1,11 +1,13 @@
 using Chairmarks
 using CoolPDLP
-using CoolPDLP: restart!, restart_check!, step!, termination_check!
+using CoolPDLP: nbinstances, restart!, restart_check!, step!, termination_check!
 using MathOptBenchmarkInstances
 using ProgressMeter
 using Random
 using SparseArrays
 using Test
+
+include("fixtures.jl")
 
 prepstate(milp, algo) = initialize(
     milp, PrimalDualSolution(milp), algo; starting_time = time()
@@ -42,32 +44,11 @@ end
 
 @testset verbose = true "Allocation-free iterations" begin
     Random.seed!(0)
-    nbatch = 3
-
-    # several problems sharing the same constraint matrix, but with their own objective and bounds
-    milps_init = [CoolPDLP.random_milp_and_sol(20, 30, 0.4)[1] for _ in 1:nbatch]
-    A, int_var = milps_init[1].A, milps_init[1].int_var
-    milps = map(milps_init) do m
-        MILP(; c = m.c, lv = m.lv, uv = m.uv, A, lc = m.lc, uc = m.uc, int_var)
-    end
-    sols = map(PrimalDualSolution, milps)
-
-    stack_batch(f) = stack(f, milps)
-    milp_batch = MILP(;
-        c = stack_batch(m -> m.c),
-        lv = stack_batch(m -> m.lv),
-        uv = stack_batch(m -> m.uv),
-        A,
-        lc = stack_batch(m -> m.lc),
-        uc = stack_batch(m -> m.uc),
-        int_var,
-    )
-    sol_batch = PrimalDualSolution(milp_batch)
+    milps, milp_batch = random_milp_batch(20, 30, 0.4, 3; batched = filter(!=(:A), BATCHABLE))
 
     algo = PDLP(; record_error_history = false)
-    @testset "batch size $(size(sol.x, 2))" for (milp, sol) in
-        ((milps[1], sols[1]), (milp_batch, sol_batch))
-        state = initialize(milp, copy(sol), algo; starting_time = time())
+    @testset "batch size $(nbinstances(milp))" for milp in (milps[1], milp_batch)
+        state = initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
         @test iteration_allocations(state, milp, algo) == 0
     end
 end

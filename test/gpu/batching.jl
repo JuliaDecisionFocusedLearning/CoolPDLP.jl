@@ -2,10 +2,10 @@ using CoolPDLP
 using CoolPDLP: EachInstance, KKTErrors, Scratch, initialize, instance, kkt_errors!,
     nbinstances, preprocess, relative, step!
 using GPUArraysCore: @allowscalar
-using LinearAlgebra
 using Random
-using SparseArrays
 using Test
+
+include("../fixtures.jl")
 
 """
     test_batching(matrix_type, backend; nbatch = 3)
@@ -14,23 +14,8 @@ Check that a batch of problems living on `backend` behaves like the same problem
 """
 function test_batching(matrix_type, backend; nbatch = 3)
     Random.seed!(0)
-
-    # several problems sharing the same constraint matrix, but with their own objective and bounds
-    milps_init = [CoolPDLP.random_milp_and_sol(20, 30, 0.4)[1] for _ in 1:nbatch]
-    A, int_var = milps_init[1].A, milps_init[1].int_var
-    milps = map(milps_init) do m
-        MILP(; c = m.c, lv = m.lv, uv = m.uv, A, lc = m.lc, uc = m.uc, int_var)
-    end
-
-    stack_batch(f) = stack(f, milps)
-    milp_batch = MILP(;
-        c = stack_batch(m -> m.c),
-        lv = stack_batch(m -> m.lv),
-        uv = stack_batch(m -> m.uv),
-        A,
-        lc = stack_batch(m -> m.lc),
-        uc = stack_batch(m -> m.uc),
-        int_var,
+    milps, milp_batch = random_milp_batch(
+        20, 30, 0.4, nbatch; batched = filter(!=(:A), BATCHABLE)
     )
 
     algo = PDHG(Float64, Int, matrix_type; backend)
@@ -89,20 +74,18 @@ function test_batching(matrix_type, backend; nbatch = 3)
     end
 
     @testset "Identical batch matches single solve" begin
+        repeat_batch(v) = repeat(v, 1, nbatch)
         milp_id = MILP(;
-            c = repeat(milps[1].c, 1, nbatch),
-            lv = repeat(milps[1].lv, 1, nbatch),
-            uv = repeat(milps[1].uv, 1, nbatch),
-            A,
-            lc = repeat(milps[1].lc, 1, nbatch),
-            uc = repeat(milps[1].uc, 1, nbatch),
-            int_var,
+            c = repeat_batch(milps[1].c),
+            lv = repeat_batch(milps[1].lv),
+            uv = repeat_batch(milps[1].uv),
+            milps[1].A,
+            lc = repeat_batch(milps[1].lc),
+            uc = repeat_batch(milps[1].uc),
+            milps[1].int_var,
         )
         @testset "$alg" for alg in (PDHG, PDLP)
-            algo_solve = alg(
-                Float64, Int, matrix_type;
-                backend, termination_reltol = 1.0e-6, max_kkt_passes = 2000,
-            )
+            algo_solve = alg(Float64, Int, matrix_type; backend, max_kkt_passes = 200)
             sol, stats = solve(milp_id, algo_solve)
             sol_single, stats_single = solve(milps[1], algo_solve)
             @test stats.termination_status == stats_single.termination_status

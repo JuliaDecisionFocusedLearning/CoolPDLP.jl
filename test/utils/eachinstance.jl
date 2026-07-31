@@ -5,6 +5,8 @@ using JLArrays
 using Random
 using Test
 
+include("../fixtures.jl")
+
 Random.seed!(0)
 
 @testset "Instance extraction" begin
@@ -58,19 +60,7 @@ end
 
 @testset "EachInstance of a batched MILP" begin
     nbatch = 3
-    milps = [CoolPDLP.random_milp_and_sol(5, 8, 0.5)[1] for _ in 1:nbatch]
-    A, int_var = milps[1].A, milps[1].int_var
-    milps = map(m -> MILP(; m.c, m.lv, m.uv, A, m.lc, m.uc, int_var), milps)
-    stack_batch(f) = stack(f, milps)
-    milp_batch = MILP(;
-        c = stack_batch(m -> m.c),
-        lv = stack_batch(m -> m.lv),
-        uv = stack_batch(m -> m.uv),
-        A,
-        lc = stack_batch(m -> m.lc),
-        uc = stack_batch(m -> m.uc),
-        int_var,
-    )
+    milps, milp_batch = random_milp_batch(5, 8, 0.5, nbatch; batched = filter(!=(:A), BATCHABLE))
     each = EachInstance(milp_batch)
 
     @test eltype(each) == typeof(instance(milp_batch, 1))
@@ -82,16 +72,7 @@ end
 
 @testset "Instance counts along the solve" begin
     nbatch = 2
-    milp, _ = CoolPDLP.random_milp_and_sol(5, 8, 0.5)
-    milp_batch = MILP(;
-        c = repeat(milp.c, 1, nbatch),
-        lv = repeat(milp.lv, 1, nbatch),
-        uv = repeat(milp.uv, 1, nbatch),
-        milp.A,
-        lc = repeat(milp.lc, 1, nbatch),
-        uc = repeat(milp.uc, 1, nbatch),
-        milp.int_var,
-    )
+    _, milp_batch = random_milp_batch(5, 8, 0.5, nbatch)
     sol = PrimalDualSolution(milp_batch)
     @test nbinstances(milp_batch) == nbatch
     @test nbinstances(sol) == nbatch
