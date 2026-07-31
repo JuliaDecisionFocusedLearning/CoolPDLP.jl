@@ -101,6 +101,7 @@ Stack matrices sharing a single sparsity pattern into one batched matrix.
 function BatchedGPUSparseMatrixCSR(As::AbstractVector{<:AbstractMatrix})
     ref = GPUSparseMatrixCSR(first(As))
     nzval = stack(As) do A
+        A === first(As) && return ref.nzval
         csr = GPUSparseMatrixCSR(A)
         if csr.rowptr != ref.rowptr || csr.colval != ref.colval
             throw(
