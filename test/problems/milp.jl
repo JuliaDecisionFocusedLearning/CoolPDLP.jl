@@ -60,6 +60,10 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 2),
     )
+    # each bound may be batched on its own, as long as the widths agree
+    @test_nowarn MILP(;
+        c, lv = repeat(lv, 1, 3), uv, A, At, lc, uc = repeat(uc, 1, 3),
+    )
     # the batch dimension of the constraint matrix counts too
     A3, At3 = BatchedGPUSparseMatrixCSR(A, 3), BatchedGPUSparseMatrixCSR(At, 3)
     @test_nowarn MILP(;

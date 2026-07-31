@@ -8,7 +8,8 @@ params = CoolPDLP.ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backe
 milp_gpu = CoolPDLP.perform_conversion(milp, params)
 @test milp_gpu isa MILP{
     Float32,
-    JLVector{Float32}, JLVector{Float32}, JLVector{Float32}, JLVector{Float32},
+    JLVector{Float32}, JLVector{Float32}, JLVector{Float32},
+    JLVector{Float32}, JLVector{Float32}, JLVector{Float32},
     GPUSparseMatrixCSR{Float32, Int32, JLVector{Float32}, JLVector{Int32}},
 }
 

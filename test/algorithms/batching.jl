@@ -87,6 +87,45 @@ end
     end
 end
 
+@testset "Bounds batched on their own" begin
+    # only the variable lower bound and the constraint upper bound vary across the batch
+    shared = milps[1]
+    milps_asym = map(milps_init) do m
+        MILP(; shared.c, m.lv, shared.uv, A, shared.lc, m.uc, int_var)
+    end
+    milp_asym = MILP(;
+        shared.c,
+        lv = stack(m -> m.lv, milps_init),
+        shared.uv,
+        A,
+        shared.lc,
+        uc = stack(m -> m.uc, milps_init),
+        int_var,
+    )
+
+    @test nbinstances(milp_asym) == nbatch
+    for (i, milp) in enumerate(EachInstance(milp_asym))
+        @test milp ≈ milps_asym[i]
+    end
+
+    algo = PDHG()
+    state_batch = initialize(
+        milp_asym, PrimalDualSolution(milp_asym), algo; starting_time = time()
+    )
+    states = map(milps_asym) do milp
+        initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
+    end
+    for _ in 1:100
+        step!(state_batch, milp_asym)
+        for i in 1:nbatch
+            step!(states[i], milps_asym[i])
+        end
+    end
+    for i in 1:nbatch
+        @test instance(state_batch, i).sol ≈ states[i].sol
+    end
+end
+
 @testset "Iterates match single solves" begin
     algo = PDHG()
     state_batch = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())

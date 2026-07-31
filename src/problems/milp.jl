@@ -21,8 +21,10 @@ $(TYPEDFIELDS)
 struct MILP{
         T <: Number,
         Vo <: AbstractVecOrMat{T},
-        Vv <: AbstractVecOrMat{T},
-        Vc <: AbstractVecOrMat{T},
+        Vlv <: AbstractVecOrMat{T},
+        Vuv <: AbstractVecOrMat{T},
+        Vlc <: AbstractVecOrMat{T},
+        Vuc <: AbstractVecOrMat{T},
         V <: AbstractVector{T},
         M <: AbstractArray{T},
         Mt <: AbstractArray{T},
@@ -31,17 +33,17 @@ struct MILP{
     "objective vector"
     c::Vo
     "variable lower bound"
-    lv::Vv
+    lv::Vlv
     "variable upper bound"
-    uv::Vv
+    uv::Vuv
     "constraint matrix"
     A::M
     "transposed constraint matrix"
     At::Mt
     "constraint lower bound"
-    lc::Vc
+    lc::Vlc
     "constraint upper bound"
-    uc::Vc
+    uc::Vuc
     "left preconditioner"
     D1::Diagonal{T, V}
     "right preconditioner"
@@ -78,11 +80,11 @@ struct MILP{
             throw(DimensionMismatch("Variable size not consistent"))
         elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2))
             throw(DimensionMismatch("Constraint size not consistent"))
-            # each pair of bounds, and the matrix with its transpose, must be batched together
-        elseif !(size(lv, 2) == size(uv, 2) && size(lc, 2) == size(uc, 2) && size(A, 3) == size(At, 3))
+            # a matrix and its transpose must be batched together
+        elseif size(A, 3) != size(At, 3)
             throw(DimensionMismatch("Batch size not consistent"))
             # whatever is batched must agree on the number of instances
-        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, lc, A)))
+        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, uv, lc, uc, A)))
             throw(DimensionMismatch("Batch size not consistent"))
         end
 
@@ -103,8 +105,8 @@ struct MILP{
         end
 
         return new{
-            T, typeof(c), typeof(lv), typeof(lc), typeof(diag(D1)),
-            typeof(A), typeof(At), typeof(int_var),
+            T, typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc),
+            typeof(diag(D1)), typeof(A), typeof(At), typeof(int_var),
         }(
             c,
             lv,
@@ -146,13 +148,16 @@ function MILP(qps::QPSData; kwargs...)
     )
 end
 
-function Base.show(io::IO, milp::MILP{T, Vo, Vv, Vc, V, M, Mt}) where {T, Vo, Vv, Vc, V, M, Mt}
+function Base.show(
+        io::IO, milp::MILP{T, Vo, Vlv, Vuv, Vlc, Vuc, V, M, Mt}
+    ) where {T, Vo, Vlv, Vuv, Vlc, Vuc, V, M, Mt}
+    vectors = unique((Vo, Vlv, Vuv, Vlc, Vuc))
     print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
           - values $T
-          - vectors $(Vo == Vv == Vc ? Vo : (Vo, Vv, Vc))
+          - vectors $(length(vectors) == 1 ? only(vectors) : Tuple(vectors))
           - matrices $(M == Mt ? M : (M, Mt))
         - variables: $(nbvar(milp))
           - $(nbvar_cont(milp)) continuous
@@ -242,13 +247,17 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
 end
 
 """
-    batch_sizes(c, lv, lc, A)
+    batch_sizes(c, lv, uv, lc, uc, A)
 
-Return the number of instances carried by each field group of a [`MILP`](@ref) which can be batched, `1` meaning shared by the whole batch.
+Return the number of instances carried by each field of a [`MILP`](@ref) which can be batched, `1` meaning shared by the whole batch.
 """
-batch_sizes(c, lv, lc, A) = (size(c, 2), size(lv, 2), size(lc, 2), size(A, 3))
+function batch_sizes(c, lv, uv, lc, uc, A)
+    return (size(c, 2), size(lv, 2), size(uv, 2), size(lc, 2), size(uc, 2), size(A, 3))
+end
 
-nbinstances((; c, lv, lc, A)::MILP) = maximum(batch_sizes(c, lv, lc, A))
+function nbinstances((; c, lv, uv, lc, uc, A)::MILP)
+    return maximum(batch_sizes(c, lv, uv, lc, uc, A))
+end
 
 """
     isbatched(milp)
@@ -258,8 +267,11 @@ Return whether `milp` holds a batch of instances rather than a single one.
 Unlike [`nbinstances`](@ref), this only depends on the type of `milp`, so it is a constant as
 far as inference is concerned and the shape of the arrays attached to `milp` follows from it.
 """
-function isbatched((; c, lv, lc, A)::MILP)
-    return ndims(c) > 1 || ndims(lv) > 1 || ndims(lc) > 1 || ndims(A) > 2
+function isbatched((; c, lv, uv, lc, uc, A)::MILP)
+    return (
+        ndims(c) > 1 || ndims(lv) > 1 || ndims(uv) > 1 ||
+            ndims(lc) > 1 || ndims(uc) > 1 || ndims(A) > 2
+    )
 end
 function instance(milp::MILP, i::Int)
     return MILP(;
