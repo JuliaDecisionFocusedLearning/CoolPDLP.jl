@@ -1,5 +1,6 @@
 using CoolPDLP
 using JLArrays
+using LinearAlgebra
 using Test
 
 milp, sol = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
@@ -9,7 +10,8 @@ milp_gpu = CoolPDLP.perform_conversion(milp, params)
 @test milp_gpu isa MILP{
     Float32,
     JLVector{Float32}, JLVector{Float32}, JLVector{Float32},
-    JLVector{Float32}, JLVector{Float32}, JLVector{Float32},
+    JLVector{Float32}, JLVector{Float32},
+    Diagonal{Float32, JLVector{Float32}}, Diagonal{Float32, JLVector{Float32}},
     GPUSparseMatrixCSR{Float32, Int32, JLVector{Float32}, JLVector{Int32}},
 }
 

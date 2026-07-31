@@ -29,6 +29,7 @@ include("public.jl")
     include("utils/linalg.jl")
     include("utils/test.jl")
     include("utils/eachinstance.jl")
+    include("utils/batched_diagonal.jl")
 
     include("problems/milp.jl")
     include("problems/solution.jl")

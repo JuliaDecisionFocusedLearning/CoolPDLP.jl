@@ -189,8 +189,16 @@ end
             c = repeat_batch(milp_batch.c),
             lv = repeat_batch(milp_batch.lv),
             uv = repeat_batch(milp_batch.uv),
-            A = milps[1].A,
-            At = milps[1].At,
+            A = if batched_matrix(milp_batch)
+                BatchedGPUSparseMatrixCSR(milps[1].A, NBATCH)
+            else
+                milps[1].A
+            end,
+            At = if batched_matrix(milp_batch)
+                BatchedGPUSparseMatrixCSR(milps[1].At, NBATCH)
+            else
+                milps[1].At
+            end,
             lc = repeat_batch(milp_batch.lc),
             uc = repeat_batch(milp_batch.uc),
             milp_batch.int_var,
@@ -201,18 +209,13 @@ end
         )
         @testset "$alg" for alg in (PDHG, PDLP)
             algo = alg(; termination_reltol = 1.0e-6, max_kkt_passes = 2000)
-            if batched_matrix(milp_batch)
-                # a batch shares a single preconditioner, so it needs a single matrix
-                @test_throws "batched constraint matrices" solve(milp_batch, copy(sol_batch), algo)
-            else
-                sol, stats = solve(milp_id, sol_id, algo)
-                sol_single, stats_single = solve(milps[1], sols[1], algo)
-                @test stats.kkt_passes == stats_single.kkt_passes
-                @test stats.termination_status == stats_single.termination_status
-                for i in 1:NBATCH
-                    @test sol.x[:, i] ≈ sol_single.x
-                    @test stats.err.primal[i] ≈ stats_single.err.primal
-                end
+            sol, stats = solve(milp_id, sol_id, algo)
+            sol_single, stats_single = solve(milps[1], sols[1], algo)
+            @test stats.kkt_passes == stats_single.kkt_passes
+            @test stats.termination_status == stats_single.termination_status
+            for i in 1:NBATCH
+                @test sol.x[:, i] ≈ sol_single.x
+                @test stats.err.primal[i] ≈ stats_single.err.primal
             end
         end
     end

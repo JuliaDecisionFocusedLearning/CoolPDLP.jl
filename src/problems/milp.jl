@@ -25,7 +25,8 @@ struct MILP{
         Vuv <: AbstractVecOrMat{T},
         Vlc <: AbstractVecOrMat{T},
         Vuc <: AbstractVecOrMat{T},
-        V <: AbstractVector{T},
+        Dg1 <: DiagonalScaling{T},
+        Dg2 <: DiagonalScaling{T},
         M <: AbstractArray{T},
         Mt <: AbstractArray{T},
         Vb <: DenseVector{Bool},
@@ -45,9 +46,9 @@ struct MILP{
     "constraint upper bound"
     uc::Vuc
     "left preconditioner"
-    D1::Diagonal{T, V}
+    D1::Dg1
     "right preconditioner"
-    D2::Diagonal{T, V}
+    D2::Dg2
     "which variables must be integers"
     int_var::Vb
     "variable names"
@@ -84,7 +85,7 @@ struct MILP{
         elseif size(A, 3) != size(At, 3)
             throw(DimensionMismatch("Batch size not consistent"))
             # whatever is batched must agree on the number of instances
-        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, uv, lc, uc, A)))
+        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, uv, lc, uc, A, D1, D2)))
             throw(DimensionMismatch("Batch size not consistent"))
         end
 
@@ -106,7 +107,7 @@ struct MILP{
 
         return new{
             T, typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc),
-            typeof(diag(D1)), typeof(A), typeof(At), typeof(int_var),
+            typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var),
         }(
             c,
             lv,
@@ -149,8 +150,8 @@ function MILP(qps::QPSData; kwargs...)
 end
 
 function Base.show(
-        io::IO, milp::MILP{T, Vo, Vlv, Vuv, Vlc, Vuc, V, M, Mt}
-    ) where {T, Vo, Vlv, Vuv, Vlc, Vuc, V, M, Mt}
+        io::IO, milp::MILP{T, Vo, Vlv, Vuv, Vlc, Vuc, Dg1, Dg2, M, Mt}
+    ) where {T, Vo, Vlv, Vuv, Vlc, Vuc, Dg1, Dg2, M, Mt}
     vectors = unique((Vo, Vlv, Vuv, Vlc, Vuc))
     print(
         io, """
@@ -247,16 +248,19 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
 end
 
 """
-    batch_sizes(c, lv, uv, lc, uc, A)
+    batch_sizes(c, lv, uv, lc, uc, A, D1, D2)
 
 Return the number of instances carried by each field of a [`MILP`](@ref) which can be batched, `1` meaning shared by the whole batch.
 """
-function batch_sizes(c, lv, uv, lc, uc, A)
-    return (size(c, 2), size(lv, 2), size(uv, 2), size(lc, 2), size(uc, 2), size(A, 3))
+function batch_sizes(c, lv, uv, lc, uc, A, D1, D2)
+    return (
+        size(c, 2), size(lv, 2), size(uv, 2), size(lc, 2), size(uc, 2),
+        size(A, 3), size(D1, 3), size(D2, 3),
+    )
 end
 
-function nbinstances((; c, lv, uv, lc, uc, A)::MILP)
-    return maximum(batch_sizes(c, lv, uv, lc, uc, A))
+function nbinstances((; c, lv, uv, lc, uc, A, D1, D2)::MILP)
+    return maximum(batch_sizes(c, lv, uv, lc, uc, A, D1, D2))
 end
 
 """
@@ -282,8 +286,8 @@ function instance(milp::MILP, i::Int)
         At = instance_mat(milp.At, i),
         lc = instance_vec(milp.lc, i),
         uc = instance_vec(milp.uc, i),
-        D1 = milp.D1,
-        D2 = milp.D2,
+        D1 = instance(milp.D1, i),
+        D2 = instance(milp.D2, i),
         int_var = milp.int_var,
         var_names = milp.var_names,
         dataset = milp.dataset,
