@@ -10,9 +10,8 @@ Check whether solution vector `x` is feasible for `milp`, returning one verdict 
 - `verbose`: whether to display warnings
 """
 function is_feasible(x::AbstractMatrix, milp::MILP; kwargs...)
-    # a copy rather than a view, because the matrix-vector kernels need a dense vector
     return map(axes(x, 2)) do i
-        is_feasible(x[:, i], instance(milp, i); kwargs...)
+        is_feasible(view(x, :, i), instance(milp, i); kwargs...)
     end
 end
 

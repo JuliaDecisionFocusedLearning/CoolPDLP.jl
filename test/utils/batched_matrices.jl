@@ -86,6 +86,9 @@ end
         @test SparseMatrixCSC(slice) ≈ As[k]
         @test mul!(zeros(size(pattern, 1)), slice, rhs) ≈ As[k] * rhs
         @test mul!(zeros(size(pattern, 1), 2), slice, repeat(rhs, 1, 2)) ≈ As[k] * repeat(rhs, 1, 2)
+        # the columns of a batched solution are views, not dense vectors
+        dest = zeros(size(pattern, 1), 2)
+        @test mul!(view(dest, :, 1), slice, view(repeat(rhs, 1, 2), :, 2)) ≈ As[k] * rhs
     end
 
     @test spectral_norm(A_batched, At_batched) ≈ map(A -> opnorm(Matrix(A)), As) rtol = 1.0e-2

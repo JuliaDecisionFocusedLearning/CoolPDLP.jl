@@ -137,11 +137,11 @@ function sametype_transpose(A::GPUSparseMatrixCSR)
 end
 
 @kernel function spmv_csr!(
-        c::DenseVector{T},
+        c::StridedVector{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::AbstractVector{T},
-        b::DenseVector{T},
+        b::StridedVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -165,11 +165,11 @@ Both methods resolve at compile time, so a kernel using them costs the same as o
 @inline batchval(m::AbstractMatrix, k, batch_idx::Integer) = m[k, batch_idx]
 
 @kernel function spmm_csr!(
-        c::DenseMatrix{T},
+        c::StridedMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::AbstractVecOrMat{T},
-        b::AbstractVecOrMat{T},
+        b::StridedVecOrMat{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -183,9 +183,9 @@ Both methods resolve at compile time, so a kernel using them costs the same as o
 end
 
 function LinearAlgebra.mul!(
-        c::DenseVector{T},
+        c::StridedVector{T},
         A::GPUSparseMatrixCSR{T},
-        b::DenseVector{T},
+        b::StridedVector{T},
         α::Number,
         β::Number
     ) where {T <: Number}
@@ -196,22 +196,9 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
-        c::M,
-        A::BatchedGPUSparseMatrixCSR{T, Ti, M},
-        b::V,
-        α::Number,
-        β::Number
-    ) where {T <: Number, Ti, M <: DenseMatrix{T}, V <: DenseVector{T}}
-    backend = common_backend(c, A, b)
-    kernel! = spmm_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
-    return c
-end
-
-function LinearAlgebra.mul!(
-        c::DenseMatrix{T},
-        A::GPUSparseMatrixCSR{T},
-        b::DenseMatrix{T},
+        c::StridedMatrix{T},
+        A::BatchedGPUSparseMatrixCSR{T},
+        b::StridedVector{T},
         α::Number,
         β::Number
     ) where {T <: Number}
@@ -222,12 +209,25 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
-        c::M,
-        A::BatchedGPUSparseMatrixCSR{T, Ti, M},
-        b::M,
+        c::StridedMatrix{T},
+        A::GPUSparseMatrixCSR{T},
+        b::StridedMatrix{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, M <: DenseMatrix{T}}
+    ) where {T <: Number}
+    backend = common_backend(c, A, b)
+    kernel! = spmm_csr!(backend)
+    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    return c
+end
+
+function LinearAlgebra.mul!(
+        c::StridedMatrix{T},
+        A::BatchedGPUSparseMatrixCSR{T},
+        b::StridedMatrix{T},
+        α::Number,
+        β::Number
+    ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
     kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
