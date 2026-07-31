@@ -75,6 +75,9 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A = A3, At = BatchedGPUSparseMatrixCSR(At, 2), lc, uc,
     )
+    # a batched transpose is derived like any other
+    milp3 = MILP(; c = repeat(c, 1, 3), lv, uv, A = A3, lc, uc)
+    @test nonzeros(milp3.At) ≈ nonzeros(At3)
 end
 
 @testset "Batched objective value" begin

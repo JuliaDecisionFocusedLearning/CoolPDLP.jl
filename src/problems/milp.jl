@@ -272,10 +272,7 @@ Unlike [`nbinstances`](@ref), this only depends on the type of `milp`, so it is 
 far as inference is concerned and the shape of the arrays attached to `milp` follows from it.
 """
 function isbatched((; c, lv, uv, lc, uc, A)::MILP)
-    return (
-        ndims(c) > 1 || ndims(lv) > 1 || ndims(uv) > 1 ||
-            ndims(lc) > 1 || ndims(uc) > 1 || ndims(A) > 2
-    )
+    return ndims(c) > 1 || ndims(lv) > 1 || ndims(uv) > 1 || ndims(lc) > 1 || ndims(uc) > 1 || ndims(A) > 2
 end
 function instance(milp::MILP, i::Int)
     return MILP(;

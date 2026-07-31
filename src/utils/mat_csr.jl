@@ -128,6 +128,13 @@ function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCSR)
     return SparseMatrixCSC(transpose(At_csc))
 end
 
+function sametype_transpose(A::BatchedGPUSparseMatrixCSR)
+    instances = map(axes(A, 3)) do i
+        return SparseMatrixCSC(transpose(SparseMatrixCSC(view(A, :, :, i))))
+    end
+    return adapt(get_backend(A), BatchedGPUSparseMatrixCSR(instances))
+end
+
 function sametype_transpose(A::GPUSparseMatrixCSR)
     A_csc = SparseMatrixCSC(A)
     return adapt(

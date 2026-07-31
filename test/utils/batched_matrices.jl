@@ -1,5 +1,6 @@
 using Adapt
-using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR, mynnz, spectral_norm
+using CoolPDLP: GPUSparseMatrixCSR, BatchedGPUSparseMatrixCSR, mynnz, sametype_transpose,
+    spectral_norm
 using GPUArraysCore
 using JLArrays
 using KernelAbstractions
@@ -92,4 +93,25 @@ end
     end
 
     @test spectral_norm(A_batched, At_batched) ≈ map(A -> opnorm(Matrix(A)), As) rtol = 1.0e-2
+end
+
+@testset "Batched transpose" begin
+    rng = Xoshiro(1)
+    pattern = sprand(rng, 6, 4, 0.5)
+    As = map(1:3) do _
+        SparseMatrixCSC(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), rand(rng, nnz(pattern)))
+    end
+    A = BatchedGPUSparseMatrixCSR(As)
+    At = sametype_transpose(A)
+
+    @test At isa BatchedGPUSparseMatrixCSR
+    @test size(At) == (size(A, 2), size(A, 1), 3)
+    for k in 1:3
+        @test SparseMatrixCSC(view(At, :, :, k)) ≈ SparseMatrixCSC(transpose(As[k]))
+    end
+
+    # the transpose stays on the backend of the matrix it comes from
+    At_jl = sametype_transpose(adapt(JLBackend(), A))
+    @test nonzeros(At_jl) isa JLArray
+    @test Array(nonzeros(At_jl)) ≈ nonzeros(At)
 end
