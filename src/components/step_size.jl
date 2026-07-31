@@ -30,7 +30,8 @@ function primal_weight_init(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; c, lc, uc) = milp
     (; zero_tol) = params
     c_norm = colnorm(c)
-    combined_bounds = map(combine, lc, uc)
+    # a broadcast rather than a `map`, because one bound may be batched and the other shared
+    combined_bounds = combine.(lc, uc)
     combined_norm = colnorm(combined_bounds)
     return broadcast(c_norm, combined_norm) do c_norm, combined_norm
         if c_norm > zero_tol && combined_norm > zero_tol
