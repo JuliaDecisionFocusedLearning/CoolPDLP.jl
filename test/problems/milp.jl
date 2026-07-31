@@ -21,6 +21,13 @@ using Test
     @test_throws ArgumentError MILP(;
         c = jl(c), lv, uv, A, At, lc, uc,
     )
+    @test_throws ArgumentError MILP(;
+        c = Float32.(c), lv, uv, A, At, lc, uc,
+    )
+    # a batched field must live on the same backend as the rest
+    @test_throws ArgumentError MILP(;
+        c = jl(repeat(c, 1, 3)), lv, uv, A, At, lc, uc,
+    )
     # Dimension issues
     @test_throws DimensionMismatch MILP(;
         c = lc, lv, uv, A, At, lc, uc,

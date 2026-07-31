@@ -86,27 +86,26 @@ struct MILP{
             throw(DimensionMismatch("Batch size not consistent"))
         end
 
-        T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
-        M = typeof(A)
-        Mt = typeof(At)
-        Vb = typeof(int_var)
-
-        if (
-                !isconcretetype(T) ||
-                    !isconcretetype(M) ||
-                    !isconcretetype(Mt) ||
-                    !isconcretetype(Vb)
-            )
-            throw(ArgumentError("Abstract type parameter"))
+        # batching mixes container types (a shared bound is a vector next to a batched
+        # matrix), so only the element type and the backend can be required to match
+        numbers = (c, lv, uv, A, At, lc, uc, D1, D2)
+        T = Base.promote_eltype(numbers...)
+        if !isconcretetype(T)
+            throw(ArgumentError("Abstract element type $T"))
+        elseif !all(x -> eltype(x) === T, numbers)
+            throw(ArgumentError("Element type not consistent: $(map(eltype, numbers))"))
         end
 
-        common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
+        common_backend(numbers...)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
         end
 
-        return new{T, typeof(c), typeof(lv), typeof(lc), typeof(diag(D1)), M, Mt, Vb}(
+        return new{
+            T, typeof(c), typeof(lv), typeof(lc), typeof(diag(D1)),
+            typeof(A), typeof(At), typeof(int_var),
+        }(
             c,
             lv,
             uv,
