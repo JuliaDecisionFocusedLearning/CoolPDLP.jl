@@ -157,42 +157,42 @@ function restart_check!(
         step_sizes, scratch, iteration, restart_stats,
     ) = state
     (; ω) = step_sizes
-    (; err, err_other) = restart_stats
+    (; err_current, err_avg, err_last, err_avg_last, err_restart) = restart_stats
 
     restart_stats.abs_candidate, abs1, abs2 = best_error!!(
-        restart_stats.abs_candidate, err, err_other, scratch, sol, sol_avg, milp, ω,
+        restart_stats.abs_candidate, err_current, err_avg, scratch, sol, sol_avg, milp, ω,
     )
     restart_stats.restart_from_avg = broadcast!!(
         <=, restart_stats.restart_from_avg, abs2, abs1,
     )
     restart_stats.abs_candidate_last, _, _ = best_error!!(
-        restart_stats.abs_candidate_last, err, err_other,
+        restart_stats.abs_candidate_last, err_last, err_avg_last,
         scratch, sol_last, sol_avg_last, milp, ω,
     )
 
-    kkt_errors!(err, scratch, sol_restart, milp)
-    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err, ω)
+    kkt_errors!(err_restart, scratch, sol_restart, milp)
+    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
 
     return should_restart(restart_stats, iteration, algo.restart)
 end
 
 """
-    best_error!!(abs_err, err, other, scratch, sol1, sol2, milp, ω)
+    best_error!!(abs_err, err1, err2, scratch, sol1, sol2, milp, ω)
 
-Compute the absolute KKT errors of `sol1` and `sol2` column by column, using `err` and `other` as scratch, and keep the smaller of the two in `abs_err`.
+Fill `err1` and `err2` with the KKT errors of `sol1` and `sol2`, then keep the smaller of their absolute errors, column by column, in `abs_err`.
 
 Return `abs_err` together with both absolute errors, which live in the scratch space and stay valid only until the next call.
 """
 function best_error!!(
-        abs_err, err::KKTErrors, other::KKTErrors,
+        abs_err, err1::KKTErrors, err2::KKTErrors,
         scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
         milp::MILP, ω::BatchedNumber,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err, scratch, sol1, milp)
-    kkt_errors!(other, scratch, sol2, milp)
-    abs1 = absolute!!(scratch.b1, err, ω)
-    abs2 = absolute!!(scratch.b2, other, ω)
+    kkt_errors!(err1, scratch, sol1, milp)
+    kkt_errors!(err2, scratch, sol2, milp)
+    abs1 = absolute!!(scratch.b1, err1, ω)
+    abs2 = absolute!!(scratch.b2, err2, ω)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 

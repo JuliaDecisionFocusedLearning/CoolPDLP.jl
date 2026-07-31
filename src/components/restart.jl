@@ -29,10 +29,16 @@ $(TYPEDFIELDS)
 mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{Bool}}}
     "whether to restart from the average solution, column by column"
     restart_from_avg::B
-    "scratch for the KKT errors of a candidate"
-    err::KKTErrors{T}
-    "scratch for the KKT errors of the candidate it is compared against"
-    err_other::KKTErrors{T}
+    "KKT errors of the current solution"
+    err_current::KKTErrors{T}
+    "KKT errors of the current average solution"
+    err_avg::KKTErrors{T}
+    "KKT errors of the last solution"
+    err_last::KKTErrors{T}
+    "KKT errors of the last average solution"
+    err_avg_last::KKTErrors{T}
+    "KKT errors of the solution at the last restart"
+    err_restart::KKTErrors{T}
     "absolute error of the restart candidate"
     abs_candidate::T
     "absolute error of the previous restart candidate"
@@ -45,15 +51,18 @@ function RestartStats(sol::PrimalDualSolution{T}) where {T}
     nan() = batched_expand(sol.x, convert(T, NaN))
     return RestartStats(
         batched_expand(sol.x, false),
-        KKTErrors(sol), KKTErrors(sol),
+        KKTErrors(sol), KKTErrors(sol), KKTErrors(sol), KKTErrors(sol), KKTErrors(sol),
         nan(), nan(), nan(),
     )
 end
 
 instance(stats::RestartStats, i::Int) = RestartStats(
     instance_num(stats.restart_from_avg, i),
-    instance(stats.err, i),
-    instance(stats.err_other, i),
+    instance(stats.err_current, i),
+    instance(stats.err_avg, i),
+    instance(stats.err_last, i),
+    instance(stats.err_avg_last, i),
+    instance(stats.err_restart, i),
     instance_num(stats.abs_candidate, i),
     instance_num(stats.abs_candidate_last, i),
     instance_num(stats.abs_restart, i),
