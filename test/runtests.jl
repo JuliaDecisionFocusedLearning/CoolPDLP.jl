@@ -16,8 +16,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
         end
         for folder in readdir(@__DIR__)
             isdir(joinpath(@__DIR__, folder)) || continue
-            startswith(folder, "cuda") && continue
-            startswith(folder, "opencl") && continue
+            startswith(folder, "gpu") && continue
             @testset verbose = true "$folder" begin
                 for file in readdir(joinpath(@__DIR__, folder))
                     @testset "$file" begin
@@ -39,18 +38,25 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
             include("perf.jl")
         end
     end
-    if GROUP == "CUDA"
-        Pkg.add("CUDA")
+
+    # GPU backends
+
+    if GROUP == "cuda"
+        Pkg.add(["CUDA", "cuSPARSE"])
         @testset verbose = true "CUDA" begin
-            include("cuda/runtests.jl")
+            include("gpu/cuda/runtests.jl")
+        end
+    end
+    if GROUP == "metal"
+        Pkg.add("Metal")
+        @testset verbose = true "Metal" begin
+            include("gpu/metal/runtests.jl")
         end
     end
     if GROUP == "OpenCL"
         set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
-        @testset "OpenCL" begin
-            using pocl_jll, OpenCL
-            include("gpu/moi.jl")
-            test_moi(CoolPDLP.GPUSparseMatrixCSR, OpenCLBackend())
+        @testset verbose = true "Metal" begin
+            include("gpu/opencl/runtests.jl")
         end
     end
 end
