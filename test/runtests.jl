@@ -55,7 +55,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     end
     if GROUP == "OpenCL"
         set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
-        @testset verbose = true "Metal" begin
+        @testset verbose = true "OpenCL" begin
             include("gpu/opencl/runtests.jl")
         end
     end
