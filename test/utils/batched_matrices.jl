@@ -17,6 +17,11 @@ include("../fixtures.jl")
     α, β = rand(), rand()
 
     @test mul!(jl(copy(lhs)), A_jl, jl(rhs), α, β) ≈ α * A * rhs + β * lhs
+    # a zero β is a strong zero, so a destination full of NaNs is never read
+    nans() = jl(fill(NaN, size(lhs)))
+    @test mul!(nans(), A_jl, jl(rhs), α, 0.0) ≈ α * A * rhs
+    @test mul!(nans(), A_jl, jl(rhs), 1.0, 0.0) ≈ A * rhs
+    @test mul!(jl(copy(lhs)), A_jl, jl(rhs), 1.0, β) ≈ A * rhs + β * lhs
 end
 
 @testset "Batched CSR" begin

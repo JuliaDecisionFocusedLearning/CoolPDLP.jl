@@ -221,7 +221,17 @@ function LinearAlgebra.mul!(
     ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    α_is_one = isone(α)
+    β_is_zero = iszero(β)
+    if α_is_one && β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+    elseif α_is_one
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+    elseif β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+    else
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    end
     return c
 end
 
@@ -234,7 +244,17 @@ function LinearAlgebra.mul!(
     ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    α_is_one = isone(α)
+    β_is_zero = iszero(β)
+    if α_is_one && β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+    elseif α_is_one
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+    elseif β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+    else
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    end
     return c
 end
 
@@ -247,6 +267,16 @@ function LinearAlgebra.mul!(
     ) where {T <: Number}
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
-    kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    α_is_one = isone(α)
+    β_is_zero = iszero(β)
+    if α_is_one && β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+    elseif α_is_one
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+    elseif β_is_zero
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+    else
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    end
     return c
 end
