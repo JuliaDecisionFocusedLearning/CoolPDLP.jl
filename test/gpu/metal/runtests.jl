@@ -5,5 +5,5 @@ using Test
 
 @testset "MOI" begin
     include("../moi.jl")
-    test_moi(CoolPDLP.GPUSparseMatrixCSR, MetalBackend())
+    test_moi(CoolPDLP.GPUSparseMatrixCSR, MetalBackend(), Float32)
 end

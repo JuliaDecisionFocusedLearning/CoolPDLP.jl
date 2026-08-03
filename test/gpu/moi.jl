@@ -3,8 +3,8 @@ import MathOptInterface as MOI
 import CoolPDLP
 import JuMP
 
-function test_moi(matrix_type, backend)
-    model = JuMP.Model(CoolPDLP.Optimizer)
+function test_moi(matrix_type, backend, ::Type{T} = Float64) where {T <: AbstractFloat}
+    model = JuMP.Model(CoolPDLP.Optimizer{T})
     JuMP.set_silent(model)
     JuMP.set_attribute(model, "matrix_type", matrix_type)
     JuMP.set_attribute(model, "backend", backend)
