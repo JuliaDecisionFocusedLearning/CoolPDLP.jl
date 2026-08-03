@@ -8,22 +8,28 @@ using Test
 include("../fixtures.jl")
 
 """
-    test_batching(matrix_type, backend; nbatch=3, broken=false)
+    test_batching(matrix_type, backend, T=Float64; nbatch=3, broken=false)
 
 Check that a batch of problems living on `backend` behaves like the same problems handled one at a time.
+
+Solving happens in the float type `T`, which a backend like Metal restricts to `Float32`.
 
 Pass `broken` for a backend which cannot reduce into a `Transpose` destination, which the
 column reductions need. Only JLArrays is in that case, and only until
 <https://github.com/JuliaGPU/GPUArrays.jl/pull/754> is released: to undo, delete the keyword
 argument and every other line mentioning `broken`, here and in `runtests.jl`.
 """
-function test_batching(matrix_type, backend; nbatch = 3, broken = false)
+function test_batching(
+        matrix_type, backend, ::Type{T} = Float64; nbatch = 3, broken = false
+    ) where {T <: AbstractFloat}
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(
         20, 30, 0.4, nbatch; batched = filter(!=(:A), BATCHABLE)
     )
+    # iterating in single precision drifts much faster than in double precision
+    iterate_rtol = T == Float64 ? 1.0e-6 : 1.0e-2
 
-    algo = PDHG(Float64, Int, matrix_type; backend)
+    algo = PDHG(T, Int, matrix_type; backend)
     # the preconditioner only depends on `A`, so the batch and the single problems share it
     to_device(milp) = preprocess(milp, PrimalDualSolution(milp), algo)
     milp_dev, sol_dev = to_device(milp_batch)
@@ -72,8 +78,8 @@ function test_batching(matrix_type, backend; nbatch = 3, broken = false)
             end
         end
         for i in 1:nbatch
-            @test Array(state_batch.sol.x[:, i]) ≈ Array(states[i].sol.x) rtol = 1.0e-6
-            @test Array(state_batch.sol.y[:, i]) ≈ Array(states[i].sol.y) rtol = 1.0e-6
+            @test Array(state_batch.sol.x[:, i]) ≈ Array(states[i].sol.x) rtol = iterate_rtol
+            @test Array(state_batch.sol.y[:, i]) ≈ Array(states[i].sol.y) rtol = iterate_rtol
             @allowscalar @test instance(state_batch, i).step_sizes.ω ≈
                 states[i].step_sizes.ω
         end
@@ -90,10 +96,10 @@ function test_batching(matrix_type, backend; nbatch = 3, broken = false)
         uc = repeat_batch(milps[1].uc),
         milps[1].int_var,
     )
-    broken && @test_broken solve(milp_id, PDHG(Float64, Int, matrix_type; backend)) isa Tuple
+    broken && @test_broken solve(milp_id, PDHG(T, Int, matrix_type; backend)) isa Tuple
     broken || @testset "Identical batch matches single solve" begin
         @testset "$alg" for alg in (PDHG, PDLP)
-            algo_solve = alg(Float64, Int, matrix_type; backend, max_kkt_passes = 200)
+            algo_solve = alg(T, Int, matrix_type; backend, max_kkt_passes = 200)
             sol, stats = solve(milp_id, algo_solve)
             sol_single, stats_single = solve(milps[1], algo_solve)
             @test stats.termination_status == stats_single.termination_status
