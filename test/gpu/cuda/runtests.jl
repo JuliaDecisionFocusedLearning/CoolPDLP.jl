@@ -1,4 +1,5 @@
 using CUDA
+using Test
 
 @info "Running CUDA tests"
 @test CUDA.functional()
@@ -9,6 +10,6 @@ CUDA.versioninfo()
 end
 @testset "MOI" begin
     import cuSPARSE
-    include("../gpu/moi.jl")
+    include("../moi.jl")
     test_moi(cuSPARSE.CuSparseMatrixCSR, CUDABackend())
 end
