@@ -4,8 +4,6 @@ using CoolPDLP: KKTErrors, Scratch, absolute!!, batched_similar, initialize,
 using Random
 using Test
 
-include("../fixtures.jl")
-
 @testset "Recorded errors match their names" begin
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(20, 30, 0.4, 3)

@@ -3,8 +3,6 @@ using CoolPDLP: initialize, primal_weight_update!!
 using Random
 using Test
 
-include("../fixtures.jl")
-
 @testset "Primal weight left alone without movement" begin
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(20, 30, 0.4, 3)

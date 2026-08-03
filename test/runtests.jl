@@ -6,6 +6,19 @@ set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 
+# a GPU backend and the preferences it needs must be in place before anything loads CoolPDLP
+if GROUP == "cuda"
+    Pkg.add(["CUDA", "cuSPARSE"])
+elseif GROUP == "metal"
+    Pkg.add("Metal")
+elseif GROUP == "OpenCL"
+    set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
+end
+
+# every test file draws on the same fixtures: defining them once here rather than in each
+# file keeps the log free of overwritten-method warnings
+include("fixtures.jl")
+
 @testset verbose = true "CoolPDLP" begin
     if GROUP == "Core" || isnothing(GROUP)
         @testset "Formalities" begin
@@ -50,19 +63,16 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     # GPU backends
 
     if GROUP == "cuda"
-        Pkg.add(["CUDA", "cuSPARSE"])
         @testset verbose = true "CUDA" begin
             include("gpu/cuda/runtests.jl")
         end
     end
     if GROUP == "metal"
-        Pkg.add("Metal")
         @testset verbose = true "Metal" begin
             include("gpu/metal/runtests.jl")
         end
     end
     if GROUP == "OpenCL"
-        set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
         @testset verbose = true "OpenCL" begin
             include("gpu/opencl/runtests.jl")
         end

@@ -5,8 +5,6 @@ using JLArrays
 using Random
 using Test
 
-include("../fixtures.jl")
-
 Random.seed!(0)
 
 @testset "Instance extraction" begin

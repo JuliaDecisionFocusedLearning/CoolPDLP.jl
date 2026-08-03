@@ -4,8 +4,6 @@ using CoolPDLP: BatchedGPUSparseMatrixCSR, EachInstance, KKTErrors, Scratch, ini
 using Random
 using Test
 
-include("../fixtures.jl")
-
 const NBATCH = 3
 const NSTEPS = 50
 

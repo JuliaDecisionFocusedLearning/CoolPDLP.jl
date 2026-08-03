@@ -7,8 +7,6 @@ using Random
 using SparseArrays
 using Test
 
-include("fixtures.jl")
-
 prepstate(milp, algo) = initialize(
     milp, PrimalDualSolution(milp), algo; starting_time = time()
 )

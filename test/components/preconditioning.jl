@@ -5,8 +5,6 @@ using SparseArrays
 using Random: Xoshiro
 using Test
 
-include("../fixtures.jl")
-
 @testset "Composition" begin
     A = sprand(10, 20, 0.4)
     cons = CoolPDLP.ConstraintMatrix(A, sparse(transpose(A)))

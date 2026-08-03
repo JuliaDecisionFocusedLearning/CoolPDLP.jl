@@ -5,8 +5,6 @@ using GPUArraysCore: @allowscalar
 using Random
 using Test
 
-include("../fixtures.jl")
-
 """
     test_batching(matrix_type, backend, T=Float64; nbatch=3, broken=false)
 
