@@ -42,7 +42,7 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     # GPU backends
 
     if GROUP == "cuda"
-        Pkg.add("CUDA")
+        Pkg.add(["CUDA", "cuSPARSE"])
         @testset verbose = true "CUDA" begin
             include("gpu/cuda/runtests.jl")
         end
@@ -55,7 +55,6 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
     end
     if GROUP == "OpenCL"
         set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
-        Pkg.add(["pocl_jll", "OpenCL"])
         @testset verbose = true "Metal" begin
             include("gpu/opencl/runtests.jl")
         end
