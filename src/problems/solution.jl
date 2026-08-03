@@ -14,10 +14,12 @@ function is_feasible(
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
     )
     (; lv, uv, A, lc, uc, int_var) = milp
-    bounds_err = max(maximum(x - uv), maximum(lv - x))
-    cons_err = max(maximum(A * x - uc), maximum(lc - A * x))
+    # a problem may have no constraint and no integer variable at all
+    none = typemin(eltype(x))
+    bounds_err = max(maximum(x - uv; init = none), maximum(lv - x; init = none))
+    cons_err = max(maximum(A * x - uc; init = none), maximum(lc - A * x; init = none))
     xint = x[int_var]
-    int_err = maximum(abs, xint .- round.(Int, xint))
+    int_err = maximum(abs, xint .- round.(Int, xint); init = zero(eltype(x)))
     if bounds_err > cons_tol
         verbose && @warn "Variable bounds not satisfied" bounds_err cons_tol
         return false
