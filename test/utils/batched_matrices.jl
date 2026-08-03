@@ -8,8 +8,6 @@ using Random: Xoshiro
 using SparseArrays
 using Test
 
-include("../fixtures.jl")
-
 @testset "spmm!" begin
     A = sprand(8, 6, 0.35)
     A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
@@ -31,6 +29,7 @@ end
     As = [same_pattern(pattern, rng) for _ in 1:batches]
     A_csr = GPUSparseMatrixCSR(As[1])
     rhs, lhs = rand(rng, size(pattern, 2)), rand(rng, size(pattern, 1), batches)
+    α, β = rand(rng), rand(rng)
 
     A_batched = adapt(JLBackend(), BatchedGPUSparseMatrixCSR(As))
 
@@ -47,7 +46,15 @@ end
         @test @allowscalar A_batched[1, 1, k] == As[k][1, 1]
     end
 
-    @test mul!(jl(copy(lhs)), A_batched, jl(rhs), 1.0, 0.0) ≈ stack(A -> A * rhs, As)
+    # a one α and a zero β each take their own branch, and a zero β never reads its NaNs
+    A_rhs = stack(A -> A * rhs, As)
+    nans() = jl(fill(NaN, size(lhs)))
+    @test mul!(nans(), A_batched, jl(rhs), 1.0, 0.0) ≈ A_rhs
+    @test mul!(nans(), A_batched, jl(rhs), α, 0.0) ≈ α * A_rhs
+    @test mul!(jl(copy(lhs)), A_batched, jl(rhs), 1.0, β) ≈ A_rhs + β * lhs
+    @test mul!(jl(copy(lhs)), A_batched, jl(rhs), α, β) ≈ α * A_rhs + β * lhs
+
+    @test_throws ArgumentError BatchedGPUSparseMatrixCSR([pattern, sprand(rng, 8, 6, 0.35)])
 end
 
 @testset "Batched CSR slices on the CPU" begin
