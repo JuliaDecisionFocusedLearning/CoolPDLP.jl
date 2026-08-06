@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, instance, isbatched, nbinstances
+using CoolPDLP: instance, isbatched, nbinstances
 using HiGHS: HiGHS
 using JLArrays
 using LinearAlgebra
@@ -18,7 +18,6 @@ function batched_variants(nbatch; c, lv, uv, A, lc, uc)
         "objective" => (; c = batch(c), lv, uv, A, lc, uc),
         "variable bounds" => (; c, lv = batch(lv), uv = batch(uv), A, lc, uc),
         "constraint bounds" => (; c, lv, uv, A, lc = batch(lc), uc = batch(uc)),
-        "matrix" => (; c, lv, uv, A = BatchedGPUSparseMatrixCSR(A, nbatch), lc, uc),
     )
 end
 

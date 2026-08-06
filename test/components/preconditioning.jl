@@ -1,5 +1,4 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, instance
 using LinearAlgebra
 using SparseArrays
 using Random: Xoshiro
@@ -73,38 +72,4 @@ end
     @test dot(sol.y, milp.A, sol.x) ≈ dot(sol_p.y, milp_p.A, sol_p.x)
     @test CoolPDLP.clamp.(sol.x, milp.lv, milp.uv) ≈ prec.D2 * CoolPDLP.clamp.(sol_p.x, milp_p.lv, milp_p.uv)
     @test CoolPDLP.clamp.(milp.A * sol.x, milp.lc, milp.uc) ≈ prec.D1 \ CoolPDLP.clamp.(milp_p.A * sol_p.x, milp_p.lc, milp_p.uc)
-end
-
-@testset "Effect on a batch of MILPs" begin
-    rng = Xoshiro(0)
-    m, n, nbatch = 10, 20, 3
-    pattern = sprand(rng, m, n, 0.4)
-    As = [same_pattern(pattern, rng) for _ in 1:nbatch]
-    c, lv = rand(rng, n), rand(rng, n)
-    uv, lc = lv + rand(rng, n), rand(rng, m)
-    uc = lc + rand(rng, m)
-    milps = map(A -> MILP(; c, lv, uv, A, lc, uc), As)
-    milp = MILP(; c, lv, uv, A = BatchedGPUSparseMatrixCSR(As), lc, uc)
-    sol = PrimalDualSolution(randn(rng, n, nbatch), randn(rng, m, nbatch))
-
-    params = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = 1, ruiz_iter = 10)
-    prec = CoolPDLP.pdlp_preconditioner(milp, params)
-    milp_p = CoolPDLP.precondition(milp, prec)
-    # unpreconditioning gives every instance its own copy of the shared fields back
-    milp_unp = CoolPDLP.precondition(milp_p, inv(prec))
-
-    @test size(prec.D1) == (m, m, nbatch)
-    @test size(prec.D2) == (n, n, nbatch)
-
-    @testset "instance $i" for i in 1:nbatch
-        prec_i = CoolPDLP.pdlp_preconditioner(milps[i], params)
-        @test CoolPDLP.instance(prec.D1, i) ≈ prec_i.D1
-        @test CoolPDLP.instance(prec.D2, i) ≈ prec_i.D2
-        @test same_instance(instance(milp_p, i), CoolPDLP.precondition(milps[i], prec_i))
-        @test same_instance(instance(milp_unp, i), milps[i])
-    end
-
-    sol_p = CoolPDLP.precondition(sol, prec)
-    @test isapprox(sol, CoolPDLP.unprecondition(sol_p, prec))
-    @test !isapprox(sol, sol_p)
 end

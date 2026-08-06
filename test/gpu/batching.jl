@@ -21,9 +21,7 @@ function test_batching(
         matrix_type, backend, ::Type{T} = Float64; nbatch = 3, broken = false
     ) where {T <: AbstractFloat}
     Random.seed!(0)
-    milps, milp_batch = random_milp_batch(
-        20, 30, 0.4, nbatch; batched = filter(!=(:A), BATCHABLE)
-    )
+    milps, milp_batch = random_milp_batch(20, 30, 0.4, nbatch)
     # iterating in single precision drifts much faster than in double precision
     iterate_rtol = T == Float64 ? 1.0e-6 : 1.0e-2
 

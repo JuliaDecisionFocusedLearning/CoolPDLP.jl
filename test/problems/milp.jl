@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, instance
+using CoolPDLP: instance
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -64,19 +64,6 @@ using Test
     @test_nowarn MILP(;
         c, lv = repeat(lv, 1, 3), uv, A, At, lc, uc = repeat(uc, 1, 3),
     )
-    # the batch dimension of the constraint matrix counts too
-    A3, At3 = BatchedGPUSparseMatrixCSR(A, 3), BatchedGPUSparseMatrixCSR(At, 3)
-    @test_nowarn MILP(;
-        c = repeat(c, 1, 3), lv, uv, A = A3, At = At3, lc, uc,
-    )
-    @test_throws DimensionMismatch MILP(;
-        c = repeat(c, 1, 5), lv, uv, A = A3, At = At3, lc, uc,
-    )
-    @test_throws DimensionMismatch MILP(;
-        c, lv, uv, A = A3, At = BatchedGPUSparseMatrixCSR(At, 2), lc, uc,
-    )
-    milp3 = MILP(; c = repeat(c, 1, 3), lv, uv, A = A3, lc, uc)
-    @test nonzeros(milp3.At) ≈ nonzeros(At3)
 end
 
 @testset "Batched objective value" begin
@@ -152,16 +139,6 @@ end;
     qps, path = read_instance(Netlib, "seba")
     milp = MILP(qps; path, name = "seba")
     @test startswith(string(milp), "MILP instance seba")
-
-    nbatch = 3
-    milp_batch = MILP(;
-        milp.c, milp.lv, milp.uv, A = BatchedGPUSparseMatrixCSR(milp.A, nbatch),
-        milp.lc, milp.uc, milp.int_var, milp.var_names,
-    )
-    str = string(milp_batch)
-    # the counts describe one instance, not the whole batch
-    @test occursin("- constraints: $(nbcons(milp))", str)
-    @test occursin("- nonzeros: $(nnz(milp.A))", str)
 end
 
 @testset "Approx" begin

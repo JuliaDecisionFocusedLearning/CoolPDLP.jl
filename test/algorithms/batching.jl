@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: BatchedGPUSparseMatrixCSR, EachInstance, KKTErrors, Scratch, initialize,
+using CoolPDLP: EachInstance, KKTErrors, Scratch, initialize,
     instance, kkt_errors!, nbinstances, prog_showvalues, relative, step!
 using Random
 using Test
@@ -107,7 +107,7 @@ end
             c = repeat_batch(milp_batch.c),
             lv = repeat_batch(milp_batch.lv),
             uv = repeat_batch(milp_batch.uv),
-            A = :A in batched ? BatchedGPUSparseMatrixCSR(milps[1].A, NBATCH) : milps[1].A,
+            A = milps[1].A,
             lc = repeat_batch(milp_batch.lc),
             uc = repeat_batch(milp_batch.uc),
             milp_batch.int_var,

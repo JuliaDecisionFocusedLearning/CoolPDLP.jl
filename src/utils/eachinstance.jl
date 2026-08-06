@@ -30,9 +30,6 @@ end
 instance_vec(v::AbstractVector, ::Int) = v
 instance_vec(m::AbstractMatrix, i::Int) = view(m, :, i)
 
-instance_mat(m::AbstractMatrix, ::Int) = m
-instance_mat(a::AbstractArray{T, 3}, i::Int) where {T} = view(a, :, :, i)
-
 """
     BatchedNumber
 

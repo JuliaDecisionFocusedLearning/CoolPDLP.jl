@@ -5,11 +5,11 @@
 
 $(TYPEDFIELDS)
 """
-struct Preconditioner{T <: Number, Dg1 <: DiagonalScaling{T}, Dg2 <: DiagonalScaling{T}}
+struct Preconditioner{T <: Number, V <: DenseVector{T}}
     "left preconditioner"
-    D1::Dg1
+    D1::Diagonal{T, V}
     "right preconditioner"
-    D2::Dg2
+    D2::Diagonal{T, V}
 end
 
 Preconditioner(milp::MILP) = Preconditioner(milp.D1, milp.D2)
@@ -36,43 +36,10 @@ end
 
 function precondition(cons::ConstraintMatrix, prec::Preconditioner)
     (; A, At) = cons
-    A_p, At_p = precondition_matrices(A, At, prec)
-    return ConstraintMatrix(A_p, At_p)
-end
-
-"""
-    precondition_matrices(A, At, prec)
-
-Apply the scalings of `prec` to a constraint matrix and its transpose.
-"""
-function precondition_matrices(A, At, prec::Preconditioner)
     (; D1, D2) = prec
-    return (D1 * A * D2, D2 * At * D1)
-end
-
-function precondition_matrices(
-        A::BatchedGPUSparseMatrixCSR, At::BatchedGPUSparseMatrixCSR, prec::Preconditioner
-    )
-    d1, d2 = diag(prec.D1), diag(prec.D2)
-    return (scale_rows_cols(A, d1, d2), scale_rows_cols(At, d2, d1))
-end
-
-"""
-    scale_rows_cols(A, dr, dc)
-
-Scale row `i` of instance `k` of the batched matrix `A` by `dr[i, k]`, and its column `j` by `dc[j, k]`.
-
-Only defined on the CPU, which is where preconditioning happens.
-"""
-function scale_rows_cols(
-        A::BatchedGPUSparseMatrixCSR, dr::AbstractMatrix, dc::AbstractMatrix
-    )
-    (; m, n, rowptr, colval, nzval) = A
-    scaled = similar(nzval)
-    for k in axes(nzval, 2), i in 1:m, p in rowptr[i]:(rowptr[i + 1] - 1)
-        scaled[p, k] = dr[i, k] * nzval[p, k] * dc[colval[p], k]
-    end
-    return BatchedGPUSparseMatrixCSR(m, n, rowptr, colval, scaled)
+    A_p = D1 * A * D2
+    At_p = D2 * At * D1
+    return ConstraintMatrix(A_p, At_p)
 end
 
 function precondition(sol::PrimalDualSolution, prec::Preconditioner)
@@ -97,9 +64,11 @@ function precondition(milp::MILP, prec::Preconditioner)
         int_var, var_names, dataset, name, path,
     ) = milp
     (; D1, D2) = prec
+    cons = ConstraintMatrix(A, At)
+    cons_p = precondition(cons, prec)
     c_p = D2 * c
     lv_p, uv_p = D2 \ lv, D2 \ uv
-    A_p, At_p = precondition_matrices(A, At, prec)
+    A_p, At_p = cons_p.A, cons_p.At
     lc_p, uc_p = D1 * lc, D1 * uc
     new_prec = prec * Preconditioner(milp)
     milp_p = MILP(;
@@ -174,38 +143,13 @@ function Base.show(io::IO, params::PreconditioningParameters)
     return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter")
 end
 
-function pdlp_preconditioner(cons::ConstraintMatrix, params::PreconditioningParameters)
+function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
+    (; A, At) = milp
     (; chambolle_pock_alpha, ruiz_iter) = params
+    cons = ConstraintMatrix(A, At)
     prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
     cons_r = precondition(cons, prec_r)
     prec_cp = chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
     prec = prec_r * prec_cp
     return prec
-end
-
-function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
-    (; A, At) = milp
-    if ndims(A) > 2
-        return batched_preconditioner(A, At, params)
-    end
-    return pdlp_preconditioner(ConstraintMatrix(A, At), params)
-end
-
-"""
-    batched_preconditioner(A, At, params)
-
-Precondition each instance of a batched constraint matrix on its own, and gather the scalings into a pair of [`BatchedDiagonal`](@ref).
-"""
-function batched_preconditioner(A, At, params::PreconditioningParameters)
-    precs = map(axes(A, 3)) do i
-        # every instance goes through the plain CSC pipeline
-        cons = ConstraintMatrix(
-            SparseMatrixCSC(view(A, :, :, i)), SparseMatrixCSC(view(At, :, :, i))
-        )
-        return pdlp_preconditioner(cons, params)
-    end
-    return Preconditioner(
-        BatchedDiagonal(stack(prec -> diag(prec.D1), precs)),
-        BatchedDiagonal(stack(prec -> diag(prec.D2), precs)),
-    )
 end

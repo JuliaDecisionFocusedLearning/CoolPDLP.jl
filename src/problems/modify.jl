@@ -4,11 +4,6 @@
 Change the element type of floating-point containers inside `milp` to `T`.
 """
 set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = map(T, A)
-set_eltype(::Type{T}, D::BatchedDiagonal) where {T} = BatchedDiagonal(set_eltype(T, D.diag))
-
-function set_eltype(::Type{T}, A::BatchedGPUSparseMatrixCSR) where {T}
-    return BatchedGPUSparseMatrixCSR(A.m, A.n, A.rowptr, A.colval, set_eltype(T, A.nzval))
-end
 
 function set_eltype(::Type{T}, sol::PrimalDualSolution) where {T}
     return PrimalDualSolution(set_eltype(T, sol.x), set_eltype(T, sol.y))
@@ -54,12 +49,6 @@ function set_indtype(::Type{Ti}, A::SparseMatrixCSC) where {Ti}
     )
 end
 
-function set_indtype(::Type{Ti}, A::BatchedGPUSparseMatrixCSR) where {Ti}
-    return BatchedGPUSparseMatrixCSR(
-        A.m, A.n, set_indtype(Ti, A.rowptr), set_indtype(Ti, A.colval), A.nzval
-    )
-end
-
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
@@ -83,23 +72,18 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     )
 end
 
-convert_matrix(::Type{M}, A::AbstractMatrix) where {M} = M(A)
-convert_matrix(::Type{M}, A::BatchedGPUSparseMatrixCSR) where {M} = A
-
 """
     set_matrix_type(::Type{M}, milp)
 
 Convert the sparse matrices inside `milp` using constructor `M`.
-
-Batched matrices are left alone, since [`BatchedGPUSparseMatrixCSR`](@ref) is the only format holding a batch.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, dataset, name, path,
     ) = milp
-    A_M = convert_matrix(M, A)
-    At_M = convert_matrix(M, At)
+    A_M = M(A)
+    At_M = M(At)
     backend = common_backend(A_M, At_M)
 
     return MILP(;

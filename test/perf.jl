@@ -42,7 +42,7 @@ end
 
 @testset verbose = true "Allocation-free iterations" begin
     Random.seed!(0)
-    milps, milp_batch = random_milp_batch(20, 30, 0.4, 3; batched = filter(!=(:A), BATCHABLE))
+    milps, milp_batch = random_milp_batch(20, 30, 0.4, 3)
 
     algo = PDLP(; record_error_history = false)
     @testset "batch size $(nbinstances(milp))" for milp in (milps[1], milp_batch)

@@ -22,8 +22,8 @@ end
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
     (; invnorm_scaling) = params
-    norm_A = spectral_norm(A, At)
-    return @. T(invnorm_scaling) * inv(norm_A)
+    η = T(invnorm_scaling) * inv(spectral_norm(A, At))
+    return η
 end
 
 function primal_weight_init(milp::MILP{T}, params::StepSizeParameters) where {T}

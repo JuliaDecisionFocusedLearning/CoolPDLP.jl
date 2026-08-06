@@ -1,6 +1,6 @@
 using CoolPDLP
 using CoolPDLP: EachInstance, batched_all, batched_expand, batched_mean, batched_similar,
-    batched_zeros, instance, instance_mat, instance_num, instance_vec, nbinstances
+    batched_zeros, instance, instance_num, instance_vec, nbinstances
 using JLArrays
 using Random
 using Test
@@ -9,20 +9,15 @@ Random.seed!(0)
 
 @testset "Instance extraction" begin
     v, m = randn(4), randn(4, 3)
-    a = randn(4, 5, 3)
 
     @test instance_vec(v, 2) === v
     @test instance_vec(m, 2) == m[:, 2]
-    @test instance_mat(m, 2) === m
-    @test instance_mat(a, 2) == a[:, :, 2]
     @test instance_num(1.5, 2) == 1.5
     @test instance_num([1.0, 2.0, 3.0], 2) == 2.0
 
     # views, so that instances share the memory of the batch
     instance_vec(m, 2)[1] = 100
     @test m[1, 2] == 100
-    instance_mat(a, 2)[1, 1] = 100
-    @test a[1, 1, 2] == 100
 end
 
 @testset "Per-instance quantities" begin
@@ -58,7 +53,7 @@ end
 
 @testset "EachInstance of a batched MILP" begin
     nbatch = 3
-    milps, milp_batch = random_milp_batch(5, 8, 0.5, nbatch; batched = filter(!=(:A), BATCHABLE))
+    milps, milp_batch = random_milp_batch(5, 8, 0.5, nbatch)
     each = EachInstance(milp_batch)
 
     @test eltype(each) == typeof(instance(milp_batch, 1))
