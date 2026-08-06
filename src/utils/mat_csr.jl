@@ -79,8 +79,7 @@ end
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
         b::DenseVector{T},
-        α::Number,
-        β::Number
+        m::MulAddMul,
     ) where {T, Ti}
     i = @index(Global, Linear)
     s = zero(T)
@@ -88,7 +87,8 @@ end
         j = A_colval[k]
         s += A_nzval[k] * b[j]
     end
-    c[i] = α * s + β * c[i]
+    # c[i] = α * s + β * c[i]
+    _modify!(m, s, c, i)
 end
 
 function LinearAlgebra.mul!(
@@ -100,16 +100,6 @@ function LinearAlgebra.mul!(
     ) where {T <: Number, Ti, V <: DenseVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
-    α_is_one = isone(α)
-    β_is_zero = iszero(β)
-    if α_is_one && β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(A, 1))
-    elseif α_is_one
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(A, 1))
-    elseif β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(A, 1))
-    else
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(A, 1))
-    end
+    @stable_muladdmul kernel!(c, A.rowptr, A.colval, A.nzval, b, MulAddMul(α, β); ndrange = size(A, 1))
     return c
 end

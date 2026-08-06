@@ -14,6 +14,7 @@ using StableRNGs: StableRNG
 
 # standard libraries
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using LinearAlgebra: MulAddMul, @stable_muladdmul, _modify!, _rmul_or_fill!
 using Printf: @sprintf
 using Random: randn!
 using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn

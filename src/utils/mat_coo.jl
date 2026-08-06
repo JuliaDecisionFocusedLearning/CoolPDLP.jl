@@ -1,3 +1,6 @@
+struct One <: Number end
+Base.:*(::One, x::Number) = x
+
 """
     GPUSparseMatrixCOO
 
@@ -82,11 +85,7 @@ function LinearAlgebra.mul!(
     ) where {T <: Number, Ti, V <: DenseVector{T}}
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
-    if iszero(β)
-        zero!(c)
-    elseif !isone(β)
-        c .*= β
-    end
+    _rmul_or_fill!(c, β)
     if isone(α)
         kernel!(c, A.rowval, A.colval, A.nzval, b, One(); ndrange = length(A.nzval))
     else
