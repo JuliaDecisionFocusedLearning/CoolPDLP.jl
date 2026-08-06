@@ -6,6 +6,11 @@ Represent a Mixed Integer Linear Program in "cuPDLPx form":
     min cᵀx   s.t.   lv ≤ x ≤ uv
                      lc ≤ A * x ≤ uc
 
+A `MILP` can also hold a whole batch of such programs sharing the constraint matrix `A`: any
+of `c`, `lv`, `uv`, `lc` and `uc` may then be a matrix with one column per instance, while
+the others stay vectors shared by the whole batch. All batched fields must agree on the
+number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref).
+
 # Constructor
 
     MILP(;
