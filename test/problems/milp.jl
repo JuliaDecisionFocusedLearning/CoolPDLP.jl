@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: instance
+using CoolPDLP: instance, isbatched
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -102,6 +102,17 @@ end
     @test_throws ArgumentError nbcons_ineq(milp_cons)
     @test !occursin("equalities", string(milp_cons))
     @test occursin("2 equalities", string(milp_obj))
+end
+
+@testset "isbatched is inferred as a constant" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(4, 6, 0.5)
+    milp_batch = MILP(;
+        c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc, milp.int_var,
+    )
+    # `Val` makes `@inferred` fail unless the answer folds to a constant during inference
+    val_isbatched(m) = Val(isbatched(m))
+    @test @inferred(val_isbatched(milp)) === Val(false)
+    @test @inferred(val_isbatched(milp_batch)) === Val(true)
 end
 
 @testset "Compare against JuMP" begin
