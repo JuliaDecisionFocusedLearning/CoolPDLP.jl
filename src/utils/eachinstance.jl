@@ -36,7 +36,7 @@ instance_mat(a::AbstractArray{T, 3}, i::Int) where {T} = view(a, :, :, i)
 """
     BatchedNumber
 
-Type of a quantity which is scalar without batching, and holds one value per instance otherwise.
+Equivalent to `Union{Number, AbstractVector{<:Number}}`. Represents a quantity which is scalar without batching, and holds one value per instance otherwise.
 
 Combine such quantities with `BangBang.broadcast!!(f, dest, args...)`, which writes into `dest` when batched and returns a fresh number otherwise, so the result must always be used.
 """
