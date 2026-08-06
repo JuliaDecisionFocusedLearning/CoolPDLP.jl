@@ -5,18 +5,20 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct RestartParameters{T <: Number}
+@kwdef struct RestartParameters{T <: Number, F}
     "restart criterion: sufficient decay in normalized duality gap"
     sufficient_decay::T
     "restart criterion: necessary decay"
     necessary_decay::T
     "restart criterion: long inner loop"
     artificial_decay::T
+    "how the per-instance absolute errors are reduced to the single restart decision shared by the batch"
+    batch_aggregation::F = batched_mean
 end
 
 function Base.show(io::IO, params::RestartParameters)
-    (; sufficient_decay, necessary_decay, artificial_decay) = params
-    return print(io, "RestartParameters: sufficient_decay=$sufficient_decay, necessary_decay=$necessary_decay, artificial_decay=$artificial_decay")
+    (; sufficient_decay, necessary_decay, artificial_decay, batch_aggregation) = params
+    return print(io, "RestartParameters: sufficient_decay=$sufficient_decay, necessary_decay=$necessary_decay, artificial_decay=$artificial_decay, batch_aggregation=$batch_aggregation")
 end
 
 """
@@ -71,20 +73,20 @@ instance(stats::RestartStats, i::Int) = RestartStats(
 """
     should_restart(stats, iteration, params)
 
-Decide whether the whole batch restarts, based on the fixed-point residual averaged over the columns.
+Decide whether the whole batch restarts, based on an aggregate of the per-column fixed-point residuals.
 
-Since every instance of the batch restarts at the same time, the three usual criteria (sufficient decay, necessary decay without local progress, long inner loop) are applied to the mean of the per-column absolute KKT errors instead of requiring each column to agree.
+Since every instance of the batch restarts at the same time, the three usual criteria (sufficient decay, necessary decay without local progress, long inner loop) are applied to `params.batch_aggregation` (the mean by default) of the per-column absolute KKT errors instead of requiring each column to agree.
 """
 function should_restart(
         stats::RestartStats, iteration::IterationCounter, params::RestartParameters,
     )
     (; abs_candidate, abs_candidate_last, abs_restart) = stats
-    (; sufficient_decay, necessary_decay, artificial_decay) = params
+    (; sufficient_decay, necessary_decay, artificial_decay, batch_aggregation) = params
     (; inner, total) = iteration
 
-    candidate = batched_mean(abs_candidate)
-    candidate_last = batched_mean(abs_candidate_last)
-    restart = batched_mean(abs_restart)
+    candidate = batch_aggregation(abs_candidate)
+    candidate_last = batch_aggregation(abs_candidate_last)
+    restart = batch_aggregation(abs_restart)
 
     sufficient = candidate <= sufficient_decay * restart
     necessary = candidate <= necessary_decay * restart

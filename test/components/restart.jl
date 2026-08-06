@@ -1,6 +1,7 @@
 using CoolPDLP
-using CoolPDLP: KKTErrors, Scratch, absolute!!, batched_similar, initialize,
-    kkt_errors!, nbinstances, restart_check!, step!
+using CoolPDLP: IterationCounter, KKTErrors, RestartParameters, RestartStats, Scratch,
+    absolute!!, batched_mean, batched_similar, initialize, kkt_errors!, nbinstances,
+    restart_check!, should_restart, step!
 using Random
 using Test
 
@@ -30,4 +31,24 @@ using Test
             min.(abs_err(restart_stats.err_current), abs_err(restart_stats.err_avg))
         @test restart_stats.abs_restart ≈ abs_err(restart_stats.err_restart)
     end
+end
+
+@testset "Parametrizable batch aggregation" begin
+    sol = PrimalDualSolution(zeros(6, 3), zeros(4, 3))
+    stats = RestartStats(sol)
+    stats.abs_candidate .= [0.1, 0.1, 1.0]
+    stats.abs_candidate_last .= 2.0
+    stats.abs_restart .= 1.0
+    iteration = IterationCounter(0, 1, 10)
+
+    params(f) = RestartParameters(;
+        sufficient_decay = 0.5, necessary_decay = 0.8, artificial_decay = 1.0,
+        batch_aggregation = f,
+    )
+    # the mean of the candidate errors has decayed enough, their maximum has not
+    @test should_restart(stats, iteration, params(batched_mean))
+    @test !should_restart(stats, iteration, params(maximum))
+
+    # the aggregation reaches the restart parameters through the algorithm constructor
+    @test PDLP(; batch_aggregation = maximum).restart.batch_aggregation === maximum
 end

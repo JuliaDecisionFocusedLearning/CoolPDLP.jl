@@ -11,11 +11,12 @@ struct Algorithm{
         Ti <: Integer,
         M <: AbstractMatrix,
         B <: Backend,
+        R <: RestartParameters{T},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
     step_size::StepSizeParameters{T}
-    restart::RestartParameters{T}
+    restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
 end
@@ -38,6 +39,7 @@ end
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
+        batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -67,6 +69,7 @@ function Algorithm{A}(
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
+        batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -93,6 +96,7 @@ function Algorithm{A}(
         sufficient_decay = _T(sufficient_decay),
         necessary_decay = _T(necessary_decay),
         artificial_decay = _T(artificial_decay),
+        batch_aggregation,
     )
     generic = GenericParameters(;
         show_progress,
@@ -105,7 +109,7 @@ function Algorithm{A}(
         time_limit
     )
 
-    return Algorithm{A, T, Ti, M, B}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
         conversion,
         preconditioning,
         step_size,
