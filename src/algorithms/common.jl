@@ -152,9 +152,13 @@ end
     progress_value(rel)
 
 Format a relative error for the progress display: the value itself for a single instance, the maximum and mean over the instances for a batch.
+
+The two summaries are printed in fixed width so that they line up across the progress rows.
 """
 progress_value(rel::Number) = rel
-progress_value(rel::AbstractVector) = "max $(maximum(rel)), mean $(batched_mean(rel))"
+function progress_value(rel::AbstractVector)
+    return "max $(format_error(maximum(rel))), mean $(format_error(batched_mean(rel)))"
+end
 
 """
     preprocess(milp_init, sol_init, algo)

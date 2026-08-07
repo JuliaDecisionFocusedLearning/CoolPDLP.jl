@@ -131,7 +131,8 @@ end
 
 @testset "Progress values summarize the batch" begin
     @test CoolPDLP.progress_value(2.5) === 2.5
-    @test CoolPDLP.progress_value([1.0, 2.0, 3.0]) == "max 3.0, mean 2.0"
+    # fixed-width values, so `mean` sits at the same column on every row
+    @test CoolPDLP.progress_value([1.0, 2.0, 3.0]) == "max 3.000e+00, mean 2.000e+00"
 
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(20, 30, 0.4, NBATCH; batched = (:c,))
