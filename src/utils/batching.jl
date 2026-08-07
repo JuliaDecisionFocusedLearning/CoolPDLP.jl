@@ -12,21 +12,6 @@ Return the `i`-th instance of the batch held by `x`, sharing its memory whenever
 """
 function instance end
 
-struct EachInstance{ElTy, T} <: AbstractVector{ElTy}
-    data::T
-    nbinstances::Int
-    function EachInstance(data::T) where {T}
-        ElTy = Core.Compiler.return_type(instance, Tuple{T, Int})
-        return new{ElTy, T}(data, nbinstances(data))
-    end
-end
-
-Base.size((; nbinstances)::EachInstance) = (nbinstances,)
-function Base.getindex(ei::EachInstance, i::Int)
-    i in eachindex(ei) || throw(BoundsError(ei, i))
-    return instance(ei.data, i)
-end
-
 instance_vec(v::AbstractVector, ::Int) = v
 instance_vec(m::AbstractMatrix, i::Int) = view(m, :, i)
 

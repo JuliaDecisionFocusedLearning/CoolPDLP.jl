@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: EachInstance, KKTErrors, Scratch, initialize, instance, kkt_errors!,
+using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
     nbinstances, preprocess, relative, step!
 using GPUArraysCore: @allowscalar
 using Random
@@ -33,14 +33,14 @@ function test_batching(
 
     @testset "Instance iteration" begin
         @test nbinstances(milp_dev) == nbatch
-        @test length(EachInstance(milp_dev)) == nbatch
-        for (i, milp_i) in enumerate(EachInstance(milp_dev))
+        for i in 1:nbatch
+            milp_i = instance(milp_dev, i)
             milp_single = singles[i][1]
-            @test Array(milp_i.c) ≈ Array(milp_single.c)
-            @test Array(milp_i.lv) ≈ Array(milp_single.lv)
-            @test Array(milp_i.uv) ≈ Array(milp_single.uv)
-            @test Array(milp_i.lc) ≈ Array(milp_single.lc)
-            @test Array(milp_i.uc) ≈ Array(milp_single.uc)
+            @test Array(milp_i.c) == Array(milp_single.c)
+            @test Array(milp_i.lv) == Array(milp_single.lv)
+            @test Array(milp_i.uv) == Array(milp_single.uv)
+            @test Array(milp_i.lc) == Array(milp_single.lc)
+            @test Array(milp_i.uc) == Array(milp_single.uc)
         end
     end
 

@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: EachInstance, KKTErrors, Scratch, initialize,
+using CoolPDLP: KKTErrors, Scratch, initialize,
     instance, kkt_errors!, nbinstances, prog_showvalues, relative, step!
 using Random
 using Test
@@ -46,10 +46,9 @@ end
 
     @testset "Batch iteration" begin
         @test nbinstances(milp_batch) == nbinst
-        @test length(EachInstance(milp_batch)) == nbinst
         @test nbinstances(PrimalDualSolution(milp_batch)) == nbinst
-        for (i, milp) in enumerate(EachInstance(milp_batch))
-            @test same_instance(milp, milps[i])
+        for i in 1:nbinst
+            @test same_instance(instance(milp_batch, i), milps[i])
         end
     end
 

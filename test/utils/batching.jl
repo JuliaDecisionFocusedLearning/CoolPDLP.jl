@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: EachInstance, batched_all, batched_expand, batched_mean, batched_similar,
+using CoolPDLP: batched_all, batched_expand, batched_mean, batched_similar,
     batched_zeros, instance, instance_num, instance_vec, nbinstances
 using JLArrays
 using Random
@@ -51,16 +51,13 @@ end
     @test @inferred(batched_zeros(v, 5, 3, Val(true))) isa Matrix{Float64}
 end
 
-@testset "EachInstance of a batched MILP" begin
+@testset "Instances of a batched MILP" begin
     nbatch = 3
     milps, milp_batch = random_milp_batch(5, 8, 0.5, nbatch)
-    each = EachInstance(milp_batch)
 
-    @test eltype(each) == typeof(instance(milp_batch, 1))
-    @test size(each) == (nbatch,)
-    @test each[2] ≈ milps[2]
-    @test all(splat(≈), zip(collect(each), milps))
-    @test_throws BoundsError each[nbatch + 1]
+    @test all(enumerate(milps)) do (i, milp)
+        same_instance(milp, instance(milp_batch, i))
+    end
 end
 
 @testset "Instance counts along the solve" begin
