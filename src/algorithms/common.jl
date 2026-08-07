@@ -142,11 +142,19 @@ function prog_showvalues(state::AbstractState)
     rel_dual = dual ./ dual_scale
     rel_gap = gap ./ gap_scale
     return (
-        ("primal", rel_primal),
-        ("dual", rel_dual),
-        ("gap", rel_gap),
+        ("primal", progress_value(rel_primal)),
+        ("dual", progress_value(rel_dual)),
+        ("gap", progress_value(rel_gap)),
     )
 end
+
+"""
+    progress_value(rel)
+
+Format a relative error for the progress display: the value itself for a single instance, the maximum and mean over the instances for a batch.
+"""
+progress_value(rel::Number) = rel
+progress_value(rel::AbstractVector) = "max $(maximum(rel)), mean $(batched_mean(rel))"
 
 """
     preprocess(milp_init, sol_init, algo)

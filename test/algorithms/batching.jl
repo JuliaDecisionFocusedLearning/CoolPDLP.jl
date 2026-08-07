@@ -129,7 +129,10 @@ end
     end
 end
 
-@testset "Progress values per column" begin
+@testset "Progress values summarize the batch" begin
+    @test CoolPDLP.progress_value(2.5) === 2.5
+    @test CoolPDLP.progress_value([1.0, 2.0, 3.0]) == "max 3.0, mean 2.0"
+
     Random.seed!(0)
     milps, milp_batch = random_milp_batch(20, 30, 0.4, NBATCH; batched = (:c,))
     algo = PDLP()
@@ -139,8 +142,13 @@ end
         values = prog_showvalues(state)
         @test map(first, values) == ("primal", "dual", "gap")
         for (_, value) in values
-            @test length(value) == nbinstances(state)
-            @test all(isfinite.(value))
+            if nbinstances(state) == 1
+                @test value isa Real && isfinite(value)
+            else
+                # a batch shows two summary numbers rather than one value per column
+                @test value isa String
+                @test occursin("max ", value) && occursin("mean ", value)
+            end
         end
     end
 end
