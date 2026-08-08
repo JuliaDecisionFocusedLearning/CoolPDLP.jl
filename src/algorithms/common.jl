@@ -39,7 +39,7 @@ end
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
-        batch_aggregation = batched_mean,
+        restart_batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -69,7 +69,7 @@ function Algorithm{A}(
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
-        batch_aggregation = batched_mean,
+        restart_batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -96,7 +96,7 @@ function Algorithm{A}(
         sufficient_decay = _T(sufficient_decay),
         necessary_decay = _T(necessary_decay),
         artificial_decay = _T(artificial_decay),
-        batch_aggregation,
+        batch_aggregation = restart_batch_aggregation,
     )
     generic = GenericParameters(;
         show_progress,

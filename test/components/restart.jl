@@ -50,5 +50,5 @@ end
     @test !should_restart(stats, iteration, params(maximum))
 
     # the aggregation reaches the restart parameters through the algorithm constructor
-    @test PDLP(; batch_aggregation = maximum).restart.batch_aggregation === maximum
+    @test PDLP(; restart_batch_aggregation = maximum).restart.batch_aggregation === maximum
 end
