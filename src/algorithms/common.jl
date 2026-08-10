@@ -242,7 +242,7 @@ function termination_check!(
     if algo.generic.record_error_history
         push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
     end
-    stats.termination_status = termination_status(stats, algo.termination, scratch.b1)
+    stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
     return stats.termination_status !== STILL_RUNNING
 end
 

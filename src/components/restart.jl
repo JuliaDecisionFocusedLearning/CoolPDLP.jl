@@ -13,7 +13,7 @@ $(TYPEDFIELDS)
     "restart criterion: long inner loop"
     artificial_decay::T
     "how the per-instance absolute errors are reduced to the single restart decision shared by the batch"
-    batch_aggregation::F = batched_mean
+    batch_aggregation::F
 end
 
 function Base.show(io::IO, params::RestartParameters)
@@ -28,7 +28,7 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct RestartStats{T <: BatchedNumber, B <: Union{Bool, AbstractVector{Bool}}}
+mutable struct RestartStats{T <: BatchedNumber, B <: BatchedNumber{Bool}}
     "whether to restart from the average solution, column by column"
     restart_from_avg::B
     "KKT errors of the current solution"

@@ -72,6 +72,30 @@ Base.copy(err::KKTErrors) = KKTErrors(
 )
 
 """
+    select_errors!!(dest, cond, err_true, err_false)
+
+Fill `dest`, column by column, with the errors of `err_true` where `cond` holds and those of `err_false` elsewhere.
+"""
+function select_errors!!(
+        dest::KKTErrors, cond::BatchedNumber{Bool},
+        err_true::KKTErrors, err_false::KKTErrors,
+    )
+    dest.primal = broadcast!!(ifelse, dest.primal, cond, err_true.primal, err_false.primal)
+    dest.primal_scale = broadcast!!(
+        ifelse, dest.primal_scale, cond, err_true.primal_scale, err_false.primal_scale
+    )
+    dest.dual = broadcast!!(ifelse, dest.dual, cond, err_true.dual, err_false.dual)
+    dest.dual_scale = broadcast!!(
+        ifelse, dest.dual_scale, cond, err_true.dual_scale, err_false.dual_scale
+    )
+    dest.gap = broadcast!!(ifelse, dest.gap, cond, err_true.gap, err_false.gap)
+    dest.gap_scale = broadcast!!(
+        ifelse, dest.gap_scale, cond, err_true.gap_scale, err_false.gap_scale
+    )
+    return dest
+end
+
+"""
     relative!!(dest, err)
 
 Compute the largest relative KKT error, column by column, into `dest`.

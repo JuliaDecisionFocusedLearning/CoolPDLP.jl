@@ -96,8 +96,13 @@ function Base.show(io::IO, stats::ConvergenceStats)
     )
 end
 
-function termination_status(
-        stats::ConvergenceStats, params::TerminationParameters, dest::BatchedNumber
+"""
+    termination_status!!(dest, stats, params)
+
+Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
+"""
+function termination_status!!(
+        dest::BatchedNumber, stats::ConvergenceStats, params::TerminationParameters
     )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params

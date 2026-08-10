@@ -18,8 +18,8 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber, B,
-        Sc <: Scratch{T, V, S},
+        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
+        B <: BatchedNumber{Bool}, Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -80,6 +80,9 @@ function initialize(
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
         step_sizes, scratch, iteration, restart_stats, stats
     )
+    # `restart_check!` reads the errors of the restart point without recomputing them, so
+    # they must be filled for the starting point already
+    kkt_errors!(restart_stats.err_restart, scratch, sol, milp)
     return state
 end
 
@@ -153,7 +156,7 @@ function restart_check!(
         algo::Algorithm{:PDLP}
     )
     (;
-        sol, sol_last, sol_avg, sol_avg_last, sol_restart,
+        sol, sol_last, sol_avg, sol_avg_last,
         step_sizes, scratch, iteration, restart_stats,
     ) = state
     (; ω) = step_sizes
@@ -170,7 +173,7 @@ function restart_check!(
         scratch, sol_last, sol_avg_last, milp, ω,
     )
 
-    kkt_errors!(err_restart, scratch, sol_restart, milp)
+    # `err_restart` stays valid between restarts, only the primal weight `ω` moves
     restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
 
     return should_restart(restart_stats, iteration, algo.restart)
@@ -184,7 +187,7 @@ Fill `err1` and `err2` with the KKT errors of `sol1` and `sol2`, then keep the s
 Return `abs_err` together with both absolute errors, which live in the scratch space and stay valid only until the next call.
 """
 function best_error!!(
-        abs_err, err1::KKTErrors, err2::KKTErrors,
+        abs_err::BatchedNumber, err1::KKTErrors, err2::KKTErrors,
         scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
         milp::MILP, ω::BatchedNumber,
     )
@@ -204,6 +207,11 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
 
     # identify candidate, column by column
     batched_select!(sol, restart_stats.restart_from_avg, sol_avg)
+    # the restart point is the candidate just selected, so its errors are already known
+    select_errors!!(
+        restart_stats.err_restart, restart_stats.restart_from_avg,
+        restart_stats.err_avg, restart_stats.err_current,
+    )
     # update step sizes (must be done before losing previous restart)
     reset_stepsize!(step_sizes)
     step_sizes.ω = primal_weight_update!!(
