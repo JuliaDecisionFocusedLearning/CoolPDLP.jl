@@ -6,7 +6,7 @@ using SparseArrays
 const BATCHABLE = (:c, :lv, :uv, :lc, :uc)
 
 """
-    random_milp_batch(m, n, p, nbatch; batched=BATCHABLE)
+    random_milp_batch([rng,] m, n, p, nbatch; batched=BATCHABLE)
 
 Build `nbatch` random single MILPs together with the batched MILP grouping them.
 
@@ -14,8 +14,8 @@ Only the fields listed in `batched` vary from one instance to the next: their da
 column-wise in the batched MILP, while everything else (including the constraint matrix)
 stays shared.
 """
-function random_milp_batch(m, n, p, nbatch; batched = BATCHABLE)
-    instances = [CoolPDLP.random_milp_and_sol(m, n, p)[1] for _ in 1:nbatch]
+function random_milp_batch(rng::AbstractRNG, m, n, p, nbatch; batched = BATCHABLE)
+    instances = [CoolPDLP.random_milp_and_sol(rng, m, n, p)[1] for _ in 1:nbatch]
     A = instances[1].A
 
     vary(field, i) = field in batched ? i : 1
@@ -42,6 +42,10 @@ function random_milp_batch(m, n, p, nbatch; batched = BATCHABLE)
         int_var,
     )
     return milps, milp_batch
+end
+
+function random_milp_batch(m, n, p, nbatch; kwargs...)
+    return random_milp_batch(Random.default_rng(), m, n, p, nbatch; kwargs...)
 end
 
 """
