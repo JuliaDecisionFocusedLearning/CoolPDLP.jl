@@ -123,3 +123,45 @@ function LinearAlgebra.mul!(
     end
     return c
 end
+
+@kernel function spmm_ell!(
+        c::DenseMatrix{T},
+        A_colval::AbstractMatrix{Ti},
+        A_nzval::AbstractMatrix{T},
+        b::DenseMatrix{T},
+        α::Number,
+        β::Number
+    ) where {T, Ti}
+    i, batch_idx = @index(Global, NTuple)
+    s = zero(T)
+    for k in axes(A_colval, 2)
+        j = A_colval[i, k]
+        if j != zero(Ti)
+            s += A_nzval[i, k] * b[j, batch_idx]
+        end
+    end
+    c[i, batch_idx] = α * s + β * c[i, batch_idx]
+end
+
+function LinearAlgebra.mul!(
+        c::DenseMatrix{T},
+        A::GPUSparseMatrixELL{T},
+        b::DenseMatrix{T},
+        α::Number,
+        β::Number
+    ) where {T <: Number}
+    backend = common_backend(c, A, b)
+    kernel! = spmm_ell!(backend)
+    α_is_one = isone(α)
+    β_is_zero = iszero(β)
+    if α_is_one && β_is_zero
+        kernel!(c, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+    elseif α_is_one
+        kernel!(c, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+    elseif β_is_zero
+        kernel!(c, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+    else
+        kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(c))
+    end
+    return c
+end

@@ -45,10 +45,9 @@ end
     end
 end
 
-# only exists for CSR for now
-@testset "spmm!" begin
+@testset "spmm! $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
     A = sprand(8, 6, 0.35)
-    A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+    A_jl = adapt(JLBackend(), M(A))
     rhs, lhs = rand(size(A, 2), 3), rand(size(A, 1), 3)
     α, β = rand(), rand()
 
