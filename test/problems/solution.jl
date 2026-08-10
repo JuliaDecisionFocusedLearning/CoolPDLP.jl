@@ -49,7 +49,7 @@ end
         milp = MILP(; kw..., int_var)
         @test isbatched(milp)
         @test nbinstances(milp) == nbatch
-        # the number of instances is only known at run time, but its shape must be inferrable
+        # the number of instances is only known at run time, but its type must be inferrable
         sol = @inferred PrimalDualSolution(milp)
         @test sol isa PrimalDualSolution{Float64, Matrix{Float64}}
         @test nbinstances(sol) == nbatch

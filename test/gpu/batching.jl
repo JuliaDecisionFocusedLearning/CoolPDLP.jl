@@ -6,22 +6,17 @@ using Random
 using Test
 
 """
-    test_batching(matrix_type, backend, T=Float64; nbatch=3, broken=false)
+    test_batching(matrix_type, backend, T=Float64; nbatch=3)
 
 Check that a batch of problems living on `backend` behaves like the same problems handled one at a time.
 
 Solving happens in the float type `T`, which a backend like Metal restricts to `Float32`.
-
-Pass `broken` for a backend which cannot reduce into a `Transpose` destination, which the
-column reductions need. Only JLArrays is in that case, and only until
-<https://github.com/JuliaGPU/GPUArrays.jl/pull/754> is released: to undo, delete the keyword
-argument and every other line mentioning `broken`, here and in `runtests.jl`.
 """
 function test_batching(
-        matrix_type, backend, ::Type{T} = Float64; nbatch = 3, broken = false
+        matrix_type, backend, ::Type{T} = Float64; nbatch = 3
     ) where {T <: AbstractFloat}
-    Random.seed!(0)
-    milps, milp_batch = random_milp_batch(20, 30, 0.4, nbatch)
+    rng = Xoshiro(0)
+    milps, milp_batch = random_milp_batch(rng, 20, 30, 0.4, nbatch)
     # iterating in single precision drifts much faster than in double precision
     iterate_rtol = T == Float64 ? 1.0e-6 : 1.0e-2
 
@@ -44,8 +39,7 @@ function test_batching(
         end
     end
 
-    broken && @test_broken kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev) isa KKTErrors
-    broken || @testset "KKT errors per instance" begin
+    @testset "KKT errors per instance" begin
         err_batch = kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev)
         @test length(err_batch.primal) == nbatch
         rel_batch = Array(relative(err_batch))
@@ -92,8 +86,7 @@ function test_batching(
         uc = repeat_batch(milps[1].uc),
         milps[1].int_var,
     )
-    broken && @test_broken solve(milp_id, PDHG(T, Int, matrix_type; backend)) isa Tuple
-    broken || @testset "Identical batch matches single solve" begin
+    @testset "Identical batch matches single solve" begin
         @testset "$alg" for alg in (PDHG, PDLP)
             algo_solve = alg(T, Int, matrix_type; backend, max_kkt_passes = 200)
             sol, stats = solve(milp_id, algo_solve)

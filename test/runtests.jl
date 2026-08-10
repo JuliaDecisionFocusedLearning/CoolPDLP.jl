@@ -43,8 +43,7 @@ include("fixtures.jl")
             using CoolPDLP: GPUSparseMatrixCSR
             using JLArrays: JLBackend
             include("gpu/batching.jl")
-            # `broken = true` goes away with https://github.com/JuliaGPU/GPUArrays.jl/pull/754
-            test_batching(GPUSparseMatrixCSR, JLBackend(); broken = true)
+            test_batching(GPUSparseMatrixCSR, JLBackend())
         end
     end
     if GROUP == "MOI" || isnothing(GROUP)

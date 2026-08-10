@@ -1,6 +1,6 @@
 using CoolPDLP
-using CoolPDLP: KKTErrors, Scratch, initialize,
-    instance, kkt_errors!, nbinstances, prog_showvalues, relative, step!
+using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
+    nbinstances, prog_showvalues, relative, restart!, restart_check!, step!
 using Random
 using Test
 
@@ -31,11 +31,11 @@ function paired_bounds(batched)
 end
 
 function make_batch(batched)
-    Random.seed!(0)
-    milps, milp_batch = random_milp_batch(20, 30, 0.4, NBATCH; batched)
+    rng = Xoshiro(0)
+    milps, milp_batch = random_milp_batch(rng, 20, 30, 0.4, NBATCH; batched)
     # start from a different point in every instance, so that no two columns ever coincide
-    xs = [randn(nbvar(milp_batch)) for _ in 1:NBATCH]
-    ys = [randn(nbcons(milp_batch)) for _ in 1:NBATCH]
+    xs = [randn(rng, nbvar(milp_batch)) for _ in 1:NBATCH]
+    ys = [randn(rng, nbcons(milp_batch)) for _ in 1:NBATCH]
     sols = map(PrimalDualSolution, xs, ys)
     return milps, sols, milp_batch, PrimalDualSolution(stack(xs), stack(ys))
 end
@@ -68,14 +68,32 @@ end
     @testset "Step sizes per instance" begin
         algo = PDLP()
         state_batch = initialize(milp_batch, copy(sol_batch), algo; starting_time = time())
+        states = map(1:NBATCH) do i
+            initialize(milps[i], copy(sols[i]), algo; starting_time = time())
+        end
         (; η, ω) = state_batch.step_sizes
         @test length(η) == length(ω) == NBATCH
         for i in 1:NBATCH
-            state = initialize(milps[i], copy(sols[i]), algo; starting_time = time())
-            @test η[i] ≈ state.step_sizes.η
-            @test ω[i] ≈ state.step_sizes.ω
-            @test instance(state_batch, i).step_sizes.ω ≈ state.step_sizes.ω
+            @test η[i] ≈ states[i].step_sizes.η
+            @test ω[i] ≈ states[i].step_sizes.ω
+            @test instance(state_batch, i).step_sizes.ω ≈ states[i].step_sizes.ω
         end
+
+        # the initial primal weight can be trivial, so also compare after a restart moved it
+        ω_init = copy(state_batch.step_sizes.ω)
+        for _ in 1:NSTEPS
+            step!(state_batch, milp_batch)
+            foreach(step!, states, milps)
+        end
+        restart_check!(state_batch, milp_batch, algo)
+        restart!(state_batch, algo)
+        for i in 1:NBATCH
+            restart_check!(states[i], milps[i], algo)
+            restart!(states[i], algo)
+            @test instance(state_batch, i).step_sizes.ω ≈ states[i].step_sizes.ω
+        end
+        # guard against a vacuous comparison: the restart must actually move the weights
+        @test !(state_batch.step_sizes.ω ≈ ω_init)
     end
 
     @testset "Iterates match single solves" begin
@@ -134,8 +152,7 @@ end
     # fixed-width values, so `mean` sits at the same column on every row
     @test CoolPDLP.progress_value([1.0, 2.0, 3.0]) == "max 3.000e+00, mean 2.000e+00"
 
-    Random.seed!(0)
-    milps, milp_batch = random_milp_batch(20, 30, 0.4, NBATCH; batched = (:c,))
+    milps, milp_batch = random_milp_batch(Xoshiro(0), 20, 30, 0.4, NBATCH; batched = (:c,))
     algo = PDLP()
     @testset "batch size $(nbinstances(milp))" for milp in (milps[1], milp_batch)
         state = initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
