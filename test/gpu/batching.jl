@@ -18,7 +18,7 @@ function test_batching(
     rng = Xoshiro(0)
     milps, milp_batch = random_milp_batch(rng, 20, 30, 0.4, nbatch)
     # this might be too strict for Float32, but we can always relax it
-    iterate_rtol = 1e-6
+    iterate_rtol = 1.0e-6
 
     algo = PDHG(T, Int, matrix_type; backend)
     # the preconditioner only depends on `A`, so the batch and the single problems share it
