@@ -1,0 +1,78 @@
+using CoolPDLP
+using CoolPDLP: batched_all, batched_expand, batched_mean, batched_similar,
+    batched_zeros, instance, instance_num, instance_vec, nbinstances
+using JLArrays
+using Random
+using Test
+
+Random.seed!(0)
+
+@testset "Instance extraction" begin
+    v, m = randn(4), randn(4, 3)
+
+    @test instance_vec(v, 2) === v
+    @test instance_vec(m, 2) == m[:, 2]
+    @test instance_num(1.5, 2) == 1.5
+    @test instance_num([1.0, 2.0, 3.0], 2) == 2.0
+
+    # views, so that instances share the memory of the batch
+    instance_vec(m, 2)[1] = 100
+    @test m[1, 2] == 100
+end
+
+@testset "Per-instance quantities" begin
+    v, m = randn(4), randn(4, 3)
+
+    @test batched_expand(v, 2.0) === 2.0
+    @test batched_expand(m, 2.0) == fill(2.0, 3)
+    @test batched_expand(m, [1.0, 2.0, 3.0]) == [1.0, 2.0, 3.0]
+    @test batched_expand(jl(m), 2.0) isa JLArray{Float64, 1}
+
+    @test batched_similar(2.0) === 2.0
+    @test size(batched_similar(zeros(3))) == (3,)
+
+    @test batched_all(>(0), 1.0)
+    @test !batched_all(>(0), -1.0)
+    @test batched_all(>(0), [1.0, 2.0])
+    @test !batched_all(>(0), [1.0, -2.0])
+
+    @test batched_mean(2.0) == 2.0
+    @test batched_mean([1.0, 2.0, 3.0]) == 2.0
+end
+
+@testset "Batched allocation" begin
+    v, m = randn(4), randn(4, 3)
+
+    @test batched_zeros(v, 5, 3, Val(false)) == zeros(5)
+    @test batched_zeros(v, 5, 3, Val(true)) == zeros(5, 3)
+    @test batched_zeros(m, 5, 3, Val(false)) isa Vector{Float64}
+    @test batched_zeros(jl(v), 5, 3, Val(true)) isa JLArray{Float64, 2}
+    @test @inferred(batched_zeros(v, 5, 3, Val(false))) isa Vector{Float64}
+    @test @inferred(batched_zeros(v, 5, 3, Val(true))) isa Matrix{Float64}
+end
+
+@testset "Instances of a batched MILP" begin
+    nbatch = 3
+    milps, milp_batch = random_milp_batch(5, 8, 0.5, nbatch)
+
+    @test all(enumerate(milps)) do (i, milp)
+        same_instance(milp, instance(milp_batch, i))
+    end
+end
+
+@testset "Instance counts along the solve" begin
+    nbatch = 2
+    _, milp_batch = random_milp_batch(5, 8, 0.5, nbatch)
+    sol = PrimalDualSolution(milp_batch)
+    @test nbinstances(milp_batch) == nbatch
+    @test nbinstances(sol) == nbatch
+
+    @testset "$alg" for alg in (PDHG, PDLP)
+        algo = alg(; record_error_history = false)
+        state = initialize(milp_batch, sol, algo; starting_time = time())
+        @test nbinstances(state) == nbatch
+        @test nbinstances(state.scratch) == nbatch
+        @test nbinstances(instance(state, 1).sol) == 1
+        @test nbinstances(PrimalDualSolution(instance(milp_batch, 1))) == 1
+    end
+end

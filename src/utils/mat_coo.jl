@@ -94,3 +94,39 @@ function LinearAlgebra.mul!(
     end
     return c
 end
+
+@kernel function spmm_coo!(
+        c::DenseMatrix{T},
+        A_rowval::DenseVector{Ti},
+        A_colval::DenseVector{Ti},
+        A_nzval::DenseVector{T},
+        b::DenseMatrix{T},
+        α::Number,
+    ) where {T, Ti}
+    k, batch_idx = @index(Global, NTuple)
+    i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
+    Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
+end
+
+function LinearAlgebra.mul!(
+        c::DenseMatrix{T},
+        A::GPUSparseMatrixCOO{T},
+        b::DenseMatrix{T},
+        α::Number,
+        β::Number
+    ) where {T <: Number}
+    backend = common_backend(c, A, b)
+    kernel! = spmm_coo!(backend)
+    if iszero(β)
+        zero!(c)
+    elseif !isone(β)
+        c .*= β
+    end
+    ndrange = (length(A.nzval), size(c, 2))
+    if isone(α)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, One(); ndrange)
+    else
+        kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange)
+    end
+    return c
+end

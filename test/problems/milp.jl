@@ -1,4 +1,5 @@
 using CoolPDLP
+using CoolPDLP: instance, isbatched
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances
@@ -20,6 +21,13 @@ using Test
     @test_throws ArgumentError MILP(;
         c = jl(c), lv, uv, A, At, lc, uc,
     )
+    @test_throws ArgumentError MILP(;
+        c = Float32.(c), lv, uv, A, At, lc, uc,
+    )
+    # a batched field must live on the same backend as the rest
+    @test_throws ArgumentError MILP(;
+        c = jl(repeat(c, 1, 3)), lv, uv, A, At, lc, uc,
+    )
     # Dimension issues
     @test_throws DimensionMismatch MILP(;
         c = lc, lv, uv, A, At, lc, uc,
@@ -39,6 +47,72 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc, uc, int_var = vcat(int_var, false)
     )
+    # Batch size issues
+    @test_nowarn MILP(;
+        c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 3),
+    )
+    @test_throws DimensionMismatch MILP(;
+        c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 2), uc = repeat(uc, 1, 2),
+    )
+    @test_throws DimensionMismatch MILP(;
+        c, lv = repeat(lv, 1, 3), uv = repeat(uv, 1, 2), A, At, lc, uc,
+    )
+    @test_throws DimensionMismatch MILP(;
+        c, lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 2),
+    )
+    # each bound may be batched on its own, as long as the widths agree
+    @test_nowarn MILP(;
+        c, lv = repeat(lv, 1, 3), uv, A, At, lc, uc = repeat(uc, 1, 3),
+    )
+end
+
+@testset "Batched objective value" begin
+    nbatch = 3
+    milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
+    milp_batch = MILP(;
+        c = stack(k -> k .* milp.c, 1:nbatch),
+        milp.lv, milp.uv, milp.A, milp.lc, milp.uc, milp.int_var,
+    )
+    x = randn(nbvar(milp), nbatch)
+
+    obj = objective_value(x, milp_batch)
+    @test obj isa Vector{Float64}
+    @test length(obj) == nbatch
+    for i in 1:nbatch
+        @test obj[i] ≈ objective_value(x[:, i], instance(milp_batch, i))
+    end
+end
+
+@testset "Batched constraint counts" begin
+    nbatch = 3
+    A = sparse([1.0 0.0; 0.0 1.0; 1.0 1.0; 1.0 -1.0])
+    lc, uc = [1.0, 2.0, -Inf, 0.0], [1.0, 2.0, 5.0, 3.0]
+    c, lv, uv = [1.0, 1.0], zeros(2), fill(10.0, 2)
+    milp = MILP(; c, lv, uv, A, lc, uc)
+    milp_obj = MILP(; c = repeat(c, 1, nbatch), lv, uv, A, lc, uc)
+    milp_cons = MILP(;
+        c, lv, uv, A, lc = repeat(lc, 1, nbatch), uc = repeat(uc, 1, nbatch),
+    )
+
+    @test nbcons(milp) == nbcons(milp_obj) == nbcons(milp_cons) == 4
+    @test nbcons_eq(milp) == nbcons_eq(milp_obj) == 2
+    @test nbcons_ineq(milp) == nbcons_ineq(milp_obj) == 2
+    # the split between equalities and inequalities may vary across a batch
+    @test_throws ArgumentError nbcons_eq(milp_cons)
+    @test_throws ArgumentError nbcons_ineq(milp_cons)
+    @test !occursin("equalities", string(milp_cons))
+    @test occursin("2 equalities", string(milp_obj))
+end
+
+@testset "isbatched is inferred as a constant" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(4, 6, 0.5)
+    milp_batch = MILP(;
+        c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc, milp.int_var,
+    )
+    # `Val` makes `@inferred` fail unless the answer folds to a constant during inference
+    val_isbatched(m) = Val(isbatched(m))
+    @test @inferred(val_isbatched(milp)) === Val(false)
+    @test @inferred(val_isbatched(milp_batch)) === Val(true)
 end
 
 @testset "Compare against JuMP" begin

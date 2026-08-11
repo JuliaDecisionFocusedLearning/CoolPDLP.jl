@@ -9,6 +9,7 @@ projects = ["docs", "test"]
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
+BangBang = "198e06fe-97b7-11e9-32a5-e1d131e6ad66"
 DispatchDoctor = "8d63f2c5-f18a-4cf2-ba9d-b3f60fc568c8"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
@@ -34,6 +35,7 @@ CoolPDLPGPUArraysExt = "GPUArrays"
 [compat]
 Adapt = "4.4.0"
 Atomix = "1.1.2"
+BangBang = "0.4.9"
 CUDA = "6.0.0"
 DispatchDoctor = "0.4.26"
 DocStringExtensions = "0.9.5"

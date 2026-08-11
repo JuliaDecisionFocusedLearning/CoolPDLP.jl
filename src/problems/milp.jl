@@ -6,6 +6,11 @@ Represent a Mixed Integer Linear Program in "cuPDLPx form":
     min cᵀx   s.t.   lv ≤ x ≤ uv
                      lc ≤ A * x ≤ uc
 
+A `MILP` can also hold a whole batch of such programs sharing the constraint matrix `A`: any
+of `c`, `lv`, `uv`, `lc` and `uc` may then be a matrix with one column per instance, while
+the others stay vectors shared by the whole batch. All batched fields must agree on the
+number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref).
+
 # Constructor
 
     MILP(;
@@ -20,29 +25,35 @@ $(TYPEDFIELDS)
 """
 struct MILP{
         T <: Number,
-        V <: DenseVector{T},
+        Vo <: AbstractVecOrMat{T},
+        Vlv <: AbstractVecOrMat{T},
+        Vuv <: AbstractVecOrMat{T},
+        Vlc <: AbstractVecOrMat{T},
+        Vuc <: AbstractVecOrMat{T},
+        Dg1 <: Diagonal{T},
+        Dg2 <: Diagonal{T},
         M <: AbstractMatrix{T},
         Mt <: AbstractMatrix{T},
         Vb <: DenseVector{Bool},
     }
     "objective vector"
-    c::V
+    c::Vo
     "variable lower bound"
-    lv::V
+    lv::Vlv
     "variable upper bound"
-    uv::V
+    uv::Vuv
     "constraint matrix"
     A::M
     "transposed constraint matrix"
     At::Mt
     "constraint lower bound"
-    lc::V
+    lc::Vlc
     "constraint upper bound"
-    uc::V
+    uc::Vuc
     "left preconditioner"
-    D1::Diagonal{T, V}
+    D1::Dg1
     "right preconditioner"
-    D2::Diagonal{T, V}
+    D2::Dg2
     "which variables must be integers"
     int_var::Vb
     "variable names"
@@ -62,44 +73,44 @@ struct MILP{
             At = sametype_transpose(A),
             lc,
             uc,
-            D1 = Diagonal(one!(similar(lc))),
-            D2 = Diagonal(one!(similar(lv))),
-            int_var = zero!(similar(c, Bool)),
-            var_names = map(string, eachindex(c)),
+            D1 = Diagonal(one!(similar(lc, size(lc, 1)))),
+            D2 = Diagonal(one!(similar(lv, size(lv, 1)))),
+            int_var = zero!(similar(c, Bool, size(c, 1))),
+            var_names = map(string, axes(c, 1)),
             dataset = "",
             name = "",
             path = ""
         )
         m, n = size(A)
-        if !(n == length(c) == length(lv) == length(uv) == size(D2, 1) == length(int_var) == length(var_names))
+        if !(n == size(c, 1) == size(lv, 1) == size(uv, 1) == size(D2, 1) == length(int_var) == length(var_names))
             throw(DimensionMismatch("Variable size not consistent"))
-        elseif !(m == length(lc) == length(uc) == size(D1, 2))
+        elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2))
             throw(DimensionMismatch("Constraint size not consistent"))
+            # whatever is batched must agree on the number of instances
+        elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, uv, lc, uc)))
+            throw(DimensionMismatch("Batch size not consistent"))
         end
 
-        T = Base.promote_eltype(c, lv, uv, A, At, lc, uc, D1, D2)
-        V = promote_type(typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc))
-        M = typeof(A)
-        Mt = typeof(At)
-        Vb = typeof(int_var)
-
-        if (
-                !isconcretetype(T) ||
-                    !isconcretetype(V) ||
-                    !isconcretetype(M) ||
-                    !isconcretetype(Mt) ||
-                    !isconcretetype(Vb)
-            )
-            throw(ArgumentError("Abstract type parameter"))
+        # batching mixes container types (a shared bound is a vector next to a batched
+        # matrix), so only the element type and the backend can be required to match
+        numbers = (c, lv, uv, A, At, lc, uc, D1, D2)
+        T = Base.promote_eltype(numbers...)
+        if !isconcretetype(T)
+            throw(ArgumentError("Abstract element type $T"))
+        elseif !all(x -> eltype(x) === T, numbers)
+            throw(ArgumentError("Element type not consistent: $(map(eltype, numbers))"))
         end
 
-        common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
+        common_backend(numbers...)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
         end
 
-        return new{T, V, M, Mt, Vb}(
+        return new{
+            T, typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc),
+            typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var),
+        }(
             c,
             lv,
             uv,
@@ -140,22 +151,28 @@ function MILP(qps::QPSData; kwargs...)
     )
 end
 
-function Base.show(io::IO, milp::MILP{T, V, M, Mt}) where {T, V, M, Mt}
-    return print(
+function Base.show(
+        io::IO, milp::MILP{T, Vo, Vlv, Vuv, Vlc, Vuc, Dg1, Dg2, M, Mt}
+    ) where {T, Vo, Vlv, Vuv, Vlc, Vuc, Dg1, Dg2, M, Mt}
+    vectors = unique((Vo, Vlv, Vuv, Vlc, Vuc))
+    print(
         io, """
         MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
           - values $T
-          - vectors $V
+          - vectors $(length(vectors) == 1 ? only(vectors) : Tuple(vectors))
           - matrices $(M == Mt ? M : (M, Mt))
         - variables: $(nbvar(milp))
           - $(nbvar_cont(milp)) continuous
           - $(nbvar_int(milp)) integer
-        - constraints: $(nbcons(milp))
-          - $(nbcons_ineq(milp)) inequalities
-          - $(nbcons_eq(milp)) equalities
-        - nonzeros: $(mynnz(milp.A))"""
+        - constraints: $(nbcons(milp))"""
     )
+    if ndims(milp.lc) == 1
+        print(io, "\n  - $(nbcons_ineq(milp)) inequalities")
+        print(io, "\n  - $(nbcons_eq(milp)) equalities")
+    end
+    print(io, "\n- nonzeros: $(mynnz(milp.A))")
+    return nothing
 end
 
 KernelAbstractions.get_backend(milp::MILP) = get_backend(milp.c)
@@ -165,7 +182,7 @@ KernelAbstractions.get_backend(milp::MILP) = get_backend(milp.c)
 
 Return the number of variables in `milp`.
 """
-nbvar(milp::MILP) = length(milp.c)
+nbvar(milp::MILP) = size(milp.c, 1)
 
 """
     nbvar_int(milp)
@@ -177,7 +194,7 @@ nbvar_int(milp::MILP) = sum(milp.int_var)
 """
     nbvar_cont(milp)
 
-Return the number of integer variables in `milp`.
+Return the number of continuous variables in `milp`.
 """
 nbvar_cont(milp::MILP) = nbvar(milp) - nbvar_int(milp)
 
@@ -192,8 +209,19 @@ nbcons(milp::MILP) = size(milp.A, 1)
     nbcons_eq(milp)
 
 Return the number of equality constraints in `milp`.
+
+Throw an `ArgumentError` if the constraint bounds of `milp` are batched, since the number may then differ from one instance to the next.
 """
-nbcons_eq(milp::MILP) = mapreduce((l, u) -> (l == u), +, milp.lc, milp.uc)
+function nbcons_eq(milp::MILP)
+    if ndims(milp.lc) > 1
+        throw(
+            ArgumentError(
+                "Cannot count equality constraints with batched constraint bounds, pick a single instance first"
+            )
+        )
+    end
+    return mapreduce(==, +, milp.lc, milp.uc)
+end
 
 """
     nbcons_ineq(milp)
@@ -218,5 +246,48 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
             m1.dataset == m2.dataset &&
             m1.name == m2.name &&
             m1.path == m2.path
+    )
+end
+
+"""
+    batch_sizes(c, lv, uv, lc, uc)
+
+Return the number of instances carried by each field of a [`MILP`](@ref) which can be batched, `1` meaning shared by the whole batch.
+"""
+function batch_sizes(c, lv, uv, lc, uc)
+    return (size(c, 2), size(lv, 2), size(uv, 2), size(lc, 2), size(uc, 2))
+end
+
+function nbinstances((; c, lv, uv, lc, uc)::MILP)
+    return maximum(batch_sizes(c, lv, uv, lc, uc))
+end
+
+"""
+    isbatched(milp)
+
+Return whether `milp` holds a batch of instances rather than a single one.
+
+Unlike [`nbinstances`](@ref), this only depends on the type of `milp`, so it is a constant as
+far as inference is concerned and the shape of the arrays attached to `milp` follows from it.
+"""
+function isbatched((; c, lv, uv, lc, uc)::MILP)
+    return ndims(c) > 1 || ndims(lv) > 1 || ndims(uv) > 1 || ndims(lc) > 1 || ndims(uc) > 1
+end
+function instance(milp::MILP, i::Int)
+    return MILP(;
+        c = instance_vec(milp.c, i),
+        lv = instance_vec(milp.lv, i),
+        uv = instance_vec(milp.uv, i),
+        A = milp.A,
+        At = milp.At,
+        lc = instance_vec(milp.lc, i),
+        uc = instance_vec(milp.uc, i),
+        D1 = milp.D1,
+        D2 = milp.D2,
+        int_var = milp.int_var,
+        var_names = milp.var_names,
+        dataset = milp.dataset,
+        name = milp.name,
+        path = milp.path
     )
 end

@@ -1,7 +1,7 @@
 """
     is_feasible(x, milp[; cons_tol=1e-6, int_tol=1e-5, verbose=true])
 
-Check whether solution vector `x` is feasible for `milp`.
+Check whether solution vector `x` is feasible for `milp`, returning one verdict per column if `x` holds a batch of solutions.
 
 # Keyword arguments
 
@@ -9,8 +9,14 @@ Check whether solution vector `x` is feasible for `milp`.
 - `int_tol`: tolerance for integrality requirements
 - `verbose`: whether to display warnings
 """
+function is_feasible(x::AbstractMatrix, milp::MILP; kwargs...)
+    return map(axes(x, 2)) do i
+        is_feasible(view(x, :, i), instance(milp, i); kwargs...)
+    end
+end
+
 function is_feasible(
-        x, milp::MILP;
+        x::AbstractVector, milp::MILP;
         cons_tol = 1.0e-6, int_tol = 1.0e-5, verbose::Bool = true
     )
     (; lv, uv, A, lc, uc, int_var) = milp
@@ -39,7 +45,7 @@ end
 
 Compute the value of the linear objective of `milp` at solution vector `x`.
 """
-objective_value(x, milp::MILP) = dot(x, milp.c)
+objective_value(x, milp::MILP) = coldot(x, milp.c)
 
 """
     PrimalDualSolution
@@ -48,7 +54,7 @@ objective_value(x, milp::MILP) = dot(x, milp.c)
 
 $(TYPEDFIELDS)
 """
-mutable struct PrimalDualSolution{T <: Number, V <: DenseVector{T}}
+mutable struct PrimalDualSolution{T <: Number, V <: AbstractVecOrMat{T}}
     "primal solution"
     const x::V
     "dual solution"
@@ -84,17 +90,62 @@ function Base.copy!(z1::PrimalDualSolution, z2::PrimalDualSolution)
 end
 
 function LinearAlgebra.axpby!(
-        a::T, x::PrimalDualSolution{T, V}, b::T, y::PrimalDualSolution{T, V},
+        a::BatchedNumber, x::PrimalDualSolution{T, V}, b::BatchedNumber, y::PrimalDualSolution{T, V},
     ) where {T, V}
-    axpby!(a, x.x, b, y.x)
-    axpby!(a, x.y, b, y.y)
+    colaxpby!(a, x.x, b, y.x)
+    colaxpby!(a, x.y, b, y.y)
     return y
 end
 
-function Base.isapprox(sol1::PrimalDualSolution{T, V}, sol2::PrimalDualSolution{T, V}; kwargs...) where {T, V}
+# broadcast rather than `axpby!`: the BLAS wrapper boxes its scalars into `Ref`s, which
+# only the optimizer removes, so `LinearAlgebra.axpby!` allocates at reduced optimization
+function colaxpby!(
+        a::BatchedNumber, x::AbstractVecOrMat, b::BatchedNumber, y::AbstractVecOrMat
+    )
+    ar, br = transpose(a), transpose(b)
+    broadcast!!(y, ar, x, br, y) do a, x, b, y
+        a * x + b * y
+    end
+    return y
+end
+
+"""
+    batched_select!(sol, cond, sol_other)
+
+Overwrite the columns of `sol` for which `cond` holds with those of `sol_other`.
+"""
+function batched_select!(
+        sol::PrimalDualSolution, cond::BatchedNumber{Bool},
+        sol_other::PrimalDualSolution,
+    )
+    condr = transpose(cond)
+    broadcast!!(ifelse, sol.x, condr, sol_other.x, sol.x)
+    broadcast!!(ifelse, sol.y, condr, sol_other.y, sol.y)
+    return sol
+end
+
+function Base.isapprox(sol1::PrimalDualSolution, sol2::PrimalDualSolution; kwargs...)
     return isapprox(sol1.x, sol2.x; kwargs...) && isapprox(sol1.y, sol2.y; kwargs...)
 end
 
+"""
+    PrimalDualSolution(milp)
+
+Build the zero solution of `milp`, with one column per instance if `milp` is batched.
+"""
 function PrimalDualSolution(milp::MILP)
-    return PrimalDualSolution(zero(milp.lv), zero(milp.lc))
+    batched = Val(isbatched(milp))
+    nbinst = nbinstances(milp)
+    return PrimalDualSolution(
+        batched_zeros(milp.lv, nbvar(milp), nbinst, batched),
+        batched_zeros(milp.lc, nbcons(milp), nbinst, batched),
+    )
+end
+
+nbinstances((; x)::PrimalDualSolution) = size(x, 2)
+function instance(sol::PrimalDualSolution, i::Int)
+    return PrimalDualSolution(
+        instance_vec(sol.x, i),
+        instance_vec(sol.y, i),
+    )
 end

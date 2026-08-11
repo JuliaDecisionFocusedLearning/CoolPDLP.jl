@@ -21,8 +21,8 @@ prec = CoolPDLP.pdlp_preconditioner(milp, params)
 milp_p = CoolPDLP.precondition(milp, prec)
 sol_p = CoolPDLP.precondition(sol, prec)
 
-err = CoolPDLP.kkt_errors!(scratch, sol, milp)
-err_p = CoolPDLP.kkt_errors!(scratch, sol_p, milp_p)
+err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp)
+err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
 
 @testset "Correct KKT errors" begin
     @test err.primal ≈ norm(A * x - CoolPDLP.clamp.(A * x, lc, uc))
@@ -35,4 +35,23 @@ end
 
 @testset "Invariance by preconditioning" begin
     @test err_p ≈ err
+end
+
+@testset "Error display" begin
+    nbatch = 3
+    batch(v) = repeat(v, 1, nbatch)
+    milp_batch = MILP(; c = batch(c), lv, uv, A, At, lc, uc)
+    sol_batch = PrimalDualSolution(batch(x), batch(y))
+    err_batch = CoolPDLP.kkt_errors!(
+        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch
+    )
+
+    str, str_batch = sprint(show, err), sprint(show, err_batch)
+    @test startswith(str, "KKT relative errors: ")
+    @test startswith(str_batch, "KKT relative errors: ")
+    # a single value per error without batching, one per instance with it
+    @test !occursin('[', str)
+    lists = [m.match for m in eachmatch(r"\[[^\]]*\]", str_batch)]
+    @test length(lists) == 3
+    @test all(list -> count(==(','), list) == nbatch - 1, lists)
 end

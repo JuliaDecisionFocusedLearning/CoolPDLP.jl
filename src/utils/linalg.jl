@@ -17,6 +17,45 @@ struct Zero <: Number end
 Base.:*(::Zero, ::Number) = Zero()
 Base.:+(x::Number, ::Zero) = x
 
+"""
+    colnorm(x)
+
+Return the Euclidean norm of `x`, or one norm per column if `x` is batched.
+"""
+colnorm(v::AbstractVector) = norm(v)
+colnorm(m::AbstractMatrix) = norm.(eachcol(m))
+
+"""
+    colnorm!!(dest, x)
+
+Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, into `dest`.
+"""
+colnorm!!(::Number, v::AbstractVector) = norm(v)
+function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
+    sum!(abs2, transpose(dest), m)
+    dest .= sqrt.(dest)
+    return dest
+end
+
+"""
+    coldot(a, b)
+
+Return the scalar product of `a` and `b`, or one scalar product per column if either is batched.
+"""
+coldot(a::AbstractVector, b::AbstractVector) = dot(a, b)
+coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = vec(sum(a .* b; dims = 1))
+
+"""
+    colsum!!(dest, x)
+
+Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
+"""
+colsum!!(::Number, v::AbstractVector) = sum(v)
+function colsum!!(dest::AbstractVector, m::AbstractMatrix)
+    sum!(transpose(dest), m)
+    return dest
+end
+
 @inline positive_part(a::Number) = max(a, zero(a))
 @inline negative_part(a::Number) = -min(a, zero(a))
 
@@ -116,3 +155,5 @@ column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(
 
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
+
+indtype(::AbstractSparseMatrix{T, Ti}) where {T, Ti} = Ti

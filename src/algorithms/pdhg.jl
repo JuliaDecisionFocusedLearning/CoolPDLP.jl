@@ -23,32 +23,44 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: DenseVector{T},
+        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
+        Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
     "last solution"
     sol_last::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{T}
+    step_sizes::StepSizes{S}
     "scratch space"
-    scratch::Scratch{T, V}
+    scratch::Sc
     "convergence stats"
-    stats::ConvergenceStats{T}
+    stats::ConvergenceStats{S}
+end
+
+nbinstances((; sol)::PDHGState) = nbinstances(sol)
+function instance(state::PDHGState, i::Int)
+    return PDHGState(
+        instance(state.sol, i),
+        instance(state.sol_last, i),
+        instance(state.step_sizes, i),
+        instance(state.scratch, i),
+        instance(state.stats, i),
+    )
 end
 
 function initialize(
-        milp::MILP{T, V},
+        milp::MILP{T},
         sol::PrimalDualSolution{T, V},
         algo::Algorithm{:PDHG, T};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
-    η = fixed_stepsize(milp, algo.step_size)
-    ω = one(η)
+    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
+    ω = batched_expand(sol.x, one(T))
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
-    stats = ConvergenceStats(T; starting_time)
+    stats = ConvergenceStats(KKTErrors(sol); starting_time)
     state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
     return state
 end
@@ -63,7 +75,7 @@ function solve!(
         yield()
         for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = prog_showvalues(state))
+            next!(prog; showvalues = () -> prog_showvalues(state))
         end
         if termination_check!(state, milp, algo)
             break
@@ -75,7 +87,7 @@ end
 
 function step!(
         state::PDHGState{T, V},
-        milp::MILP{T, V},
+        milp::MILP{T},
     ) where {T, V}
     # switch pointers
     state.sol, state.sol_last = state.sol_last, state.sol
@@ -85,7 +97,8 @@ function step!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ, σ = η / ω, η * ω
+    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
+    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.x, At, y)

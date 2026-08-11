@@ -11,11 +11,12 @@ struct Algorithm{
         Ti <: Integer,
         M <: AbstractMatrix,
         B <: Backend,
+        R <: RestartParameters{T},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
     step_size::StepSizeParameters{T}
-    restart::RestartParameters{T}
+    restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
 end
@@ -38,6 +39,7 @@ end
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
+        restart_batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -67,6 +69,7 @@ function Algorithm{A}(
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
         artificial_decay = 0.36,
+        restart_batch_aggregation = batched_mean,
         # generic
         show_progress = false,
         check_every = 100,
@@ -93,6 +96,7 @@ function Algorithm{A}(
         sufficient_decay = _T(sufficient_decay),
         necessary_decay = _T(necessary_decay),
         artificial_decay = _T(artificial_decay),
+        batch_aggregation = restart_batch_aggregation,
     )
     generic = GenericParameters(;
         show_progress,
@@ -105,7 +109,7 @@ function Algorithm{A}(
         time_limit
     )
 
-    return Algorithm{A, T, Ti, M, B}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
         conversion,
         preconditioning,
         step_size,
@@ -134,15 +138,26 @@ abstract type AbstractState{T, V} end
 function prog_showvalues(state::AbstractState)
     err = state.stats.err
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    # @sprintf induces string formatting overhead in hot loops
-    rel_primal = primal / primal_scale
-    rel_dual = dual / dual_scale
-    rel_gap = gap / gap_scale
+    rel_primal = primal ./ primal_scale
+    rel_dual = dual ./ dual_scale
+    rel_gap = gap ./ gap_scale
     return (
-        ("primal", rel_primal),
-        ("dual", rel_dual),
-        ("gap", rel_gap),
+        ("primal", progress_value(rel_primal)),
+        ("dual", progress_value(rel_dual)),
+        ("gap", progress_value(rel_gap)),
     )
+end
+
+"""
+    progress_value(rel)
+
+Format a relative error for the progress display: the value itself for a single instance, the maximum and mean over the instances for a batch.
+
+The two summaries are printed in fixed width so that they line up across the progress rows.
+"""
+progress_value(rel::Number) = rel
+function progress_value(rel::AbstractVector)
+    return "max $(format_error(maximum(rel))), mean $(format_error(batched_mean(rel)))"
 end
 
 """
@@ -179,7 +194,7 @@ function initialize end
 """
     solve(milp, sol, algo)
     solve(milp, algo)
-    
+
 Solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
 
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
@@ -205,7 +220,7 @@ function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
-    sol_init_cpu = PrimalDualSolution(zero(milp_init_cpu.lv), zero(milp_init_cpu.lc))
+    sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
 end
 
@@ -223,11 +238,11 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     stats.time_elapsed = time() - stats.starting_time
-    stats.err = kkt_errors!(scratch, sol, milp)
+    kkt_errors!(stats.err, scratch, sol, milp)
     if algo.generic.record_error_history
-        push!(stats.error_history, (stats.kkt_passes, stats.err))
+        push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
     end
-    stats.termination_status = termination_status(stats, algo.termination)
+    stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
     return stats.termination_status !== STILL_RUNNING
 end
 

@@ -50,6 +50,25 @@ end
     end
 end
 
+@testset "Column reductions" begin
+    v, m = randn(4), randn(4, 3)
+
+    @test CoolPDLP.colnorm!!(0.0, v) ≈ norm(v)
+    @test CoolPDLP.colsum!!(0.0, v) ≈ sum(v)
+
+    dest = zeros(3)
+    @test CoolPDLP.colnorm!!(dest, m) === dest
+    @test dest ≈ norm.(eachcol(m))
+    @test CoolPDLP.colsum!!(dest, m) === dest
+    @test dest ≈ sum.(eachcol(m))
+end
+
+@testset "Nonzero count" begin
+    A = sprand(10, 8, 0.4)
+    @test CoolPDLP.mynnz(A) == nnz(A)
+    @test CoolPDLP.mynnz(Matrix(A)) == 80
+end
+
 @testset "Column norm" begin
     A = sprand(10, 10, 0.6)
     for j in axes(A, 2)

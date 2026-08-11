@@ -3,6 +3,7 @@ module CoolPDLP
 # external dependencies
 using Adapt: Adapt, adapt
 using Atomix: Atomix
+using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
@@ -15,7 +16,7 @@ using StableRNGs: StableRNG
 # standard libraries
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
 using Printf: @sprintf
-using Random: randn!
+using Random: Random, randn!
 using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
 
 include("public.jl")
@@ -27,6 +28,7 @@ include("public.jl")
     include("utils/mat_ell.jl")
     include("utils/linalg.jl")
     include("utils/test.jl")
+    include("utils/batching.jl")
 
     include("problems/milp.jl")
     include("problems/solution.jl")

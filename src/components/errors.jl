@@ -1,11 +1,13 @@
 """
     KKTErrors
 
+Mutable so that [`kkt_errors!`](@ref) can refill it without allocating.
+
 # Fields
 
 $(TYPEDFIELDS)
 """
-@kwdef struct KKTErrors{T <: Number}
+@kwdef mutable struct KKTErrors{T <: BatchedNumber}
     "primal feasibility error"
     primal::T
     "characteristic scale of the primal constraint RHS"
@@ -20,11 +22,16 @@ $(TYPEDFIELDS)
     gap_scale::T
 end
 
+format_error(e::Number) = @sprintf("%.3e", e)
+function format_error(e::AbstractVector)
+    return "[" * join((@sprintf("%.3e", eᵢ) for eᵢ in adapt(CPU(), e)), ", ") * "]"
+end
+
 function Base.show(io::IO, err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    rel_primal = @sprintf("%.3e", primal / primal_scale)
-    rel_dual = @sprintf("%.3e", dual / dual_scale)
-    rel_gap = @sprintf("%.3e", gap / gap_scale)
+    rel_primal = format_error(primal ./ primal_scale)
+    rel_dual = format_error(dual ./ dual_scale)
+    rel_gap = format_error(gap ./ gap_scale)
     return print(
         io, """KKT relative errors: primal $rel_primal, dual $rel_dual, gap $rel_gap"""
     )
@@ -41,28 +48,88 @@ function Base.isapprox(err1::KKTErrors, err2::KKTErrors; kwargs...)
     )
 end
 
-function KKTErrors(::Type{T}) where {T}
-    return KKTErrors(
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
-        convert(T, NaN),
+function KKTErrors(sol::PrimalDualSolution{T}) where {T}
+    nan() = batched_expand(sol.x, convert(T, NaN))
+    return KKTErrors(nan(), nan(), nan(), nan(), nan(), nan())
+end
+
+instance(err::KKTErrors, i::Int) = KKTErrors(
+    instance_num(err.primal, i),
+    instance_num(err.primal_scale, i),
+    instance_num(err.dual, i),
+    instance_num(err.dual_scale, i),
+    instance_num(err.gap, i),
+    instance_num(err.gap_scale, i),
+)
+
+Base.copy(err::KKTErrors) = KKTErrors(
+    copy(err.primal),
+    copy(err.primal_scale),
+    copy(err.dual),
+    copy(err.dual_scale),
+    copy(err.gap),
+    copy(err.gap_scale),
+)
+
+"""
+    select_errors!!(dest, cond, err_true, err_false)
+
+Fill `dest`, column by column, with the errors of `err_true` where `cond` holds and those of `err_false` elsewhere.
+"""
+function select_errors!!(
+        dest::KKTErrors, cond::BatchedNumber{Bool},
+        err_true::KKTErrors, err_false::KKTErrors,
     )
+    dest.primal = broadcast!!(ifelse, dest.primal, cond, err_true.primal, err_false.primal)
+    dest.primal_scale = broadcast!!(
+        ifelse, dest.primal_scale, cond, err_true.primal_scale, err_false.primal_scale
+    )
+    dest.dual = broadcast!!(ifelse, dest.dual, cond, err_true.dual, err_false.dual)
+    dest.dual_scale = broadcast!!(
+        ifelse, dest.dual_scale, cond, err_true.dual_scale, err_false.dual_scale
+    )
+    dest.gap = broadcast!!(ifelse, dest.gap, cond, err_true.gap, err_false.gap)
+    dest.gap_scale = broadcast!!(
+        ifelse, dest.gap_scale, cond, err_true.gap_scale, err_false.gap_scale
+    )
+    return dest
 end
 
-function relative(err::KKTErrors)
+"""
+    relative!!(dest, err)
+
+Compute the largest relative KKT error, column by column, into `dest`.
+"""
+function relative!!(dest::BatchedNumber, err::KKTErrors)
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
-    return max(primal / primal_scale, dual / dual_scale, gap / gap_scale)
+    return broadcast!!(
+        dest, primal, primal_scale, dual, dual_scale, gap, gap_scale
+    ) do p, ps, d, ds, g, gs
+        max(p / ps, d / ds, g / gs)
+    end
 end
 
-function absolute(err::KKTErrors, ω::Number)
+relative(err::KKTErrors) = relative!!(batched_similar(err.primal), err)
+
+"""
+    absolute!!(dest, err, ω)
+
+Compute the absolute KKT error for primal weight `ω`, column by column, into `dest`.
+"""
+function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
     (; primal, dual, gap) = err
-    return sqrt(ω^2 * primal^2 + inv(ω^2) * dual^2 + gap^2)
+    return broadcast!!(dest, primal, dual, gap, ω) do p, d, g, w
+        sqrt(w^2 * p^2 + inv(w^2) * d^2 + g^2)
+    end
 end
 
+"""
+    kkt_errors!(err, scratch, sol, milp)
+
+Fill `err` with the KKT errors of `sol`, one value per column of the batch.
+"""
 function kkt_errors!(
+        err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
@@ -76,16 +143,18 @@ function kkt_errors!(
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
-    primal = norm(primal_diff)
+    err.primal = colnorm!!(err.primal, primal_diff)
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
-    primal_scale = one(T) + norm(rescaled_combined_bounds)
+    err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds)
+    err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
-    dual = norm(dual_diff)
+    err.dual = colnorm!!(err.dual, dual_diff)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    dual_scale = one(T) + norm(rescaled_obj)
+    err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj)
+    err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
@@ -96,21 +165,12 @@ function kkt_errors!(
     pv = @. scratch.z = (
         safeprod_left(lv, positive_part(z)) - safeprod_left(uv, negative_part(z))
     )
-    pc_sum = sum(pc)
-    pv_sum = sum(pv)
-    cx = dot(c, x)
-    dobj = pc_sum + pv_sum
+    pc_sum = colsum!!(scratch.b1, pc)
+    pv_sum = colsum!!(scratch.b2, pv)
+    dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum)
+    cx = colsum!!(scratch.b2, @. scratch.x = c * x)
 
-    gap = abs(cx - dobj)
-    gap_scale = one(T) + abs(dobj) + abs(cx)
-
-    err = KKTErrors(;
-        primal,
-        dual,
-        gap,
-        primal_scale,
-        dual_scale,
-        gap_scale,
-    )
+    err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, cx, dobj)
+    err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
     return err
 end
