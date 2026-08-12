@@ -40,3 +40,5 @@ playground*.jl
 *.trace
 *.gputrace
 *.pb.gz
+
+.vscode

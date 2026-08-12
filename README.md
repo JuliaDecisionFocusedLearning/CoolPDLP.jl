@@ -12,7 +12,7 @@
 [![Aqua QA](https://juliatesting.github.io/Aqua.jl/dev/assets/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449)](#contributors)
 
-A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
+A pure-Julia, hardware-agnostic, batchable parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
 
 _This package is a work in progress, with many features still missing. Please reach out if it doesn't work to your satisfaction._
 

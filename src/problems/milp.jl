@@ -157,7 +157,7 @@ function Base.show(
     vectors = unique((Vo, Vlv, Vuv, Vlc, Vuc))
     print(
         io, """
-        MILP instance $(milp.name) from dataset $(milp.dataset):
+        $(isbatched(milp) ? "Batched " : "")MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
           - values $T
           - vectors $(length(vectors) == 1 ? only(vectors) : Tuple(vectors))
@@ -172,6 +172,9 @@ function Base.show(
         print(io, "\n  - $(nbcons_eq(milp)) equalities")
     end
     print(io, "\n- nonzeros: $(mynnz(milp.A))")
+    if isbatched(milp)
+        print(io, "\n- batch size: $(nbinstances(milp))")
+    end
     return nothing
 end
 

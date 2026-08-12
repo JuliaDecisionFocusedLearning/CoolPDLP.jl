@@ -57,11 +57,13 @@ include("MOI_wrapper.jl")
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
+export instance, nbinstances, isbatched
 export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
 export PDHG, PDLP
 @public Algorithm
+@public KKTErrors, relative
 export is_feasible, objective_value
 
 @public Optimizer

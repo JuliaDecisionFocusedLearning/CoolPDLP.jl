@@ -109,6 +109,11 @@ function relative!!(dest::BatchedNumber, err::KKTErrors)
     end
 end
 
+"""
+    relative(err)
+
+Compute the largest relative KKT error, column by column.
+"""
 relative(err::KKTErrors) = relative!!(batched_similar(err.primal), err)
 
 """
