@@ -12,7 +12,7 @@
 [![Aqua QA](https://juliatesting.github.io/Aqua.jl/dev/assets/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![All Contributors](https://img.shields.io/github/all-contributors/JuliaDecisionFocusedLearning/CoolPDLP.jl?color=ee8449)](#contributors)
 
-A pure-Julia, hardware-agnostic parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
+A pure-Julia, hardware-agnostic, batchable parallel implementation of Primal-Dual hybrid gradient for Linear Programming (PDLP) and its variants.
 
 _This package is a work in progress, with many features still missing. Please reach out if it doesn't work to your satisfaction._
 
@@ -51,17 +51,17 @@ set_attribute(model, "backend", CUDABackend())
 There are already several open-source implementations of primal-dual algorithms for LPs (not to mention those in commercial solvers).
 Here is an incomplete list:
 
-| Package | Hardware |
-| --- | --- |
-| [`FirstOrderLP.jl`](https://github.com/google-research/FirstOrderLp.jl), [`or-tools`](https://github.com/google/or-tools) | CPU only |
-| [`cuPDLP.jl`](https://github.com/jinwen-yang/cuPDLP.jl), [`cuPDLP-c`](https://github.com/COPT-Public/cuPDLP-C) | NVIDIA |
-| [`cuPDLPx`](https://github.com/MIT-Lu-Lab/cuPDLPx), [`cuPDLPx.jl`](https://github.com/MIT-Lu-Lab/cuPDLPx.jl) | NVIDIA |
-| [`HPR-LP`](https://github.com/PolyU-IOR/HPR-LP), [`HP-LP-C`](https://github.com/PolyU-IOR/HPR-LP-C), [`HPR-LP-PYTHON`](https://github.com/PolyU-IOR/HPR-LP-Python) | NVIDIA |
-| [`BatchPDLP.jl`](https://github.com/PSORLab/BatchPDLP.jl) | NVIDIA |
-| [`HiGHS`](https://github.com/ERGO-Code/HiGHS) | NVIDIA |
-| [`cuopt`](https://github.com/NVIDIA/cuopt) | NVIDIA |
-| [`torchPDLP`](https://github.com/SimplySnap/torchPDLP/) | agnostic (via `PyTorch`) |
-| [`MPAX`](https://github.com/MIT-Lu-Lab/MPAX) | agnostic (via `JAX`) |
+| Package                                                                                                                                                            | Hardware                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| [`FirstOrderLP.jl`](https://github.com/google-research/FirstOrderLp.jl), [`or-tools`](https://github.com/google/or-tools)                                          | CPU only                 |
+| [`cuPDLP.jl`](https://github.com/jinwen-yang/cuPDLP.jl), [`cuPDLP-c`](https://github.com/COPT-Public/cuPDLP-C)                                                     | NVIDIA                   |
+| [`cuPDLPx`](https://github.com/MIT-Lu-Lab/cuPDLPx), [`cuPDLPx.jl`](https://github.com/MIT-Lu-Lab/cuPDLPx.jl)                                                       | NVIDIA                   |
+| [`HPR-LP`](https://github.com/PolyU-IOR/HPR-LP), [`HP-LP-C`](https://github.com/PolyU-IOR/HPR-LP-C), [`HPR-LP-PYTHON`](https://github.com/PolyU-IOR/HPR-LP-Python) | NVIDIA                   |
+| [`BatchPDLP.jl`](https://github.com/PSORLab/BatchPDLP.jl)                                                                                                          | NVIDIA                   |
+| [`HiGHS`](https://github.com/ERGO-Code/HiGHS)                                                                                                                      | NVIDIA                   |
+| [`cuopt`](https://github.com/NVIDIA/cuopt)                                                                                                                         | NVIDIA                   |
+| [`torchPDLP`](https://github.com/SimplySnap/torchPDLP/)                                                                                                            | agnostic (via `PyTorch`) |
+| [`MPAX`](https://github.com/MIT-Lu-Lab/MPAX)                                                                                                                       | agnostic (via `JAX`)     |
 
 Unlike `cuPDLP` and most of its variants, `CoolPDLP.jl` uses [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to target most common GPU architectures (NVIDIA, AMD, Intel, Apple), as well as plain CPUs.
 It also allows you to plug in your own sparse matrix types, or experiment with different floating point precisions.

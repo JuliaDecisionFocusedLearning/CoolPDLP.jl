@@ -82,6 +82,37 @@ sol_gpu.x
 
 objective_value(Array(sol_gpu.x), milp)
 
+# ## Solving problems in a batch
+
+# Sometimes you may be faced with a batch of similar problems which share the same constraint matrix but different bounds or objective vectors.
+# To solve them all in lockstep, the [`MILP`](@ref) struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix.
+# Here's a batched example with slightly perturbed objective vectors:
+
+B = 10  # batch size
+batched_milp = MILP(;
+    c = milp.c .+ (maximum(abs, milp.c) ./ 10) .* randn(nbvar(milp), B),
+    lv = milp.lv,
+    uv = milp.uv,
+    lc = milp.lc,
+    uc = milp.uc,
+    A = milp.A,
+    name = milp.name,
+    dataset = milp.dataset
+)
+
+# You can extract a single instance with [`instance`](@ref):
+
+instance(batched_milp, 2)
+
+# The solution process looks exactly the same, and returns a batched solution with each column corresponding to an instance:
+
+sol_batched_gpu, stats_batched_gpu = solve(batched_milp, algo_gpu)
+sol_batched_gpu.x
+
+# Again, single solutions can be extracted at will:
+
+instance(sol_batched_gpu, 2)
+
 # ## Using the JuMP interface
 
 # If you have a model available in [JuMP.jl](https://github.com/jump-dev/JuMP.jl), you can simply choose [`CoolPDLP.Optimizer`](@ref) as your solver, and pass it the same options as before.
@@ -124,6 +155,7 @@ last_err = CoolPDLP.relative(last(stats.error_history)[2])  #src
 @test last_err < first_err  #src
 @test is_feasible(sol.x, milp; cons_tol = 1.0e-3)  #src
 @test is_feasible(Array(sol_gpu.x), milp; cons_tol = 1.0e-3)  #src
+@test is_feasible(Array(instance(sol_batched_gpu, 2).x), instance(batched_milp, 2); cons_tol = 1.0e-3)  #src
 @test is_feasible(x_jump, milp; cons_tol = 1.0e-3)  #src
 @test is_feasible(x_ref, milp)  #src
 @test objective_value(sol.x, milp) ≈ objective_value(x_ref, milp) rtol = 1.0e-3  #src
