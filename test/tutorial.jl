@@ -38,7 +38,7 @@ nbcons(milp)
 # The first thing to do is define parameters inside a [`PDLP`](@ref) struct.
 
 algo = PDLP(;
-    termination_reltol = 1.0e-4,
+    termination_reltol = 1.0e-6,
     time_limit = 60.0,
 )
 
@@ -81,7 +81,7 @@ algo_gpu = PDLP(
     Int32,  # desired int type
     GPUSparseMatrixCSR;  # GPU sparse matrix type, replace with e.g. CuSparseMatrixCSR
     backend = JLBackend(),  # replace with e.g. CUDABackend()
-    termination_reltol = 1.0f-4,
+    termination_reltol = 1.0f-6,
     time_limit = 60.0,
 )
 
@@ -141,7 +141,7 @@ is_feasible(
 model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
 JuMP.set_optimizer(model, CoolPDLP.Optimizer)
 JuMP.set_silent(model)
-JuMP.set_attribute(model, "termination_reltol", 1.0e-4)
+JuMP.set_attribute(model, "termination_reltol", 1.0e-6)
 JuMP.set_attribute(model, "matrix_type", GPUSparseMatrixCSR)
 JuMP.set_attribute(model, "backend", JLBackend())
 JuMP.optimize!(model)
