@@ -63,6 +63,7 @@ export PrimalDualSolution
 export preprocess, initialize, solve, solve!
 export PDHG, PDLP
 @public Algorithm
+@public KKTErrors, relative
 export is_feasible, objective_value
 
 @public Optimizer
