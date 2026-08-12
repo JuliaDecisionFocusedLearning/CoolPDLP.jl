@@ -10,7 +10,7 @@ using SparseArrays
 using Test
 
 netlib_milps = map(list_instances(Netlib)) do name
-    MILP(read_instance(dataset, name)[1]; dataset, name)
+    MILP(read_instance(Netlib, name)[1]; Netlib, name)
 end
 sort!(netlib_milps, by = milp -> nbvar(milp))
 small_names = filter(map(milp -> milp.name, netlib_milps[1:3])) do name
