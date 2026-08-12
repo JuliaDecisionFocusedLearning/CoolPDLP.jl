@@ -39,7 +39,7 @@ nbcons(milp)
 
 algo = PDLP(;
     termination_reltol = 1.0e-4,
-    time_limit = 100.0,
+    time_limit = 60.0,
 )
 
 # Then all it takes is to call [`solve`](@ref).
@@ -82,7 +82,7 @@ algo_gpu = PDLP(
     GPUSparseMatrixCSR;  # GPU sparse matrix type, replace with e.g. CuSparseMatrixCSR
     backend = JLBackend(),  # replace with e.g. CUDABackend()
     termination_reltol = 1.0f-4,
-    time_limit = 100.0,
+    time_limit = 60.0,
 )
 
 # The result of the algorithm will live on the GPU:
