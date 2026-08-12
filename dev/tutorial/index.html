@@ -4,7 +4,8 @@ using HiGHS: HiGHS
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances: Netlib, list_instances, read_instance
-using UnicodePlots</code></pre><h2 id="Creating-a-MILP"><a class="docs-heading-anchor" href="#Creating-a-MILP">Creating a MILP</a><a id="Creating-a-MILP-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-MILP" title="Permalink"></a></h2><p>You can use <a href="https://github.com/JuliaSmoothOptimizers/QPSReader.jl">QPSReader.jl</a> to read a MILP from a local MPS file, or <a href="https://github.com/JuliaDecisionFocusedLearning/MathOptBenchmarkInstances.jl">MathOptBenchmarkInstances.jl</a> to automatically download standard benchmark sets (which we do here).</p><pre><code class="language-julia hljs">dataset = Netlib
+using UnicodePlots
+using StableRNGs</code></pre><h2 id="Creating-a-MILP"><a class="docs-heading-anchor" href="#Creating-a-MILP">Creating a MILP</a><a id="Creating-a-MILP-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-MILP" title="Permalink"></a></h2><p>You can use <a href="https://github.com/JuliaSmoothOptimizers/QPSReader.jl">QPSReader.jl</a> to read a MILP from a local MPS file, or <a href="https://github.com/JuliaDecisionFocusedLearning/MathOptBenchmarkInstances.jl">MathOptBenchmarkInstances.jl</a> to automatically download standard benchmark sets (which we do here).</p><pre><code class="language-julia hljs">dataset = Netlib
 list = list_instances(dataset)
 name = list[4]
 qps, path = read_instance(dataset, name);</code></pre><p>A <a href="../api/#CoolPDLP.MILP"><code>MILP</code></a> object can be constructed from there:</p><pre><code class="language-julia hljs">milp = MILP(qps; dataset, name, path)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MILP instance afiro from dataset Netlib:
@@ -20,14 +21,14 @@ qps, path = read_instance(dataset, name);</code></pre><p>A <a href="../api/#Cool
   - 8 equalities
 - nonzeros: 83</code></pre><p>Its attributes can be queried:</p><pre><code class="language-julia hljs">nbvar(milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32</code></pre><pre><code class="language-julia hljs">nbcons(milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">27</code></pre><p>Note that manual construction is also an option if you provide the constraints, variable bounds and objectives as arrays.</p><h2 id="Solving-a-MILP"><a class="docs-heading-anchor" href="#Solving-a-MILP">Solving a MILP</a><a id="Solving-a-MILP-1"></a><a class="docs-heading-anchor-permalink" href="#Solving-a-MILP" title="Permalink"></a></h2><p>You can use the PDLP algortithm to solve the continuous relaxation of a MILP. The first thing to do is define parameters inside a <a href="../api/#CoolPDLP.PDLP-Tuple"><code>PDLP</code></a> struct.</p><pre><code class="language-julia hljs">algo = PDLP(;
     termination_reltol = 1.0e-6,
-    time_limit = 10.0,
+    time_limit = 60.0,
 )</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PDLP algorithm:
 - ConversionParameters: types=(Float64, Int64, SparseArrays.SparseMatrixCSC), backend=KernelAbstractions.CPU(false)
 - PreconditioningParameters: chambolle_pock_alpha=1.0, ruiz_iter=10
 - StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8
 - RestartParameters: sufficient_decay=0.2, necessary_decay=0.8, artificial_decay=0.36, batch_aggregation=batched_mean
 - GenericParameters: show_progress=false, check_every=100, record_error_history=true
-- TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=10.0</code></pre><p>Then all it takes is to call <a href="../api/#CoolPDLP.solve-Tuple{MILP, PrimalDualSolution, CoolPDLP.Algorithm}"><code>solve</code></a>.</p><pre><code class="language-julia hljs">sol, stats = solve(milp, algo);</code></pre><p>The solution is available as a <a href="../api/#CoolPDLP.PrimalDualSolution"><code>PrimalDualSolution</code></a>:</p><pre><code class="language-julia hljs">sol.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element Vector{Float64}:
+- TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=60.0</code></pre><p>Then all it takes is to call <a href="../api/#CoolPDLP.solve-Tuple{MILP, PrimalDualSolution, CoolPDLP.Algorithm}"><code>solve</code></a>.</p><pre><code class="language-julia hljs">sol, stats = solve(milp, algo);</code></pre><p>The solution is available as a <a href="../api/#CoolPDLP.PrimalDualSolution"><code>PrimalDualSolution</code></a>:</p><pre><code class="language-julia hljs">sol.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element Vector{Float64}:
   79.99998483892944
   25.499948968432776
   54.50001175963277
@@ -49,8 +50,8 @@ qps, path = read_instance(dataset, name);</code></pre><p>A <a href="../api/#Cool
   63.394278500975204
    0.0</code></pre><p>The stats contain information about the convergence of the algorithm:</p><pre><code class="language-julia hljs">stats</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Convergence stats with termination status OPTIMAL:
 - KKT relative errors: primal 9.909e-08, dual 3.936e-08, gap 3.756e-07
-- time elapsed: 1.34 seconds
-- KKT passes: 900</code></pre><p>You can check the feasibility and objective value:</p><pre><code class="language-julia hljs">is_feasible(sol.x, milp; cons_tol = 1.0e-4)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(sol.x, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.75321283671656</code></pre><p>And even plot convergence!</p><pre><code class="language-julia hljs">#md
+- time elapsed: 1.53 seconds
+- KKT passes: 900</code></pre><p>You can check the feasibility and objective value:</p><pre><code class="language-julia hljs">is_feasible(sol.x, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(sol.x, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.75321283671656</code></pre><p>And even plot convergence!</p><pre><code class="language-julia hljs">#md
 error_inds = first.(stats.error_history)
 error_vals = map(CoolPDLP.relative, last.(stats.error_history))
 scatterplot(
@@ -82,14 +83,14 @@ scatterplot(
     GPUSparseMatrixCSR;  # GPU sparse matrix type, replace with e.g. CuSparseMatrixCSR
     backend = JLBackend(),  # replace with e.g. CUDABackend()
     termination_reltol = 1.0f-6,
-    time_limit = 10.0,
+    time_limit = 60.0,
 )</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PDLP algorithm:
 - ConversionParameters: types=(Float32, Int32, GPUSparseMatrixCSR), backend=JLArrays.JLBackend(false)
 - PreconditioningParameters: chambolle_pock_alpha=1.0, ruiz_iter=10
 - StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8
 - RestartParameters: sufficient_decay=0.2, necessary_decay=0.8, artificial_decay=0.36, batch_aggregation=batched_mean
 - GenericParameters: show_progress=false, check_every=100, record_error_history=true
-- TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=10.0</code></pre><p>The result of the algorithm will live on the GPU:</p><pre><code class="language-julia hljs">sol_gpu, stats_gpu = solve(milp, algo_gpu)
+- TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=60.0</code></pre><p>The result of the algorithm will live on the GPU:</p><pre><code class="language-julia hljs">sol_gpu, stats_gpu = solve(milp, algo_gpu)
 sol_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element JLArrays.JLArray{Float32, 1}:
   80.00002
   25.500057
@@ -110,9 +111,10 @@ sol_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohigh
  339.94275
  236.51427
   63.394226
-   0.0</code></pre><p>To bring in back to the CPU, just call the <code>Array</code> converter.</p><pre><code class="language-julia hljs">objective_value(Array(sol_gpu.x), milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7530648803711</code></pre><h2 id="Solving-problems-in-a-batch"><a class="docs-heading-anchor" href="#Solving-problems-in-a-batch">Solving problems in a batch</a><a id="Solving-problems-in-a-batch-1"></a><a class="docs-heading-anchor-permalink" href="#Solving-problems-in-a-batch" title="Permalink"></a></h2><p>Sometimes you may be faced with a batch of similar problems which share the same constraint matrix but different bounds or objective vectors. To solve them all in lockstep, the <a href="../api/#CoolPDLP.MILP"><code>MILP</code></a> struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix. Here&#39;s a batched example with slightly perturbed objective vectors:</p><pre><code class="language-julia hljs">B = 10  # batch size
+   0.0</code></pre><p>To bring in back to the CPU, just call the <code>Array</code> converter.</p><pre><code class="language-julia hljs">objective_value(Array(sol_gpu.x), milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7530648803711</code></pre><h2 id="Solving-problems-in-a-batch"><a class="docs-heading-anchor" href="#Solving-problems-in-a-batch">Solving problems in a batch</a><a id="Solving-problems-in-a-batch-1"></a><a class="docs-heading-anchor-permalink" href="#Solving-problems-in-a-batch" title="Permalink"></a></h2><p>Sometimes you may be faced with a batch of similar problems which share the same constraint matrix but different bounds or objective vectors. To solve them all in lockstep, the <a href="../api/#CoolPDLP.MILP"><code>MILP</code></a> struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix. Here&#39;s a batched example with slightly perturbed objective vectors:</p><pre><code class="language-julia hljs">batch_size = 3
+Δc = rand(StableRNG(63), nbvar(milp), batch_size) .* maximum(abs, milp.c) ./ 10
 batched_milp = MILP(;
-    c = milp.c .+ (maximum(abs, milp.c) ./ 10) .* randn(nbvar(milp), B),
+    c = milp.c .+ Δc,
     lv = milp.lv,
     uv = milp.uv,
     lc = milp.lc,
@@ -132,7 +134,7 @@ batched_milp = MILP(;
   - 19 inequalities
   - 8 equalities
 - nonzeros: 83
-- batch size: 10</code></pre><p>You can extract a single instance with <a href="../api/#CoolPDLP.instance"><code>instance</code></a>:</p><pre><code class="language-julia hljs">instance(batched_milp, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MILP instance afiro from dataset Netlib:
+- batch size: 3</code></pre><p>You can extract a single instance with <a href="../api/#CoolPDLP.instance"><code>instance</code></a>:</p><pre><code class="language-julia hljs">instance(batched_milp, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MILP instance afiro from dataset Netlib:
 - types:
   - values Float64
   - vectors (SubArray{Float64, 1, Matrix{Float64}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}, Vector{Float64})
@@ -144,27 +146,31 @@ batched_milp = MILP(;
   - 19 inequalities
   - 8 equalities
 - nonzeros: 83</code></pre><p>The solution process looks exactly the same, and returns a batched solution with each column corresponding to an instance:</p><pre><code class="language-julia hljs">sol_batched_gpu, stats_batched_gpu = solve(batched_milp, algo_gpu)
-sol_batched_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32×10 JLArrays.JLArray{Float32, 2}:
- 80.0       80.0      80.0     80.0      …   54.5    80.0       54.5
-  0.0       25.4999   25.5     77.3754        0.0    77.3753     0.0
- 80.0       54.5      54.5      2.62471      54.5     2.62472   54.5
- 84.8       84.8      84.8     84.8          57.77   84.8       57.77
-  4.64364   80.0      58.156   80.0           0.0    80.0       80.0
-  0.0        0.0       0.0      0.0      …    0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  ⋮                                      ⋱                     
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0      …    0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0
-  0.0      339.943   339.943    0.0         345.425   0.0      345.425
-  1.39774  383.943    17.5049  44.0         389.425  44.0       24.08
- 18.319      0.0     157.568    0.0      …    0.0     0.0      157.099
-  0.0        0.0       0.0      0.0           0.0     0.0        0.0</code></pre><p>Again, single solutions can be extracted at will:</p><pre><code class="language-julia hljs">instance(sol_batched_gpu, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PrimalDualSolution{Float32, JLArrays.JLArray{Float32, 1}}(Float32[79.99997, 25.499872, 54.500027, 84.799965, 80.00003, 0.0, 0.0, 0.0, 0.0, 0.0  …  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 339.94305, 383.94315, 0.0, 0.0], Float32[-1.680508, 0.09013448, -3.5668716, -0.5464744, -0.27031815, -0.35358837, -0.6376582, -0.02114883, -0.7891253, 0.0  …  -0.13500191, 0.0, -0.30838764, -1.2265699, -2.1998158, 0.0, -2.5150337, 0.0, 0.0, 0.0])</code></pre><h2 id="Using-the-JuMP-interface"><a class="docs-heading-anchor" href="#Using-the-JuMP-interface">Using the JuMP interface</a><a id="Using-the-JuMP-interface-1"></a><a class="docs-heading-anchor-permalink" href="#Using-the-JuMP-interface" title="Permalink"></a></h2><p>If you have a model available in <a href="https://github.com/jump-dev/JuMP.jl">JuMP.jl</a>, you can simply choose <a href="../api/#CoolPDLP.Optimizer"><code>CoolPDLP.Optimizer</code></a> as your solver, and pass it the same options as before.</p><pre><code class="language-julia hljs">model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
+sol_batched_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32×3 JLArrays.JLArray{Float32, 2}:
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  4.64365   4.64365   0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  ⋮                  
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  0.0       0.0       0.0
+  1.39774   1.39774  44.0
+ 18.319    18.319     0.0
+  0.0       0.0       0.0</code></pre><p>Again, single solutions can be extracted at will:</p><pre><code class="language-julia hljs">instance(sol_batched_gpu, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PrimalDualSolution{Float32, JLArrays.JLArray{Float32, 1}}(Float32[0.0, 0.0, 0.0, 0.0, 4.6436524, 0.0, 0.0, 0.0, 0.0, 0.0  …  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.3977395, 18.31897, 0.0], Float32[-0.41178617, 0.000509245, 0.0, -0.07513208, -0.86003786, 0.3332452, 0.0, -0.42888385, -0.088415116, 0.0  …  0.0, -0.30765754, -0.20517121, -0.12108101, 0.0, -1.0490295, -0.0002338086, -0.044850543, 0.0, 0.0])</code></pre><p>And checked for feasibility and optimality</p><pre><code class="language-julia hljs">is_feasible(
+    Array(instance(sol_batched_gpu, 2).x),
+    instance(batched_milp, 2);
+    cons_tol = 1.0e-3
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><h2 id="Using-the-JuMP-interface"><a class="docs-heading-anchor" href="#Using-the-JuMP-interface">Using the JuMP interface</a><a id="Using-the-JuMP-interface-1"></a><a class="docs-heading-anchor-permalink" href="#Using-the-JuMP-interface" title="Permalink"></a></h2><p>If you have a model available in <a href="https://github.com/jump-dev/JuMP.jl">JuMP.jl</a>, you can simply choose <a href="../api/#CoolPDLP.Optimizer"><code>CoolPDLP.Optimizer</code></a> as your solver, and pass it the same options as before.</p><pre><code class="language-julia hljs">model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
 JuMP.set_optimizer(model, CoolPDLP.Optimizer)
 JuMP.set_silent(model)
 JuMP.set_attribute(model, &quot;termination_reltol&quot;, 1.0e-6)
@@ -215,4 +221,4 @@ x_ref = JuMP.value.(JuMP.all_variables(model_highs))</code></pre><pre class="doc
  339.9428571428572
  383.9428571428572
   -0.0
-   0.0</code></pre><p>Of course, the solution given by HiGHS is feasible too, and we can compare objective values:</p><pre><code class="language-julia hljs">is_feasible(x_ref, milp; cons_tol = 1.0e-4)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(x_ref, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7531428571429</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../api/">API reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Wednesday 12 August 2026 07:46">Wednesday 12 August 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+   0.0</code></pre><p>Of course, the solution given by HiGHS is feasible too, and we can compare objective values:</p><pre><code class="language-julia hljs">is_feasible(x_ref, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(x_ref, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7531428571429</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../api/">API reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Wednesday 12 August 2026 10:00">Wednesday 12 August 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
