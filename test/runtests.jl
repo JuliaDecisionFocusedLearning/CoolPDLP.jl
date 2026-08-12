@@ -24,9 +24,6 @@ include("fixtures.jl")
         @testset "Formalities" begin
             include("formalities.jl")
         end
-        @testset "Tutorial" begin
-            include("tutorial.jl")
-        end
         for folder in readdir(@__DIR__)
             isdir(joinpath(@__DIR__, folder)) || continue
             startswith(folder, "gpu") && continue
@@ -44,6 +41,9 @@ include("fixtures.jl")
             using JLArrays: JLBackend
             include("gpu/batching.jl")
             test_batching(GPUSparseMatrixCSR, JLBackend())
+        end
+        @testset "Tutorial" begin
+            include("tutorial.jl")
         end
     end
     if GROUP == "MOI" || isnothing(GROUP)

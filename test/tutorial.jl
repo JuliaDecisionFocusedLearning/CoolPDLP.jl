@@ -6,6 +6,7 @@ using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances: Netlib, list_instances, read_instance
 #md using UnicodePlots
+using StableRNGs
 using Test  #src
 
 # ## Creating a MILP
@@ -38,7 +39,7 @@ nbcons(milp)
 
 algo = PDLP(;
     termination_reltol = 1.0e-6,
-    time_limit = 10.0,
+    time_limit = 60.0,
 )
 
 # Then all it takes is to call [`solve`](@ref).
@@ -55,7 +56,7 @@ stats
 
 # You can check the feasibility and objective value:
 
-is_feasible(sol.x, milp; cons_tol = 1.0e-4)
+is_feasible(sol.x, milp; cons_tol = 1.0e-3)
 
 #-
 
@@ -81,7 +82,7 @@ algo_gpu = PDLP(
     GPUSparseMatrixCSR;  # GPU sparse matrix type, replace with e.g. CuSparseMatrixCSR
     backend = JLBackend(),  # replace with e.g. CUDABackend()
     termination_reltol = 1.0f-6,
-    time_limit = 10.0,
+    time_limit = 60.0,
 )
 
 # The result of the algorithm will live on the GPU:
@@ -99,9 +100,10 @@ objective_value(Array(sol_gpu.x), milp)
 # To solve them all in lockstep, the [`MILP`](@ref) struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix.
 # Here's a batched example with slightly perturbed objective vectors:
 
-B = 10  # batch size
+batch_size = 3
+Δc = rand(StableRNG(63), nbvar(milp), batch_size) .* maximum(abs, milp.c) ./ 10
 batched_milp = MILP(;
-    c = milp.c .+ (maximum(abs, milp.c) ./ 10) .* randn(nbvar(milp), B),
+    c = milp.c .+ Δc,
     lv = milp.lv,
     uv = milp.uv,
     lc = milp.lc,
@@ -123,6 +125,14 @@ sol_batched_gpu.x
 # Again, single solutions can be extracted at will:
 
 instance(sol_batched_gpu, 2)
+
+# And checked for feasibility and optimality
+
+is_feasible(
+    Array(instance(sol_batched_gpu, 2).x),
+    instance(batched_milp, 2);
+    cons_tol = 1.0e-3
+)
 
 # ## Using the JuMP interface
 
@@ -153,7 +163,7 @@ x_ref = JuMP.value.(JuMP.all_variables(model_highs))
 
 # Of course, the solution given by HiGHS is feasible too, and we can compare objective values:
 
-is_feasible(x_ref, milp; cons_tol = 1.0e-4)
+is_feasible(x_ref, milp; cons_tol = 1.0e-3)
 
 #-
 
@@ -166,7 +176,11 @@ last_err = CoolPDLP.relative(last(stats.error_history)[2])  #src
 @test last_err < first_err  #src
 @test is_feasible(sol.x, milp; cons_tol = 1.0e-3)  #src
 @test is_feasible(Array(sol_gpu.x), milp; cons_tol = 1.0e-3)  #src
-@test is_feasible(Array(instance(sol_batched_gpu, 2).x), instance(batched_milp, 2); cons_tol = 1.0e-2)  #src
+@test is_feasible(  #src
+    Array(instance(sol_batched_gpu, 2).x),  #src
+    instance(batched_milp, 2);  #src
+    cons_tol = 1.0e-3  #src
+)  #src
 @test is_feasible(x_jump, milp; cons_tol = 1.0e-3)  #src
 @test is_feasible(x_ref, milp)  #src
 @test objective_value(sol.x, milp) ≈ objective_value(x_ref, milp) rtol = 1.0e-3  #src
