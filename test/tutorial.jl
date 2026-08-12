@@ -100,7 +100,7 @@ objective_value(Array(sol_gpu.x), milp)
 # To solve them all in lockstep, the [`MILP`](@ref) struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix.
 # Here's a batched example with slightly perturbed objective vectors:
 
-batch_size = 10
+batch_size = 3
 Δc = rand(StableRNG(63), nbvar(milp), batch_size) .* maximum(abs, milp.c) ./ 10
 batched_milp = MILP(;
     c = milp.c .+ Δc,
