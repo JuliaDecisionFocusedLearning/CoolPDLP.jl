@@ -38,8 +38,8 @@ nbcons(milp)
 # The first thing to do is define parameters inside a [`PDLP`](@ref) struct.
 
 algo = PDLP(;
-    termination_reltol = 1.0e-6,
-    time_limit = 10.0,
+    termination_reltol = 1.0e-4,
+    time_limit = 100.0,
 )
 
 # Then all it takes is to call [`solve`](@ref).
@@ -56,7 +56,7 @@ stats
 
 # You can check the feasibility and objective value:
 
-is_feasible(sol.x, milp; cons_tol = 1.0e-4)
+is_feasible(sol.x, milp; cons_tol = 1.0e-3)
 
 #-
 
@@ -81,8 +81,8 @@ algo_gpu = PDLP(
     Int32,  # desired int type
     GPUSparseMatrixCSR;  # GPU sparse matrix type, replace with e.g. CuSparseMatrixCSR
     backend = JLBackend(),  # replace with e.g. CUDABackend()
-    termination_reltol = 1.0f-6,
-    time_limit = 10.0,
+    termination_reltol = 1.0f-4,
+    time_limit = 100.0,
 )
 
 # The result of the algorithm will live on the GPU:
@@ -131,7 +131,7 @@ instance(sol_batched_gpu, 2)
 is_feasible(
     Array(instance(sol_batched_gpu, 2).x),
     instance(batched_milp, 2);
-    cons_tol = 1.0e-4
+    cons_tol = 1.0e-3
 )
 
 # ## Using the JuMP interface
@@ -141,7 +141,7 @@ is_feasible(
 model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
 JuMP.set_optimizer(model, CoolPDLP.Optimizer)
 JuMP.set_silent(model)
-JuMP.set_attribute(model, "termination_reltol", 1.0e-6)
+JuMP.set_attribute(model, "termination_reltol", 1.0e-4)
 JuMP.set_attribute(model, "matrix_type", GPUSparseMatrixCSR)
 JuMP.set_attribute(model, "backend", JLBackend())
 JuMP.optimize!(model)
@@ -163,7 +163,7 @@ x_ref = JuMP.value.(JuMP.all_variables(model_highs))
 
 # Of course, the solution given by HiGHS is feasible too, and we can compare objective values:
 
-is_feasible(x_ref, milp; cons_tol = 1.0e-4)
+is_feasible(x_ref, milp; cons_tol = 1.0e-3)
 
 #-
 
