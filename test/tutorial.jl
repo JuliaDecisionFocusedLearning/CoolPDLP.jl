@@ -5,7 +5,7 @@ using HiGHS: HiGHS
 using JLArrays
 using JuMP: JuMP, MOI
 using MathOptBenchmarkInstances: Netlib, list_instances, read_instance
-using UnicodePlots  #md
+#md using UnicodePlots
 using Test  #src
 
 # ## Creating a MILP
@@ -61,15 +61,15 @@ is_feasible(sol.x, milp; cons_tol = 1.0e-4)
 
 objective_value(sol.x, milp)
 
-# And even plot convergence!
-
-error_inds = first.(stats.error_history)
-error_vals = map(CoolPDLP.relative, last.(stats.error_history))
-scatterplot(
-    error_inds, error_vals;
-    title = "Convergence of CoolPDLP",
-    xlabel = "Iteration", ylabel = "Relative error"
-)
+#md # And even plot convergence!
+#md
+#md error_inds = first.(stats.error_history)
+#md error_vals = map(CoolPDLP.relative, last.(stats.error_history))
+#md scatterplot(
+#md     error_inds, error_vals;
+#md     title = "Convergence of CoolPDLP",
+#md     xlabel = "Iteration", ylabel = "Relative error"
+#md )
 
 # ## Running on the GPU
 
