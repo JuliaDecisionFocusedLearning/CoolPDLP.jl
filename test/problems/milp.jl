@@ -1,3 +1,4 @@
+using Accessors
 using CoolPDLP
 using CoolPDLP: instance, isbatched
 using JLArrays
@@ -157,4 +158,18 @@ end
     qps, path = read_instance(Netlib, netlib[1])
     milp = MILP(qps; path, dataset = "Netlib")
     @test milp ≈ milp
+end
+
+@testset "Objsense" begin
+    netlib = list_instances(Netlib)
+    qps, path = read_instance(Netlib, netlib[1])
+    qps.objsense = :min
+    milp_min = MILP(qps)
+    @test milp_min.c == +qps.c
+    qps.objsense = :max
+    milp_max = MILP(qps)
+    @test milp_max.c == -qps.c
+    qps.objsense = :notset
+    milp_notset = MILP(qps)
+    @test milp_notset.c == +qps.c  # arbitrary
 end
