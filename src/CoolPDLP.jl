@@ -7,8 +7,10 @@ using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
+using JuMP: Model, @variable, @constraint, @objective
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
+using PaPILO: presolve_write_from_file, postsolve_from_file
 using ProgressMeter: ProgressUnknown, finish!, next!
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
 using StableRNGs: StableRNG
@@ -34,6 +36,7 @@ include("public.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
 
+    include("components/presolve.jl")
     include("components/scratch.jl")
     include("components/conversion.jl")
     include("components/preconditioning.jl")
