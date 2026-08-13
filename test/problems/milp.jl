@@ -1,4 +1,3 @@
-using Accessors
 using CoolPDLP
 using CoolPDLP: instance, isbatched
 using JLArrays
