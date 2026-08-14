@@ -18,6 +18,9 @@ Literate.markdown(
 # `##foo_simulator#123`), and that twin ends up with a copy of `foo`'s
 # docstring. Strip those entries so they don't show up in the generated docs.
 # See https://github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl/issues/92.
+# Root cause upstream: https://github.com/MilesCranmer/DispatchDoctor.jl/issues/42,
+# fix proposed but unmerged in https://github.com/MilesCranmer/DispatchDoctor.jl/pull/90.
+# This workaround can be dropped once that lands in a released version.
 let meta = Base.Docs.meta(CoolPDLP)
     for binding in collect(keys(meta))
         occursin('#', string(binding.var)) && delete!(meta, binding)
