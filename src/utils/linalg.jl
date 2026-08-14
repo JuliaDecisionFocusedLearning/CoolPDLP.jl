@@ -69,7 +69,7 @@ end
     end
 end
 
-@inline safeprod_left(left, right) = ifelse(isinf(left), right, left * right)
+@inline safeprod_left(left, right) = ifelse(isinf(left) && iszero(right), zero(right), left * right)
 
 """
     proj_multiplier(λ, l, u)

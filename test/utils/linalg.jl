@@ -21,6 +21,23 @@ end
     end
 end
 
+@testset "Safe product" begin
+    # normal (finite `left`) case is an ordinary product
+    @test CoolPDLP.safeprod_left(3.0, 5.0) == 15.0
+    @test CoolPDLP.safeprod_left(-3.0, 5.0) == -15.0
+
+    # well-behaved case: paired multiplier is exactly zero whenever the bound is infinite
+    @test CoolPDLP.safeprod_left(Inf, 0.0) == 0.0
+    @test CoolPDLP.safeprod_left(-Inf, 0.0) == 0.0
+
+    # invariant-violating case (e.g. a bad user-supplied warm start): an infinite bound
+    # paired with a nonzero multiplier must propagate as a signed infinity instead of
+    # leaking the raw (finite) multiplier value, so that downstream users can tell the
+    # dual point is genuinely infeasible
+    @test CoolPDLP.safeprod_left(Inf, 5.0) == Inf
+    @test CoolPDLP.safeprod_left(-Inf, 5.0) == -Inf
+end
+
 @testset "Bound scale" begin
     @test CoolPDLP.combine(1, 2) == 2
     @test CoolPDLP.combine(3, 3) == 3
