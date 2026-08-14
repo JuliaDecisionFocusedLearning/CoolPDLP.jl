@@ -29,6 +29,14 @@ colnorm(m::AbstractMatrix) = norm.(eachcol(m))
     colnorm!!(dest, x)
 
 Compute the Euclidean norm of `x`, or one norm per column if `x` is batched, into `dest`.
+
+Unlike [`colnorm`](@ref), the batched (`AbstractMatrix`) method computes `sqrt(sum(abs2, ...))`
+directly instead of `LinearAlgebra.norm`'s scaled, overflow-safe algorithm: it needs to stay a
+single allocation-free, GPU-broadcastable reduction, since it runs every iteration on the hot
+path (see [`primal_weight_update!!`](@ref) and [`kkt_errors!`](@ref)). This means `colnorm!!` can
+over/underflow on badly scaled columns where `colnorm` would not; that tradeoff is intentional
+here, since the values it norms are primal-dual residuals that are not expected to approach the
+extremes of the floating-point range in practice.
 """
 colnorm!!(::Number, v::AbstractVector) = norm(v)
 function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
