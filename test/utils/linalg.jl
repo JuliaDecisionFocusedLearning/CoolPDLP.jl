@@ -31,11 +31,13 @@ end
     @test CoolPDLP.safeprod_left(-Inf, 0.0) == 0.0
 
     # invariant-violating case (e.g. a bad user-supplied warm start): an infinite bound
-    # paired with a nonzero multiplier must propagate as a signed infinity instead of
-    # leaking the raw (finite) multiplier value, so that downstream users can tell the
-    # dual point is genuinely infeasible
-    @test CoolPDLP.safeprod_left(Inf, 5.0) == Inf
-    @test CoolPDLP.safeprod_left(-Inf, 5.0) == -Inf
+    # must still zero out the term instead of leaking the raw multiplier value. This has
+    # to hold even for a nonzero `right`, since a legitimately converging PDHG iterate can
+    # leave tiny nonzero floating-point residuals on the multiplier of an unconstrained row
+    # (a `σ`/`inv(σ)` round-trip is not bit-exact), and those residuals must not blow up
+    # into `±Inf`/`NaN` once multiplied by an infinite bound and summed across rows
+    @test CoolPDLP.safeprod_left(Inf, 5.0) == 0.0
+    @test CoolPDLP.safeprod_left(-Inf, 5.0) == 0.0
 end
 
 @testset "Bound scale" begin

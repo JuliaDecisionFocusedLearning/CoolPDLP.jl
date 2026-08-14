@@ -43,20 +43,20 @@ end
     # user-supplied warm start need not. Here `uc == Inf`, so the dual-feasible sign for `y`
     # is nonnegative (only `y⁺` may be nonzero); we deliberately warm-start with `y = -0.1`,
     # a negative (invariant-violating) value, and check that `initialize` — which calls
-    # `kkt_errors!` on the warm start (see issue #97) — reports the resulting dual point as
-    # genuinely infeasible (an infinite gap) instead of leaking the raw multiplier into a
-    # finite, plausible-looking garbage value.
+    # `kkt_errors!` on the warm start (see issue #97) — does not silently leak the raw
+    # multiplier into the dual objective/gap.
     milp = MILP(; c = [1.0], lv = [-Inf], uv = [Inf], A = ones(1, 1), lc = [0.0], uc = [Inf])
     sol = PrimalDualSolution([1.0], [-0.1])
 
     state = initialize(milp, sol, PDLP(); starting_time = time())
     gap = state.restart_stats.err_restart.gap
 
-    # the pre-fix implementation instead leaked `negative_part(y) == 0.1` into the dual
-    # objective, producing a finite gap of `abs(cx - (-0.1)) == 1.1`
+    # dual objective should ignore the invariant-violating entry entirely (contribute 0),
+    # not leak `negative_part(y) == 0.1` into it as the pre-fix implementation did
     cx = dot(milp.c, sol.x)
+    dobj_correct = 0.0
     dobj_buggy = -CoolPDLP.negative_part(sol.y[1])
-    @test isinf(gap)
+    @test gap ≈ abs(cx - dobj_correct)
     @test !(gap ≈ abs(cx - dobj_buggy))
 end
 
