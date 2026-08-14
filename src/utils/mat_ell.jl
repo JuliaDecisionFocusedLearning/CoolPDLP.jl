@@ -1,6 +1,11 @@
 """
     GPUSparseMatrixELL
 
+Every row is padded to the length of the longest row, so a single unusually dense row makes
+this format allocate `m × d` dense storage, where `d` is the maximum number of nonzeros in a
+row. Prefer [`GPUSparseMatrixCSR`](@ref) or [`GPUSparseMatrixCOO`](@ref) when row lengths vary
+widely.
+
 # Fields
 
 $(TYPEDFIELDS)
@@ -54,7 +59,7 @@ end
 function GPUSparseMatrixELL(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     m, n = size(A)
     A_csr = GPUSparseMatrixCSR(A)
-    d = maximum(diff(A_csr.rowptr))
+    d = m == 0 ? 0 : maximum(diff(A_csr.rowptr))
     colval = similar(A.rowval, m, d)
     nzval = similar(A.nzval, m, d)
     fill!(colval, zero(Ti))
@@ -108,6 +113,7 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
+    check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
     α_is_one = isone(α)
@@ -150,6 +156,7 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number}
+    check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmm_ell!(backend)
     α_is_one = isone(α)

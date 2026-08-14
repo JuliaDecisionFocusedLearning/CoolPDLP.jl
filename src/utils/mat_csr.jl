@@ -98,6 +98,7 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
+    check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
     α_is_one = isone(α)
@@ -139,6 +140,7 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number}
+    check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmm_csr!(backend)
     α_is_one = isone(α)

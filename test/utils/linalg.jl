@@ -59,6 +59,23 @@ end
     end
 end
 
+@testset "Symmetrized size" begin
+    A = randn(10, 20)
+    S = CoolPDLP.Symmetrized(A, Matrix(transpose(A)))
+    @test size(S) == (20, 20)
+    @test size(S, 1) == 20
+    @test size(S, 2) == 20
+    @test size(S, 3) == 1
+    @test size(S, 100) == 1
+end
+
+@testset "Symmetrized mul! dimension mismatch" begin
+    A = randn(10, 20)
+    S = CoolPDLP.Symmetrized(A, Matrix(transpose(A)))
+    @test_throws DimensionMismatch mul!(zeros(20), S, randn(19))
+    @test_throws DimensionMismatch mul!(zeros(19), S, randn(20))
+end
+
 @testset "Symmetrized with mismatched K/Kᵀ types" begin
     # K and Kᵀ need not share a concrete matrix type (see issue #102)
     A = randn(10, 20)

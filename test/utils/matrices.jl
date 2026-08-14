@@ -58,3 +58,23 @@ end
     @test mul!(nans(), A_jl, jl(rhs), 1.0, 0.0) ≈ A * rhs
     @test mul!(jl(copy(lhs)), A_jl, jl(rhs), 1.0, β) ≈ A * rhs + β * lhs
 end
+
+@testset "mul! dimension mismatch $M" for M in (
+        GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
+    )
+    A = sprand(8, 6, 0.35)
+    A_jl = adapt(JLBackend(), M(A))
+    b, c = jl(rand(6)), jl(rand(8))
+    @test_throws DimensionMismatch mul!(c, A_jl, jl(rand(5)), 1.0, 0.0)
+    @test_throws DimensionMismatch mul!(jl(rand(7)), A_jl, b, 1.0, 0.0)
+    rhs, lhs = jl(rand(6, 3)), jl(rand(8, 3))
+    @test_throws DimensionMismatch mul!(lhs, A_jl, jl(rand(5, 3)), 1.0, 0.0)
+    @test_throws DimensionMismatch mul!(jl(rand(7, 3)), A_jl, rhs, 1.0, 0.0)
+end
+
+@testset "GPUSparseMatrixELL with zero rows" begin
+    A = spzeros(0, 5)
+    A_ell = GPUSparseMatrixELL(A)
+    @test size(A_ell) == (0, 5)
+    @test SparseMatrixCSC(A_ell) == A
+end

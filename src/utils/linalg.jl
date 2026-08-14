@@ -136,9 +136,11 @@ function Symmetrized(K::AbstractMatrix, Kᵀ::AbstractMatrix)
 end
 
 Base.eltype(sym::Symmetrized) = eltype(sym.K)
-Base.size(sym::Symmetrized, ::Int) = size(sym.K, 2)
+Base.size(sym::Symmetrized) = (n = size(sym.K, 2); (n, n))
+Base.size(sym::Symmetrized, d::Int) = d in (1, 2) ? size(sym.K, 2) : 1
 
 function LinearAlgebra.mul!(y, sym::Symmetrized, x)
+    check_mul_dims(y, sym, x)
     (; K, Kᵀ, scratch) = sym
     mul!(scratch, K, x)
     mul!(y, Kᵀ, scratch)
