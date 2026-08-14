@@ -207,8 +207,19 @@ function solve(
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
-        @. sol.x = clamp(zero(eltype(milp.lv)), milp.lv, milp.uv)
+    (; c, lv, uv) = milp
+    # with no constraint rows, the box-constrained optimum can be read off `c` and the
+    # bounds directly, as long as the box is feasible and bounded in the direction `c`
+    # pushes towards (otherwise fall through to the general loop below, same as any other
+    # infeasible/unbounded problem: this package has no dedicated status for either, so it
+    # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
+    if nbcons(milp) == 0 &&
+            all(lv .<= uv) &&
+            !any(@. (c > 0) & isinf(lv)) &&
+            !any(@. (c < 0) & isinf(uv))
+        @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
+        kkt_errors!(state.stats.err, state.scratch, sol, milp)
+        state.stats.time_elapsed = time() - starting_time
         state.stats.termination_status = OPTIMAL
         return get_solution(state, milp), state.stats
     end
