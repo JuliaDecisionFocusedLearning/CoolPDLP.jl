@@ -93,4 +93,13 @@ end
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
         @test stats.termination_status != OPTIMAL
     end
+
+    @testset "unbounded direction (c[1] < 0, uv[1] == Inf)" begin
+        milp = MILP(;
+            c = [-1.0], lv = [-Inf], uv = [Inf], A = spzeros(0, 1), lc = Float64[], uc = Float64[],
+        )
+        sol, stats = solve(milp, algo)
+        @test !any(isnan, sol.x) && !any(isinf, sol.x)
+        @test stats.termination_status != OPTIMAL
+    end
 end
