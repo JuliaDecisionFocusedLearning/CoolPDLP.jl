@@ -60,7 +60,7 @@ end
 end
 
 @testset "mul! dimension mismatch $M" for M in (
-        GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
+        GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
     )
     A = sprand(8, 6, 0.35)
     A_jl = adapt(JLBackend(), M(A))
