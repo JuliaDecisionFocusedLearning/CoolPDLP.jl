@@ -69,7 +69,21 @@ end
     end
 end
 
-@inline safeprod_left(left, right) = ifelse(isinf(left), right, left * right)
+"""
+    safeprod_left(left, right)
+
+Compute `left * right`, except that `right` is forced to zero whenever `left` is infinite.
+
+This is used to evaluate terms like `l * y⁺` in the dual objective, where `l` is a (possibly
+infinite) constraint/variable bound and `y⁺` its associated Lagrange multiplier. The PDHG
+update and [`proj_multiplier`](@ref) guarantee that the multiplier paired with an infinite
+bound is mathematically zero, but not necessarily *exactly* zero in floating point (e.g. a
+free row's multiplier is computed as a `σ`/`inv(σ)` round-trip that can leave a tiny nonzero
+residual). Checking `iszero(right)` instead of always zeroing out would let such residuals
+turn into `±Inf` (and, once several rows are summed, `Inf - Inf = NaN`) even though nothing
+is actually wrong with the solution.
+"""
+@inline safeprod_left(left, right) = ifelse(isinf(left), zero(right), left * right)
 
 """
     proj_multiplier(λ, l, u)

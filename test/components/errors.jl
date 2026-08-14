@@ -37,6 +37,29 @@ end
     @test err_p ≈ err
 end
 
+@testset "Warm start violating the multiplier invariant" begin
+    # `safeprod_left` assumes that the multiplier paired with an infinite bound is exactly
+    # zero: PDHG's own `y`-update and `proj_multiplier` maintain this invariant, but a
+    # user-supplied warm start need not. Here `uc == Inf`, so the dual-feasible sign for `y`
+    # is nonnegative (only `y⁺` may be nonzero); we deliberately warm-start with `y = -0.1`,
+    # a negative (invariant-violating) value, and check that `initialize` — which calls
+    # `kkt_errors!` on the warm start (see issue #97) — does not silently leak the raw
+    # multiplier into the dual objective/gap.
+    milp = MILP(; c = [1.0], lv = [-Inf], uv = [Inf], A = ones(1, 1), lc = [0.0], uc = [Inf])
+    sol = PrimalDualSolution([1.0], [-0.1])
+
+    state = initialize(milp, sol, PDLP(); starting_time = time())
+    gap = state.restart_stats.err_restart.gap
+
+    # dual objective should ignore the invariant-violating entry entirely (contribute 0),
+    # not leak `negative_part(y) == 0.1` into it as the pre-fix implementation did
+    cx = dot(milp.c, sol.x)
+    dobj_correct = 0.0
+    dobj_buggy = -CoolPDLP.negative_part(sol.y[1])
+    @test gap ≈ abs(cx - dobj_correct)
+    @test !(gap ≈ abs(cx - dobj_buggy))
+end
+
 @testset "Error display" begin
     nbatch = 3
     batch(v) = repeat(v, 1, nbatch)

@@ -21,6 +21,25 @@ end
     end
 end
 
+@testset "Safe product" begin
+    # normal (finite `left`) case is an ordinary product
+    @test CoolPDLP.safeprod_left(3.0, 5.0) == 15.0
+    @test CoolPDLP.safeprod_left(-3.0, 5.0) == -15.0
+
+    # well-behaved case: paired multiplier is exactly zero whenever the bound is infinite
+    @test CoolPDLP.safeprod_left(Inf, 0.0) == 0.0
+    @test CoolPDLP.safeprod_left(-Inf, 0.0) == 0.0
+
+    # invariant-violating case (e.g. a bad user-supplied warm start): an infinite bound
+    # must still zero out the term instead of leaking the raw multiplier value. This has
+    # to hold even for a nonzero `right`, since a legitimately converging PDHG iterate can
+    # leave tiny nonzero floating-point residuals on the multiplier of an unconstrained row
+    # (a `σ`/`inv(σ)` round-trip is not bit-exact), and those residuals must not blow up
+    # into `±Inf`/`NaN` once multiplied by an infinite bound and summed across rows
+    @test CoolPDLP.safeprod_left(Inf, 5.0) == 0.0
+    @test CoolPDLP.safeprod_left(-Inf, 5.0) == 0.0
+end
+
 @testset "Bound scale" begin
     @test CoolPDLP.combine(1, 2) == 2
     @test CoolPDLP.combine(3, 3) == 3
