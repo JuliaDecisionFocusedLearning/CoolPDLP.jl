@@ -40,6 +40,16 @@ end
     end
 end
 
+@testset "Symmetrized with mismatched K/Kᵀ types" begin
+    # K and Kᵀ need not share a concrete matrix type (see issue #102)
+    A = randn(10, 20)
+    S = CoolPDLP.Symmetrized(A, sparse(Matrix(transpose(A))))
+    x = randn(20)
+    y = zeros(20)
+    mul!(y, S, x)
+    @test y ≈ transpose(A) * A * x
+end
+
 @testset "Spectral norm" begin
     rng = Xoshiro(42)
     for _ in 1:10

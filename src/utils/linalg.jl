@@ -110,9 +110,9 @@ end
 
 Represent a symmetric matrix `Kᵀ * K` lazily.
 """
-struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}}
+struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}, Mt <: AbstractMatrix{T}}
     K::M
-    Kᵀ::M
+    Kᵀ::Mt
     scratch::V
 end
 
