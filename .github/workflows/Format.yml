@@ -2,8 +2,8 @@ name: Runic formatting
 on:
   push:
     branches:
-      - 'master'
-      - 'release-'
+      - 'main'
+      - 'release-*'
     tags:
       - '*'
   pull_request:

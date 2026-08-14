@@ -1,6 +1,6 @@
 # CoolPDLP.jl
 
-[![tests](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/gdalle/CoolPDLP.jl/actions/workflows/Test.yml?query=branch%3Amain)
+[![tests](https://github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/JuliaDecisionFocusedLearning/CoolPDLP.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Build status](https://badge.buildkite.com/abafb7c3f7e1fd1ab4672581e288ca9dd330120e2a66851ae9.svg?branch=main)](https://buildkite.com/julialang/coolpdlp-dot-jl)
 [![Coverage](https://codecov.io/gh/JuliaDecisionFocusedLearning/CoolPDLP.jl/branch/main/graph/badge.svg)](https://app.codecov.io/gh/JuliaDecisionFocusedLearning/CoolPDLP.jl)
 
@@ -53,12 +53,11 @@ Here is an incomplete list:
 
 | Package | Hardware |
 | --- | --- |
-| [`FirstOrderLP.jl`](https://github.com/google-research/FirstOrderLp.jl), [`or-tools`](https://github.com/google/or-tools) | CPU only |
+| [`FirstOrderLp.jl`](https://github.com/google-research/FirstOrderLp.jl), [`or-tools`](https://github.com/google/or-tools) | CPU only |
 | [`cuPDLP.jl`](https://github.com/jinwen-yang/cuPDLP.jl), [`cuPDLP-c`](https://github.com/COPT-Public/cuPDLP-C) | NVIDIA |
 | [`cuPDLPx`](https://github.com/MIT-Lu-Lab/cuPDLPx), [`cuPDLPx.jl`](https://github.com/MIT-Lu-Lab/cuPDLPx.jl) | NVIDIA |
-| [`HPR-LP`](https://github.com/PolyU-IOR/HPR-LP), [`HP-LP-C`](https://github.com/PolyU-IOR/HPR-LP-C), [`HPR-LP-PYTHON`](https://github.com/PolyU-IOR/HPR-LP-Python) | NVIDIA |
+| [`HPR-LP`](https://github.com/PolyU-IOR/HPR-LP), [`HPR-LP-C`](https://github.com/PolyU-IOR/HPR-LP-C), [`HPR-LP-PYTHON`](https://github.com/PolyU-IOR/HPR-LP-Python) | NVIDIA |
 | [`BatchPDLP.jl`](https://github.com/PSORLab/BatchPDLP.jl) | NVIDIA |
-| [`HiGHS`](https://github.com/ERGO-Code/HiGHS) | NVIDIA |
 | [`cuopt`](https://github.com/NVIDIA/cuopt) | NVIDIA |
 | [`torchPDLP`](https://github.com/SimplySnap/torchPDLP/) | agnostic (via `PyTorch`) |
 | [`MPAX`](https://github.com/MIT-Lu-Lab/MPAX) | agnostic (via `JAX`) |
