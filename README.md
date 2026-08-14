@@ -54,7 +54,6 @@ Here is an incomplete list:
 | Package | Hardware |
 | --- | --- |
 | [`FirstOrderLp.jl`](https://github.com/google-research/FirstOrderLp.jl), [`or-tools`](https://github.com/google/or-tools) | CPU only |
-| [`HiGHS`](https://github.com/ERGO-Code/HiGHS) | CPU only |
 | [`cuPDLP.jl`](https://github.com/jinwen-yang/cuPDLP.jl), [`cuPDLP-c`](https://github.com/COPT-Public/cuPDLP-C) | NVIDIA |
 | [`cuPDLPx`](https://github.com/MIT-Lu-Lab/cuPDLPx), [`cuPDLPx.jl`](https://github.com/MIT-Lu-Lab/cuPDLPx.jl) | NVIDIA |
 | [`HPR-LP`](https://github.com/PolyU-IOR/HPR-LP), [`HPR-LP-C`](https://github.com/PolyU-IOR/HPR-LP-C), [`HPR-LP-PYTHON`](https://github.com/PolyU-IOR/HPR-LP-Python) | NVIDIA |
