@@ -66,7 +66,9 @@ Unlike `cuPDLP` and most of its variants, `CoolPDLP.jl` uses [`KernelAbstraction
 It also allows you to plug in your own sparse matrix types, or experiment with different floating point precisions.
 That's what makes it so cool.
 
-## Note on using this package with the OpenCL backend
+## Backend-specific instructions
+
+### OpenCL
 
 Because the array type returned by OpenCL can change dynamically, [`DispatchDoctor.jl`](https://github.com/MilesCranmer/DispatchDoctor.jl) must be disabled for this package when using the OpenCL backend. You can do this by setting `Preferences.set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")` or wrapping the relevant code in `DispatchDoctor.allow_unstable() do ... end`.
 
