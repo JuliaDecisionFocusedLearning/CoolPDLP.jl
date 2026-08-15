@@ -23,7 +23,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
+        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber,
         Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
@@ -111,5 +111,5 @@ function step!(
 
     # other updates
     state.stats.kkt_passes += 1
-    return nothing
+    return state, milp
 end

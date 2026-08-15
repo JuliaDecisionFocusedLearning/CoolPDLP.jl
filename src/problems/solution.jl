@@ -115,7 +115,7 @@ end
 Overwrite the columns of `sol` for which `cond` holds with those of `sol_other`.
 """
 function batched_select!(
-        sol::PrimalDualSolution, cond::BatchedNumber{Bool},
+        sol::PrimalDualSolution, cond::BatchedNumber,
         sol_other::PrimalDualSolution,
     )
     condr = transpose(cond)

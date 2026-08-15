@@ -7,19 +7,19 @@ Mutable so that [`kkt_errors!`](@ref) can refill it without allocating.
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct KKTErrors{T <: BatchedNumber}
+@kwdef mutable struct KKTErrors{T<:Number,B <: BatchedNumber{T}}
     "primal feasibility error"
-    primal::T
+    primal::B
     "characteristic scale of the primal constraint RHS"
-    primal_scale::T
+    primal_scale::B
     "dual feasibility error"
-    dual::T
+    dual::B
     "characteristic scale of the dual constraint RHS"
-    dual_scale::T
+    dual_scale::B
     "primal-dual gap"
-    gap::T
+    gap::B
     "characteristic scale of the gap"
-    gap_scale::T
+    gap_scale::B
 end
 
 format_error(e::Number) = @sprintf("%.3e", e)
@@ -77,7 +77,7 @@ Base.copy(err::KKTErrors) = KKTErrors(
 Fill `dest`, column by column, with the errors of `err_true` where `cond` holds and those of `err_false` elsewhere.
 """
 function select_errors!!(
-        dest::KKTErrors, cond::BatchedNumber{Bool},
+        dest::KKTErrors, cond::BatchedNumber,
         err_true::KKTErrors, err_false::KKTErrors,
     )
     dest.primal = broadcast!!(ifelse, dest.primal, cond, err_true.primal, err_false.primal)

@@ -122,8 +122,8 @@ end
 Return the largest finite absolute value between the two bounds, or zero if neither is finite.
 """
 function combine(l::Number, u::Number)
-    ls = isfinite(l) ? abs(l) : zero(l)
-    us = isfinite(u) ? abs(u) : zero(u)
+    ls = ifelse(isfinite(l), abs(l), zero(l))
+    us = ifelse(isfinite(u), abs(u), zero(u))
     return max(zero(l), ls, us)
 end
 

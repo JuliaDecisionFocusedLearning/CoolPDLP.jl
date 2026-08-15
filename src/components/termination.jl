@@ -106,13 +106,25 @@ function termination_status!!(
     )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    if batched_all(<=(termination_reltol), relative!!(dest, err))
-        return OPTIMAL
+    st = if batched_all(<=(termination_reltol), relative!!(dest, err))
+        OPTIMAL
     elseif time_elapsed >= time_limit
-        return TIME_LIMIT
+        TIME_LIMIT
     elseif kkt_passes >= max_kkt_passes
-        return ITERATION_LIMIT
+        ITERATION_LIMIT
     else
-        return STILL_RUNNING
+        STILL_RUNNING
     end
+    return st
+end
+
+function should_terminate!!(
+        dest::BatchedNumber, stats::ConvergenceStats, params::TerminationParameters
+    )
+    (; err, time_elapsed, kkt_passes) = stats
+    (; termination_reltol, time_limit, max_kkt_passes) = params
+    is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
+    is_time_limit = time_elapsed >= time_limit
+    is_iteration_limit = kkt_passes >= max_kkt_passes
+    return is_optimal || is_time_limit || is_iteration_limit
 end
