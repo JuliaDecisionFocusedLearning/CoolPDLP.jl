@@ -32,6 +32,7 @@ jobs:
           - 'MOI'
           - 'Perf'
           - 'OpenCL'
+          - 'Reactant'
         exclude:
           - version: 'lts'
             group: 'Perf'
