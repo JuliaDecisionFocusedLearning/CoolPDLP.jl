@@ -27,5 +27,5 @@ state = initialize(milp, sol, algo; starting_time = time());
 milp_r = CoolPDLP.custom_to_rarray(milp);
 state_r = CoolPDLP.custom_to_rarray(state; track_numbers = true);
 
-compile_options = CompileOptions(; donated_args=:none)
-@test_nowarn compiled_step! = @compile compile_options=compile_options CoolPDLP.step!(state_r, milp_r)
+compile_options = CompileOptions(; donated_args = :none)
+@test_nowarn compiled_step! = @compile compile_options = compile_options CoolPDLP.step!(state_r, milp_r)

@@ -7,7 +7,7 @@ Mutable so that [`kkt_errors!`](@ref) can refill it without allocating.
 
 $(TYPEDFIELDS)
 """
-@kwdef mutable struct KKTErrors{T<:Number,B <: BatchedNumber{T}}
+@kwdef mutable struct KKTErrors{T <: Number, B <: BatchedNumber{T}}
     "primal feasibility error"
     primal::B
     "characteristic scale of the primal constraint RHS"
