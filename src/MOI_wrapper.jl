@@ -255,19 +255,13 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
-    ts, ps, ds = if cts == OPTIMAL
-        MOI.OPTIMAL, MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
-    elseif cts == TIME_LIMIT
-        MOI.TIME_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
-    elseif cts == ITERATION_LIMIT
-        MOI.ITERATION_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
+    @assert cts != MOI.OPTIMIZE_NOT_CALLED "solve did not reach a terminal status"
+    dest.termination_status = cts
+    dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL
+        MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
     else
-        @assert cts == STILL_RUNNING
-        MOI.OTHER_ERROR, MOI.NO_SOLUTION, MOI.NO_SOLUTION
+        MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
     end
-    dest.termination_status = ts
-    dest.primal_status = ps
-    dest.dual_status = ds
 
     return index_map, false
 end

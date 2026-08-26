@@ -221,7 +221,7 @@ function solve(
             @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
             kkt_errors!(state.stats.err, state.scratch, sol, milp)
             state.stats.time_elapsed = time() - starting_time
-            state.stats.termination_status = OPTIMAL
+            state.stats.termination_status = MOI.OPTIMAL
             return get_solution(state, milp), state.stats
         end
     end
@@ -256,7 +256,7 @@ function termination_check!(
         push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
     end
     stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
-    return stats.termination_status !== STILL_RUNNING
+    return stats.termination_status !== MOI.OPTIMIZE_NOT_CALLED
 end
 
 function get_solution(state::AbstractState, milp::MILP)
