@@ -92,8 +92,35 @@ end
         A = randn(rng, 10, 20)
         s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7)
         s1_ref = opnorm(A, 2)
-        @test s1 ≈ s1_ref rtol = 1.0e-1
+        # normalizing the initial guess and giving the power method a generous,
+        # size-independent iteration budget (#95) makes this accurate to near machine
+        # precision, instead of the `rtol = 1.0e-1` this used to require
+        @test s1 ≈ s1_ref rtol = 1.0e-10
     end
+end
+
+@testset "Spectral norm requires an explicit tolerance" begin
+    # `tol` must not fall back to IterativeSolvers' size-dependent defaults (see #95):
+    # those scale as `eps(T) * n^3` and become far too loose to trust at scale
+    A = randn(5, 5)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Matrix(transpose(A)))
+end
+
+@testset "Spectral norm of a zero matrix is exactly zero" begin
+    # `Kᵀ * K` is positive semidefinite, so the power method's Rayleigh quotient `λ` is
+    # mathematically nonnegative; a genuinely zero spectral norm (no constraint rows, or
+    # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
+    # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
+    Z = zeros(2, 2)
+    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3) == 0.0
+end
+
+@testset "Spectral norm errors instead of silently under-converging" begin
+    # a top eigenvalue ratio of 0.99 makes the power method converge far too slowly
+    # (needing >1000 iterations) to reach a tight `tol`; before #95 was fixed, this
+    # silently returned an inaccurate estimate instead of signaling non-convergence
+    K = Matrix(Diagonal(sqrt.([1.0, 0.99, 0.3, 0.1])))
+    @test_throws AssertionError CoolPDLP.spectral_norm(K, K; tol = 1.0e-10)
 end
 
 @testset "Column reductions" begin

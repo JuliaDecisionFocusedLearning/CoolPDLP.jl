@@ -156,9 +156,13 @@ function LinearAlgebra.mul!(y, sym::Symmetrized, x)
 end
 
 """
-    spectral_norm(K, Kᵀ)
+    spectral_norm(K, Kᵀ; tol)
 
-Compute the spectral norm of `K` with the power method from IterativeSolvers.jl.
+Compute the spectral norm of `K` with the power method from IterativeSolvers.jl, using
+`tol` as the absolute tolerance on the estimated eigenvalue of `Kᵀ * K`.
+
+Throws an `AssertionError` if the power method fails to converge within its iteration
+budget, instead of silently returning an inaccurate estimate.
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},
@@ -172,9 +176,18 @@ function spectral_norm(
     # normalize initial guess following the docstring of `powm!`
     x0 ./= norm(x0)
     KᵀK = Symmetrized(K, Kᵀ)
-    λ, _, powm_history = powm!(KᵀK, x0; tol, log = true)
-    @assert λ > zero(λ)  # TODO: test
-    @assert powm_history.isconverged  # TODO: test
+    # IterativeSolvers' default `maxiter = size(B, 2)` ties the iteration budget to the
+    # problem size instead of the (size-independent) convergence rate of the power
+    # method, which is exactly what let it silently quit early on large matrices (#95);
+    # a fixed, generous cap decouples the two while still catching genuine
+    # non-convergence (e.g. near-duplicate leading eigenvalues) via `isconverged` below
+    λ, _, powm_history = powm!(KᵀK, x0; tol, maxiter = 1000, log = true)
+    # `λ` is a Rayleigh quotient of the PSD matrix `KᵀK`, so it is mathematically
+    # nonnegative; `>= zero(λ)` (not `>`) so a legitimately zero spectral norm (no
+    # constraint rows, or an all-zero `K`) is not mistaken for the floating-point-noise
+    # case this guards against, which would otherwise reach `sqrt` as a small negative
+    @assert λ >= zero(λ)
+    @assert powm_history.isconverged
     return sqrt(λ)
 end
 
