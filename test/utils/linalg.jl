@@ -90,7 +90,7 @@ end
     rng = Xoshiro(42)
     for _ in 1:10
         A = randn(rng, 10, 20)
-        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7)
+        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7, maxiter = 1000)
         s1_ref = opnorm(A, 2)
         # normalizing the initial guess and giving the power method a generous,
         # size-independent iteration budget (#95) makes this accurate to near machine
@@ -99,11 +99,15 @@ end
     end
 end
 
-@testset "Spectral norm requires an explicit tolerance" begin
-    # `tol` must not fall back to IterativeSolvers' size-dependent defaults (see #95):
-    # those scale as `eps(T) * n^3` and become far too loose to trust at scale
+@testset "Spectral norm requires an explicit tolerance and iteration budget" begin
+    # neither `tol` nor `maxiter` may fall back to IterativeSolvers' size-dependent
+    # defaults (see #95): those scale as `eps(T) * n^3` and `size(B, 2)` respectively,
+    # which become far too loose (or too small) to trust at scale
     A = randn(5, 5)
-    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Matrix(transpose(A)))
+    Aᵀ = Matrix(transpose(A))
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-7)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; maxiter = 1000)
 end
 
 @testset "Spectral norm of a zero matrix is exactly zero" begin
@@ -112,15 +116,17 @@ end
     # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
     # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
     Z = zeros(2, 2)
-    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3) == 0.0
+    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3, maxiter = 1000) == 0.0
 end
 
 @testset "Spectral norm errors instead of silently under-converging" begin
-    # a top eigenvalue ratio of 0.99 makes the power method converge far too slowly
-    # (needing >1000 iterations) to reach a tight `tol`; before #95 was fixed, this
-    # silently returned an inaccurate estimate instead of signaling non-convergence
-    K = Matrix(Diagonal(sqrt.([1.0, 0.99, 0.3, 0.1])))
-    @test_throws AssertionError CoolPDLP.spectral_norm(K, K; tol = 1.0e-10)
+    # a `maxiter` too small for the requested `tol` (rather than IterativeSolvers'
+    # size-tied default) must surface as an error instead of an inaccurate estimate
+    rng = Xoshiro(42)
+    A = randn(rng, 10, 20)
+    @test_throws AssertionError CoolPDLP.spectral_norm(
+        A, Matrix(transpose(A)); tol = 1.0e-12, maxiter = 1
+    )
 end
 
 @testset "Column reductions" begin

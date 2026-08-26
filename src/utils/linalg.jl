@@ -156,18 +156,23 @@ function LinearAlgebra.mul!(y, sym::Symmetrized, x)
 end
 
 """
-    spectral_norm(K, Kᵀ; tol)
+    spectral_norm(K, Kᵀ; tol, maxiter)
 
 Compute the spectral norm of `K` with the power method from IterativeSolvers.jl, using
-`tol` as the absolute tolerance on the estimated eigenvalue of `Kᵀ * K`.
+`tol` as the absolute tolerance on the estimated eigenvalue of `Kᵀ * K` and `maxiter` as
+the iteration budget.
 
-Throws an `AssertionError` if the power method fails to converge within its iteration
-budget, instead of silently returning an inaccurate estimate.
+Throws an `AssertionError` if the power method fails to converge within `maxiter`
+iterations, instead of silently returning an inaccurate estimate. `maxiter` should be
+chosen independently of the size of `K`: IterativeSolvers' own default (`size(B, 2)`)
+ties the budget to problem size instead of the power method's convergence rate, which is
+exactly what let the estimate diverge silently on large matrices (#95).
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},
         Kᵀ::AbstractMatrix{<:Number};
         tol::Number,
+        maxiter::Integer,
     )
     x0 = allocate(get_backend(K), eltype(K), size(K, 2))
     x0_cpu = adapt(CPU(), x0)  # StableRNGs doesn't work on GPU
@@ -176,12 +181,7 @@ function spectral_norm(
     # normalize initial guess following the docstring of `powm!`
     x0 ./= norm(x0)
     KᵀK = Symmetrized(K, Kᵀ)
-    # IterativeSolvers' default `maxiter = size(B, 2)` ties the iteration budget to the
-    # problem size instead of the (size-independent) convergence rate of the power
-    # method, which is exactly what let it silently quit early on large matrices (#95);
-    # a fixed, generous cap decouples the two while still catching genuine
-    # non-convergence (e.g. near-duplicate leading eigenvalues) via `isconverged` below
-    λ, _, powm_history = powm!(KᵀK, x0; tol, maxiter = 1000, log = true)
+    λ, _, powm_history = powm!(KᵀK, x0; tol, maxiter, log = true)
     # `λ` is a Rayleigh quotient of the PSD matrix `KᵀK`, so it is mathematically
     # nonnegative; `>= zero(λ)` (not `>`) so a legitimately zero spectral norm (no
     # constraint rows, or an all-zero `K`) is not mistaken for the floating-point-noise
