@@ -163,14 +163,18 @@ Compute the spectral norm of `K` with the power method from IterativeSolvers.jl.
 function spectral_norm(
         K::AbstractMatrix{<:Number},
         Kᵀ::AbstractMatrix{<:Number};
-        kwargs...
+        tol::Number,
     )
     x0 = allocate(get_backend(K), eltype(K), size(K, 2))
     x0_cpu = adapt(CPU(), x0)  # StableRNGs doesn't work on GPU
     randn!(StableRNG(0), x0_cpu)
     copyto!(x0, x0_cpu)
+    # normalize initial guess following the docstring of `powm!`
+    x0 ./= norm(x0)
     KᵀK = Symmetrized(K, Kᵀ)
-    λ, _ = powm!(KᵀK, x0; kwargs...)
+    λ, _, powm_history = powm!(KᵀK, x0; tol, log = true)
+    @assert λ > zero(λ)  # TODO: test
+    @assert powm_history.isconverged  # TODO: test
     return sqrt(λ)
 end
 
