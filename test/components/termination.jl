@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: ITERATION_LIMIT, OPTIMAL, TIME_LIMIT
+import MathOptInterface as MOI
 using Random
 using SparseArrays
 using Test
@@ -12,7 +12,7 @@ using Test
     milp = CoolPDLP.MILP(; c, lv, uv, A, lc, uc)
     algo = CoolPDLP.PDLP()
     sol, stats = CoolPDLP.solve(milp, algo)
-    @test stats.termination_status == OPTIMAL
+    @test stats.termination_status == MOI.OPTIMAL
 end
 
 @testset "Termination statuses" begin
@@ -21,11 +21,11 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         _, stats = solve(milp, alg(; termination_reltol = 0.0, max_kkt_passes = 200))
-        @test stats.termination_status == ITERATION_LIMIT
+        @test stats.termination_status == MOI.ITERATION_LIMIT
         @test stats.kkt_passes >= 200
 
         _, stats = solve(milp, alg(; termination_reltol = 0.0, time_limit = 0.0))
-        @test stats.termination_status == TIME_LIMIT
+        @test stats.termination_status == MOI.TIME_LIMIT
         @test stats.time_elapsed >= 0
     end
 end
@@ -41,7 +41,7 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         sol, stats = solve(milp, alg())
-        @test stats.termination_status == OPTIMAL
+        @test stats.termination_status == MOI.OPTIMAL
         @test sol.x == clamp.(0.0, lv, uv)
         @test is_feasible(sol.x, milp)
         @test objective_value(sol.x, milp) == 0

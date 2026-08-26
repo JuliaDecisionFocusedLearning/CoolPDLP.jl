@@ -255,17 +255,15 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
-    ts, ps, ds = if cts == OPTIMAL
-        MOI.OPTIMAL, MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
-    elseif cts == TIME_LIMIT
-        MOI.TIME_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
-    elseif cts == ITERATION_LIMIT
-        MOI.ITERATION_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
+    ps, ds = if cts == MOI.OPTIMAL
+        MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
+    elseif cts in (MOI.TIME_LIMIT, MOI.ITERATION_LIMIT)
+        MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
     else
-        @assert cts == STILL_RUNNING
-        MOI.OTHER_ERROR, MOI.NO_SOLUTION, MOI.NO_SOLUTION
+        @assert cts == MOI.OPTIMIZE_NOT_CALLED
+        MOI.NO_SOLUTION, MOI.NO_SOLUTION
     end
-    dest.termination_status = ts
+    dest.termination_status = cts == MOI.OPTIMIZE_NOT_CALLED ? MOI.OTHER_ERROR : cts
     dest.primal_status = ps
     dest.dual_status = ds
 
