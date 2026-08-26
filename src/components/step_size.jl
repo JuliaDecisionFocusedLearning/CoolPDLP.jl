@@ -12,17 +12,21 @@ $(TYPEDFIELDS)
     primal_weight_damping::T
     "tolerance in absolute comparisons to zero"
     zero_tol::T
+    "absolute tolerance in iterative spectral norm computation"
+    spectral_norm_tol::T
+    "maximum number of power method iterations in iterative spectral norm computation"
+    spectral_norm_maxiter::Int
 end
 
 function Base.show(io::IO, params::StepSizeParameters)
-    (; invnorm_scaling, primal_weight_damping, zero_tol) = params
-    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol")
+    (; invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_tol, spectral_norm_maxiter) = params
+    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_tol=$spectral_norm_tol, spectral_norm_maxiter=$spectral_norm_maxiter")
 end
 
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
-    (; invnorm_scaling) = params
-    norm = spectral_norm(A, At)
+    (; invnorm_scaling, spectral_norm_tol, spectral_norm_maxiter) = params
+    norm = spectral_norm(A, At; tol = spectral_norm_tol, maxiter = spectral_norm_maxiter)
     # a zero spectral norm (no constraint rows, or an all-zero `A`) means `A'y` never
     # contributes to the primal step regardless of `η`, so any finite step size is safe;
     # `inv(norm)` would otherwise be `Inf` and corrupt the first primal step
