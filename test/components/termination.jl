@@ -59,7 +59,7 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         sol, stats = solve(milp, alg())
-        @test stats.termination_status == OPTIMAL
+        @test stats.termination_status == MOI.OPTIMAL
         @test !any(isnan, sol.x)
         @test sol.x == [0.0, 5.0, 0.0]
         @test objective_value(sol.x, milp) == -5.0
@@ -82,7 +82,7 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != OPTIMAL
+        @test stats.termination_status != MOI.OPTIMAL
     end
 
     @testset "unbounded direction (c[1] > 0, lv[1] == -Inf)" begin
@@ -91,7 +91,7 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != OPTIMAL
+        @test stats.termination_status != MOI.OPTIMAL
     end
 
     @testset "unbounded direction (c[1] < 0, uv[1] == Inf)" begin
@@ -100,6 +100,6 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != OPTIMAL
+        @test stats.termination_status != MOI.OPTIMAL
     end
 end
