@@ -51,6 +51,10 @@ function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCOO)
     return sparse(Vector(A.rowval), Vector(A.colval), Vector(A.nzval), A.m, A.n)
 end
 
+function Base.isapprox(A::GPUSparseMatrixCOO, B::GPUSparseMatrixCOO; kwargs...)
+    return isapprox(SparseMatrixCSC(A), SparseMatrixCSC(B); kwargs...)
+end
+
 function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     rowval, colval, nzval = findnz(A)
     return GPUSparseMatrixCOO(A.m, A.n, rowval, colval, nzval)

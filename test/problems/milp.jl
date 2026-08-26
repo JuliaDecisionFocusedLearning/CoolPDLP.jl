@@ -157,6 +157,22 @@ end
     qps, path = read_instance(Netlib, netlib[1])
     milp = MILP(qps; path, dataset = "Netlib")
     @test milp ≈ milp
+
+    # `isapprox` used to error for MILPs whose A/At are not SparseMatrixCSC, since the
+    # custom GPU sparse matrix types don't define `-` and the fallback `isapprox` needs it
+    milp_gpu = MILP(;
+        milp.c, milp.lv, milp.uv,
+        A = GPUSparseMatrixCSR(milp.A), At = GPUSparseMatrixCSR(milp.At),
+        milp.lc, milp.uc,
+    )
+    @test milp_gpu ≈ milp_gpu
+    A2 = 2 .* milp.A
+    milp_gpu2 = MILP(;
+        milp.c, milp.lv, milp.uv,
+        A = GPUSparseMatrixCSR(A2), At = GPUSparseMatrixCSR(sparse(transpose(A2))),
+        milp.lc, milp.uc,
+    )
+    @test !(milp_gpu ≈ milp_gpu2)
 end
 
 @testset "Objsense" begin

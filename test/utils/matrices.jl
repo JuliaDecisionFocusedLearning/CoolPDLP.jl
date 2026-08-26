@@ -78,3 +78,11 @@ end
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
 end
+
+@testset "isapprox $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+    A = sprand(8, 6, 0.35)
+    B = sprand(8, 6, 0.35)
+    A_m, A_m2, B_m = M(A), M(A), M(B)
+    @test isapprox(A_m, A_m2)
+    @test !isapprox(A_m, B_m)
+end

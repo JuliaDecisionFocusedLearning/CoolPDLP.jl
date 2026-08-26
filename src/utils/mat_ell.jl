@@ -82,6 +82,10 @@ function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixELL)
     return sparse(I[inds], J[inds], V[inds], A.m, A.n)
 end
 
+function Base.isapprox(A::GPUSparseMatrixELL, B::GPUSparseMatrixELL; kwargs...)
+    return isapprox(SparseMatrixCSC(A), SparseMatrixCSC(B); kwargs...)
+end
+
 function sametype_transpose(A::GPUSparseMatrixELL)
     At = SparseMatrixCSC(transpose(SparseMatrixCSC(A)))
     return adapt(get_backend(A), GPUSparseMatrixELL(At))

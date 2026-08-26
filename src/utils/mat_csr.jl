@@ -65,6 +65,10 @@ function SparseArrays.SparseMatrixCSC(A::GPUSparseMatrixCSR)
     return SparseMatrixCSC(transpose(At_csc))
 end
 
+function Base.isapprox(A::GPUSparseMatrixCSR, B::GPUSparseMatrixCSR; kwargs...)
+    return isapprox(SparseMatrixCSC(A), SparseMatrixCSC(B); kwargs...)
+end
+
 function sametype_transpose(A::GPUSparseMatrixCSR)
     A_csc = SparseMatrixCSC(A)
     return adapt(
