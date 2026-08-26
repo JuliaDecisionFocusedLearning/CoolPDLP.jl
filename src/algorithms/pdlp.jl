@@ -18,8 +18,8 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
-        B <: BatchedNumber{Bool}, Sc <: Scratch{T, V, S},
+        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber,
+        B <: BatchedNumber, Sc <: Scratch{T, V, S},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}

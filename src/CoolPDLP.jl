@@ -4,12 +4,13 @@ module CoolPDLP
 using Adapt: Adapt, adapt
 using Atomix: Atomix
 using BangBang: add!!, broadcast!!
-using DispatchDoctor: @stable
+using DispatchDoctor: @stable, @unstable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
+using ReactantCore: @trace
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
 using StableRNGs: StableRNG
 
@@ -21,34 +22,36 @@ using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz,
 
 include("public.jl")
 
-@stable begin
-    include("utils/device.jl")
-    include("utils/mat_coo.jl")
-    include("utils/mat_csr.jl")
-    include("utils/mat_ell.jl")
-    include("utils/linalg.jl")
-    include("utils/test.jl")
-    include("utils/batching.jl")
+# @stable begin
+include("utils/device.jl")
+include("utils/mat_coo.jl")
+include("utils/mat_csr.jl")
+include("utils/mat_ell.jl")
+include("utils/linalg.jl")
+include("utils/test.jl")
+include("utils/batching.jl")
 
-    include("problems/milp.jl")
-    include("problems/solution.jl")
-    include("problems/modify.jl")
+include("problems/milp.jl")
+include("problems/solution.jl")
+include("problems/modify.jl")
 
-    include("components/scratch.jl")
-    include("components/conversion.jl")
-    include("components/preconditioning.jl")
-    include("components/permutation.jl")
-    include("components/step_size.jl")
-    include("components/errors.jl")
-    include("components/iteration.jl")
-    include("components/restart.jl")
-    include("components/generic.jl")
-    include("components/termination.jl")
+include("components/scratch.jl")
+include("components/conversion.jl")
+include("components/preconditioning.jl")
+include("components/permutation.jl")
+include("components/step_size.jl")
+include("components/errors.jl")
+include("components/iteration.jl")
+include("components/restart.jl")
+include("components/generic.jl")
+include("components/termination.jl")
 
-    include("algorithms/common.jl")
-    include("algorithms/pdhg.jl")
-    include("algorithms/pdlp.jl")
-end
+include("algorithms/common.jl")
+include("algorithms/pdhg.jl")
+include("algorithms/pdlp.jl")
+
+include("extensions.jl")
+# end
 
 include("MOI_wrapper.jl")
 

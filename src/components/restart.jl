@@ -28,7 +28,7 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct RestartStats{T <: BatchedNumber, B <: BatchedNumber{Bool}}
+mutable struct RestartStats{T <: BatchedNumber, B <: BatchedNumber}
     "whether to restart from the average solution, column by column"
     restart_from_avg::B
     "KKT errors of the current solution"

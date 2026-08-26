@@ -76,4 +76,9 @@ include("fixtures.jl")
             include("gpu/opencl/runtests.jl")
         end
     end
+    if GROUP == "Reactant"
+        @testset verbose = true "Reactant" begin
+            include("gpu/reactant/runtests.jl")
+        end
+    end
 end
