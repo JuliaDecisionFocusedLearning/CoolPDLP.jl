@@ -25,15 +25,15 @@ qps, path = read_instance(dataset, name);</code></pre><p>A <a href="../api/#Cool
 )</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PDLP algorithm:
 - ConversionParameters: types=(Float64, Int64, SparseArrays.SparseMatrixCSC), backend=KernelAbstractions.CPU(false)
 - PreconditioningParameters: chambolle_pock_alpha=1.0, ruiz_iter=10
-- StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8
+- StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8, spectral_norm_tol=0.001, spectral_norm_maxiter=1000
 - RestartParameters: sufficient_decay=0.2, necessary_decay=0.8, artificial_decay=0.36, batch_aggregation=batched_mean
 - GenericParameters: show_progress=false, check_every=100, record_error_history=true
 - TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=60.0</code></pre><p>Then all it takes is to call <a href="../api/#CoolPDLP.solve-Tuple{MILP, PrimalDualSolution, CoolPDLP.Algorithm}"><code>solve</code></a>.</p><pre><code class="language-julia hljs">sol, stats = solve(milp, algo);</code></pre><p>The solution is available as a <a href="../api/#CoolPDLP.PrimalDualSolution"><code>PrimalDualSolution</code></a>:</p><pre><code class="language-julia hljs">sol.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element Vector{Float64}:
-  79.99998483892944
-  25.499948968432786
-  54.500011759632756
-  84.79998144856992
-  59.02154248362828
+  79.99998459918895
+  25.49994811129293
+  54.50001195640333
+  84.79998115433897
+  59.022474667183076
    0.0
    0.0
    0.0
@@ -45,13 +45,13 @@ qps, path = read_instance(dataset, name);</code></pre><p>A <a href="../api/#Cool
    0.0
    0.0
    0.0
- 339.94294699076806
- 236.51443477946347
-  63.394278500975375
+ 339.94294816467084
+ 236.5146152031544
+  63.39420165793444
    0.0</code></pre><p>The stats contain information about the convergence of the algorithm:</p><pre><code class="language-julia hljs">stats</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Convergence stats with termination status OPTIMAL:
-- KKT relative errors: primal 9.909e-08, dual 3.936e-08, gap 3.756e-07
-- time elapsed: 0.858 seconds
-- KKT passes: 900</code></pre><p>You can check the feasibility and objective value:</p><pre><code class="language-julia hljs">is_feasible(sol.x, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(sol.x, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.75321283671667</code></pre><p>And even plot convergence!</p><pre><code class="language-julia hljs">#md
+- KKT relative errors: primal 1.004e-07, dual 4.040e-08, gap 3.844e-07
+- time elapsed: 0.883 seconds
+- KKT passes: 900</code></pre><p>You can check the feasibility and objective value:</p><pre><code class="language-julia hljs">is_feasible(sol.x, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(sol.x, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7532136202834</code></pre><p>And even plot convergence!</p><pre><code class="language-julia hljs">#md
 error_inds = first.(stats.error_history)
 error_vals = map(CoolPDLP.relative, last.(stats.error_history))
 scatterplot(
@@ -64,7 +64,7 @@ scatterplot(
                       <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
                       <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
                       <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
-                      <span class="sgr90">│</span><span class="sgr32">⡀</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
+                      <span class="sgr90">│</span><span class="sgr32">⠄</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
                       <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
                       <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
    Relative error     <span class="sgr90">│</span>⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀<span class="sgr90">│</span> 
@@ -87,16 +87,16 @@ scatterplot(
 )</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PDLP algorithm:
 - ConversionParameters: types=(Float32, Int32, GPUSparseMatrixCSR), backend=JLArrays.JLBackend(false)
 - PreconditioningParameters: chambolle_pock_alpha=1.0, ruiz_iter=10
-- StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8
+- StepSizeParameters: invnorm_scaling=0.9, primal_weight_damping=0.5, zero_tol=1.0e-8, spectral_norm_tol=0.001, spectral_norm_maxiter=1000
 - RestartParameters: sufficient_decay=0.2, necessary_decay=0.8, artificial_decay=0.36, batch_aggregation=batched_mean
 - GenericParameters: show_progress=false, check_every=100, record_error_history=true
 - TerminationParameters: termination_reltol=1.0e-6, max_kkt_passes=100000, time_limit=60.0</code></pre><p>The result of the algorithm will live on the GPU:</p><pre><code class="language-julia hljs">sol_gpu, stats_gpu = solve(milp, algo_gpu)
 sol_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element JLArrays.JLArray{Float32, 1}:
-  80.00002
-  25.500057
-  54.499992
-  84.800026
-  59.021748
+  79.99999
+  25.49996
+  54.500008
+  84.79999
+  59.022476
    0.0
    0.0
    0.0
@@ -108,10 +108,10 @@ sol_gpu.x</code></pre><pre class="documenter-example-output"><code class="nohigh
    0.0
    0.0
    0.0
- 339.94275
- 236.51427
-  63.394226
-   0.0</code></pre><p>To bring in back to the CPU, just call the <code>Array</code> converter.</p><pre><code class="language-julia hljs">objective_value(Array(sol_gpu.x), milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7530648803711</code></pre><h2 id="Solving-problems-in-a-batch"><a class="docs-heading-anchor" href="#Solving-problems-in-a-batch">Solving problems in a batch</a><a id="Solving-problems-in-a-batch-1"></a><a class="docs-heading-anchor-permalink" href="#Solving-problems-in-a-batch" title="Permalink"></a></h2><p>Sometimes you may be faced with a batch of similar problems which share the same constraint matrix but different bounds or objective vectors. To solve them all in lockstep, the <a href="../api/#CoolPDLP.MILP"><code>MILP</code></a> struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix. Here&#39;s a batched example with slightly perturbed objective vectors:</p><pre><code class="language-julia hljs">batch_size = 3
+ 339.9429
+ 236.51459
+  63.39417
+   0.0</code></pre><p>To bring in back to the CPU, just call the <code>Array</code> converter.</p><pre><code class="language-julia hljs">objective_value(Array(sol_gpu.x), milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.75316329956047</code></pre><h2 id="Solving-problems-in-a-batch"><a class="docs-heading-anchor" href="#Solving-problems-in-a-batch">Solving problems in a batch</a><a id="Solving-problems-in-a-batch-1"></a><a class="docs-heading-anchor-permalink" href="#Solving-problems-in-a-batch" title="Permalink"></a></h2><p>Sometimes you may be faced with a batch of similar problems which share the same constraint matrix but different bounds or objective vectors. To solve them all in lockstep, the <a href="../api/#CoolPDLP.MILP"><code>MILP</code></a> struct can accommodate matrices instead of vectors for any subset of its fields: in that case, each instance maps to a column of the relevant matrix. Here&#39;s a batched example with slightly perturbed objective vectors:</p><pre><code class="language-julia hljs">batch_size = 3
 Δc = rand(StableRNG(63), nbvar(milp), batch_size) .* maximum(abs, milp.c) ./ 10
 batched_milp = MILP(;
     c = milp.c .+ Δc,
@@ -151,7 +151,7 @@ sol_batched_gpu.x</code></pre><pre class="documenter-example-output"><code class
   0.0       0.0       0.0
   0.0       0.0       0.0
   0.0       0.0       0.0
-  4.64365   4.64365   0.0
+  4.64365   4.64363   0.0
   0.0       0.0       0.0
   0.0       0.0       0.0
   0.0       0.0       0.0
@@ -164,9 +164,9 @@ sol_batched_gpu.x</code></pre><pre class="documenter-example-output"><code class
   0.0       0.0       0.0
   0.0       0.0       0.0
   0.0       0.0       0.0
-  1.39774   1.39774  44.0
+  1.39774   1.39773  44.0
  18.319    18.319     0.0
-  0.0       0.0       0.0</code></pre><p>Again, single solutions can be extracted at will:</p><pre><code class="language-julia hljs">instance(sol_batched_gpu, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PrimalDualSolution{Float32, JLArrays.JLArray{Float32, 1}}(Float32[0.0, 0.0, 0.0, 0.0, 4.6436524, 0.0, 0.0, 0.0, 0.0, 0.0  …  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.3977395, 18.31897, 0.0], Float32[-0.41178617, 0.000509245, 0.0, -0.07513208, -0.86003786, 0.3332452, 0.0, -0.42888385, -0.088415116, 0.0  …  0.0, -0.30765754, -0.20517121, -0.12108101, 0.0, -1.0490295, -0.0002338086, -0.044850543, 0.0, 0.0])</code></pre><p>And checked for feasibility and optimality</p><pre><code class="language-julia hljs">is_feasible(
+  0.0       0.0       0.0</code></pre><p>Again, single solutions can be extracted at will:</p><pre><code class="language-julia hljs">instance(sol_batched_gpu, 2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PrimalDualSolution{Float32, JLArrays.JLArray{Float32, 1}}(Float32[0.0, 0.0, 0.0, 0.0, 4.6436343, 0.0, 0.0, 0.0, 0.0, 0.0  …  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.3977334, 18.31897, 0.0], Float32[-0.411806, 0.00051154994, 0.0, -0.07513619, -0.8600379, 0.3332452, 0.0, -0.42887422, -0.08842743, 0.0  …  0.0, -0.3076834, -0.20520109, -0.12108365, 0.0, -1.0490295, -0.0002348666, -0.04485077, 0.0, 0.0])</code></pre><p>And checked for feasibility and optimality</p><pre><code class="language-julia hljs">is_feasible(
     Array(instance(sol_batched_gpu, 2).x),
     instance(batched_milp, 2);
     cons_tol = 1.0e-3
@@ -178,11 +178,11 @@ JuMP.set_attribute(model, &quot;matrix_type&quot;, GPUSparseMatrixCSR)
 JuMP.set_attribute(model, &quot;backend&quot;, JLBackend())
 JuMP.optimize!(model)
 x_jump = JuMP.value.(JuMP.all_variables(model))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">32-element Vector{Float64}:
-  79.99998483892942
-  25.49994896843277
-  54.50001175963277
-  84.79998144856994
-  59.02154248362832
+  79.99998459918896
+  25.49994811129296
+  54.500011956403306
+  84.799981154339
+  59.022474667183104
    0.0
    0.0
    0.0
@@ -194,10 +194,10 @@ x_jump = JuMP.value.(JuMP.all_variables(model))</code></pre><pre class="document
    0.0
    0.0
    0.0
- 339.94294699076806
- 236.51443477946384
-  63.39427850097521
-   0.0</code></pre><pre><code class="language-julia hljs">objective_value(x_jump, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.75321283671667</code></pre><h2 id="Comparing-with-HiGHS"><a class="docs-heading-anchor" href="#Comparing-with-HiGHS">Comparing with HiGHS</a><a id="Comparing-with-HiGHS-1"></a><a class="docs-heading-anchor-permalink" href="#Comparing-with-HiGHS" title="Permalink"></a></h2><p>To check our solution, let&#39;s compare it with the output from the HiGHS solver:</p><pre><code class="language-julia hljs">model_highs = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
+ 339.94294816467084
+ 236.5146152031543
+  63.39420165793443
+   0.0</code></pre><pre><code class="language-julia hljs">objective_value(x_jump, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7532136202834</code></pre><h2 id="Comparing-with-HiGHS"><a class="docs-heading-anchor" href="#Comparing-with-HiGHS">Comparing with HiGHS</a><a id="Comparing-with-HiGHS-1"></a><a class="docs-heading-anchor-permalink" href="#Comparing-with-HiGHS" title="Permalink"></a></h2><p>To check our solution, let&#39;s compare it with the output from the HiGHS solver:</p><pre><code class="language-julia hljs">model_highs = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
 JuMP.set_optimizer(model_highs, HiGHS.Optimizer)
 JuMP.set_silent(model_highs)
 JuMP.optimize!(model_highs)
@@ -221,4 +221,4 @@ x_ref = JuMP.value.(JuMP.all_variables(model_highs))</code></pre><pre class="doc
  339.9428571428572
  383.9428571428572
   -0.0
-   0.0</code></pre><p>Of course, the solution given by HiGHS is feasible too, and we can compare objective values:</p><pre><code class="language-julia hljs">is_feasible(x_ref, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(x_ref, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7531428571429</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../api/">API reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Wednesday 26 August 2026 16:33">Wednesday 26 August 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+   0.0</code></pre><p>Of course, the solution given by HiGHS is feasible too, and we can compare objective values:</p><pre><code class="language-julia hljs">is_feasible(x_ref, milp; cons_tol = 1.0e-3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">objective_value(x_ref, milp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-464.7531428571429</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../api/">API reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Wednesday 26 August 2026 19:28">Wednesday 26 August 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
