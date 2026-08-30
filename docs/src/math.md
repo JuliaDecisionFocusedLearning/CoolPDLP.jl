@@ -133,3 +133,37 @@ We make use of a few key observations:
 
 - Projection on $\mathcal{Z}$ commutes with scaling
 - Projection on an interval commutes with scaling if scaling is also applied to the interval in question
+
+### Pock-Chambolle scaling
+
+Following Lemma 2 of:
+
+> Pock, Thomas, and Antonin Chambolle. "Diagonal preconditioning for first order primal-dual algorithms in convex optimization." *2011 International Conference on Computer Vision*. IEEE, 2011. [doi:10.1109/ICCV.2011.6126441](https://doi.org/10.1109/ICCV.2011.6126441)
+
+for matrix $K$ of size $m \times n$ and $\alpha \in [0, 2]$, the diagonal factors are
+
+```math
+\tau_j = \left(\sum_i |K_{ij}|^{\alpha}\right)^{-1} \quad \text{(variable side, column $j$)}
+```
+
+```math
+\sigma_i = \left(\sum_j |K_{ij}|^{2-\alpha}\right)^{-1} \quad \text{(constraint side, row $i$)}
+```
+
+so that $\|\Sigma^{1/2} K T^{1/2}\| \leq 1$ with $T = \mathrm{diag}(\tau_j), \Sigma = \mathrm{diag}(\sigma_i)$. CoolPDLP absorbs the $1/2$ powers into the rescaling factors: $D_2[j] = \tau_j^{1/2}$ and $D_1[i] = \sigma_i^{1/2}$. The exponent parameter $\alpha$ is exposed as `chambolle_pock_alpha`. See also [`CoolPDLP.chambolle_pock_preconditioner`](@ref).
+
+Note that CoolPDLP uses $2-\alpha$ for the row and $\alpha$ for the column,
+to be aligned with the [PDLP paper](https://dl.acm.org/doi/abs/10.5555/3540261.3541809). This is the opposite of the
+convention used in the original Pock-Chambolle paper referenced above.
+
+### Ruiz equilibration
+
+The Ruiz iteration alternately rescales each row and each column of $A$ by the square root of its $\ell_\infty$ norm. After enough iterations the rescaled matrix has all row and column $\infty$-norms close to 1. See also [`CoolPDLP.ruiz_preconditioner`](@ref).
+
+### Composition
+
+The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}, D_2^{\mathrm{ruiz}}$, then Pock-Chambolle is applied to the already-Ruiz-rescaled matrix $D_1^{\mathrm{ruiz}} A D_2^{\mathrm{ruiz}}$ and produces $D_1^{\mathrm{cp}}, D_2^{\mathrm{cp}}$. The final scaling is then
+
+```math
+D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
+```
