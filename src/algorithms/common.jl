@@ -12,6 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
+        P <: PresolveParameters,
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -19,7 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
-    presolve::PresolveParameters
+    presolve::P
 end
 
 """
@@ -52,11 +53,13 @@ end
         max_kkt_passes = 10^5,
         time_limit = 100.0,
         # presolve
-        presolve_enabled = false,
-        presolve_verbose = false,
+        presolve = nothing,
+        presolve_strict = false,
     )
 
-Constructor for algorithm configs.
+Constructor for algorithm configs. `presolve` is `nothing` (disabled) or an
+[`AbstractPresolver`](@ref) instance, e.g. `presolve = PaPILOPresolver()` (`using PaPILO`
+first).
 """
 function Algorithm{A}(
         # conversion
@@ -87,8 +90,8 @@ function Algorithm{A}(
         max_kkt_passes = 10^5,
         time_limit = 100.0,
         # presolve
-        presolve_enabled = false,
-        presolve_verbose = false,
+        presolve::Union{Nothing, AbstractPresolver} = nothing,
+        presolve_strict = false,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -121,19 +124,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-    presolve = PresolveParameters(;
-        enabled = presolve_enabled,
-        verbose = presolve_verbose,
+    presolve_params = PresolveParameters(;
+        presolver = presolve,
+        strict = presolve_strict,
     )
 
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolve_params)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
         termination,
-        presolve
+        presolve_params
     )
 end
 
@@ -248,39 +251,45 @@ function solve(
     return get_solution(state, milp), state.stats
 end
 
-# `algo.presolve.enabled` is a plain runtime `Bool` field (not a type parameter), so Julia's
-# compiler cannot rule out either branch of this `if` ahead of time: to compile *this* method
-# for any concrete `(MILP, Algorithm)` pair, it would otherwise have to fully infer the
-# presolve branch too — which round-trips through JuMP model-building and MOI's MPS I/O, code
-# that is neither meant to be nor cheap to infer to a concrete type. `Base.invokelatest` is a
-# hard opacity barrier: the compiler never attempts to infer through it, so the (large,
-# JuMP-heavy) presolve code path is only ever compiled lazily, the first time presolve is
-# actually turned on at run time. Solving without presolve therefore never pays for it.
-@unstable function solve(
+function solve(
         milp_init_cpu::MILP,
-        algo::Algorithm
-    )
-    if algo.presolve.enabled
-        return Base.invokelatest(_solve_with_presolve, milp_init_cpu, algo)
-    end
+        algo::Algorithm{A, T, Ti, M, B, R, PresolveParameters{Nothing}}
+    ) where {A, T, Ti, M, B, R}
     sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
 end
 
-"""
-    _solve_with_presolve(milp_init_cpu, algo)
-
-Presolve `milp_init_cpu`, solve the (typically smaller) reduced problem, then map the solution
-back to the original problem. Only ever called through `Base.invokelatest`, from the presolve
-branch of the top-level 2-argument [`solve`](@ref) above — see the comment there for why.
-"""
-@unstable function _solve_with_presolve(milp_init_cpu::MILP, algo::Algorithm)
+# `PresolveParameters{P}` bakes the presolver type `P` into the type of `algo` (see its
+# docstring), so this method is only ever reachable — and thus only ever compiled — for an
+# `algo` configured with a real presolver: solving without presolve (the `Nothing` method
+# above) needs no `@unstable` and never pays for compiling this one. This method itself still
+# needs `@unstable`, but for an unrelated and unavoidable reason: a presolver like
+# `PaPILOPresolver` may reach its implementation through `Base.get_extension` (PaPILO is a weak
+# dependency), and *which* extensions are loaded is only known at run time — so no amount of
+# `@constprop`/type-parameter trickery can make that call inferrable ahead of time. A presolver
+# that doesn't dispatch through an extension wouldn't need this, but `@unstable` is a per-method
+# annotation, so it applies uniformly here regardless of which concrete presolver is plugged in.
+@unstable function solve(
+        milp_init_cpu::MILP,
+        algo::Algorithm{A, T, Ti, M, B, R, PresolveParameters{P}}
+    ) where {A, T, Ti, M, B, R, P <: AbstractPresolver}
     isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
-    milp_reduced, presolve_result = presolve_milp(milp_init_cpu, algo.presolve)
+    params = algo.presolve
+    milp_reduced, presolve_state = try
+        presolve(params.presolver, milp_init_cpu)
+    catch e
+        params.strict && rethrow()
+        @warn "Presolve failed, falling back to the original problem" exception = e
+        milp_init_cpu, nothing
+    end
     sol_init_reduced = PrimalDualSolution(milp_reduced)
     sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
-    x, y = postsolve_or_passthrough(presolve_result, sol_reduced, milp_init_cpu, algo.presolve)
-    sol = perform_conversion(PrimalDualSolution(x, y), algo.conversion)
+    sol_orig = if isnothing(presolve_state)
+        PrimalDualSolution(Vector{Float64}(Array(sol_reduced.x)), Vector{Float64}(Array(sol_reduced.y)))
+    else
+        postsolve(params.presolver, presolve_state, sol_reduced)
+    end
+    sol = perform_conversion(sol_orig, algo.conversion)
     return sol, stats
 end
 

@@ -1,39 +1,76 @@
 """
-    PresolveParameters
+    AbstractPresolver
+
+Supertype for pluggable presolve backends. To plug a custom presolver into [`Algorithm`](@ref)
+(`presolve = MyPresolver(...)`), define a subtype and implement [`presolve`](@ref) and
+[`postsolve`](@ref) for it. [`PaPILOPresolver`](@ref) is the presolver built into CoolPDLP.
+"""
+abstract type AbstractPresolver end
+
+"""
+    presolve(presolver::AbstractPresolver, milp::MILP) -> (milp_reduced, state)
+
+Reduce `milp` using `presolver`. Return the (typically smaller) reduced [`MILP`](@ref) to hand
+over to the algorithm, together with an opaque `state` object to later pass to
+[`postsolve`](@ref) along with a solution of the reduced problem.
+
+`state` is produced by `presolve` and consumed by `postsolve` for the *same* presolver type, so
+it can be any Julia object convenient for that backend: index maps, substitution coefficients,
+a path to some intermediate file, ... there is no file-based or otherwise constrained contract
+here, unlike [`PaPILOPresolver`](@ref)'s own state which happens to hold a file path because
+that particular backend is file-based.
+"""
+function presolve end
+
+"""
+    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
+
+Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
+solution of the original problem, using `state`.
+
+Implementations that cannot reconstruct the dual solution (e.g. because the underlying tool's
+interface is primal-only, like [`PaPILOPresolver`](@ref)'s) should fill it with `NaN` rather
+than `0.0`: `NaN` propagates loudly through any arithmetic that touches it, rather than being
+mistaken for a real (zero) dual value.
+"""
+function postsolve end
+
+"""
+    PresolveParameters{P}
+
+`P`, the type of the configured presolver (`Nothing` when presolve is disabled), is a type
+parameter rather than a field, much like [`isbatched`](@ref) for a [`MILP`](@ref): this lets
+`solve` dispatch on it at compile time, so that solving without presolve never needs to compile
+the presolve code path at all.
 
 # Fields
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PresolveParameters
-    "whether to presolve the MILP with PaPILO before running the algorithm"
-    enabled::Bool = false
-    "whether to let PaPILO print its own progress to `stdout`"
-    verbose::Bool = false
+struct PresolveParameters{P <: Union{Nothing, AbstractPresolver}}
+    "the presolver to use, or `nothing` to disable presolve"
+    presolver::P
+    "whether to let a presolve failure error instead of falling back to the original problem"
+    strict::Bool
+
+    function PresolveParameters(;
+            presolver::Union{Nothing, AbstractPresolver} = nothing, strict::Bool = false
+        )
+        return new{typeof(presolver)}(presolver, strict)
+    end
 end
+
+"""
+    presolve_enabled(params::PresolveParameters)
+
+Return whether presolve is enabled, as a plain `Bool` extracted from the type of `params`.
+"""
+presolve_enabled(::PresolveParameters{Nothing}) = false
+presolve_enabled(::PresolveParameters) = true
 
 function Base.show(io::IO, params::PresolveParameters)
-    (; enabled, verbose) = params
-    return print(io, "PresolveParameters: enabled=$enabled, verbose=$verbose")
-end
-
-"""
-    PresolveResult
-
-Bookkeeping produced by [`presolve_milp`](@ref), used by [`postsolve_solution`](@ref) to map
-a solution of the presolved MILP back to the original problem.
-
-# Fields
-
-$(TYPEDFIELDS)
-"""
-struct PresolveResult
-    "path to the postsolve archive written by PaPILO"
-    postsolve_file::String
-    "variable names of the original problem (as they appear in the input MPS file)"
-    var_names_orig::Vector{String}
-    "variable names of the presolved problem (as they appear in the reduced MPS file)"
-    var_names_reduced::Vector{String}
+    (; presolver, strict) = params
+    return print(io, "PresolveParameters: presolver=$presolver, strict=$strict")
 end
 
 """
@@ -48,39 +85,31 @@ does not depend on the default bounds assumed by the MPS format.
 function milp_to_mps(milp::MILP, path::AbstractString)
     (; c, lv, uv, lc, uc, int_var, var_names) = milp
     n, m = nbvar(milp), nbcons(milp)
-    At = milp.At isa SparseMatrixCSC ? milp.At : SparseMatrixCSC(milp.At)
+    A = milp.A isa SparseMatrixCSC ? milp.A : SparseMatrixCSC(milp.A)
 
     model = JuMP.Model()
     x = JuMP.@variable(model, x[1:n])
-    for j in 1:n
-        JuMP.set_name(x[j], var_names[j])
-        isfinite(lv[j]) && JuMP.set_lower_bound(x[j], lv[j])
-        isfinite(uv[j]) && JuMP.set_upper_bound(x[j], uv[j])
-        int_var[j] && JuMP.set_integer(x[j])
-    end
+    JuMP.set_name.(x, var_names)
+    finite_lv, finite_uv = isfinite.(lv), isfinite.(uv)
+    JuMP.set_lower_bound.(x[finite_lv], lv[finite_lv])
+    JuMP.set_upper_bound.(x[finite_uv], uv[finite_uv])
+    JuMP.set_integer.(x[int_var])
 
-    obj = zero(JuMP.AffExpr)
-    for j in 1:n
-        iszero(c[j]) || JuMP.add_to_expression!(obj, c[j], x[j])
-    end
-    JuMP.@objective(model, Min, obj)
+    JuMP.@objective(model, Min, dot(c, x))
 
+    Ax = A * x
     for i in 1:m
-        expr = zero(JuMP.AffExpr)
-        for k in nzrange(At, i)
-            JuMP.add_to_expression!(expr, At.nzval[k], x[At.rowval[k]])
-        end
         li, ui = lc[i], uc[i]
         con = if li == ui
-            JuMP.@constraint(model, expr == li)
+            JuMP.@constraint(model, Ax[i] == li)
         elseif isfinite(li) && isfinite(ui)
-            JuMP.@constraint(model, li <= expr <= ui)
+            JuMP.@constraint(model, li <= Ax[i] <= ui)
         elseif isfinite(li)
-            JuMP.@constraint(model, expr >= li)
+            JuMP.@constraint(model, Ax[i] >= li)
         elseif isfinite(ui)
-            JuMP.@constraint(model, expr <= ui)
+            JuMP.@constraint(model, Ax[i] <= ui)
         else
-            JuMP.@constraint(model, expr in MOI.Interval(-Inf, Inf))
+            JuMP.@constraint(model, Ax[i] in MOI.Interval(-Inf, Inf))
         end
         JuMP.set_name(con, "R$i")
     end
@@ -159,12 +188,13 @@ function mps_to_milp(path::AbstractString; kwargs...)
 end
 
 """
-    write_papilo_solution(path, x, var_names)
+    write_sol_file(path, x, var_names)
 
-Write the primal vector `x` (indexed like `var_names`) to `path` in the plain-text solution
-format expected by PaPILO's `postsolve` command.
+Write the primal vector `x` (indexed like `var_names`) to `path` in the plain-text `.sol`
+solution format shared by SCIP, PaPILO and several other solvers in the SCIP ecosystem: a
+header line, then one `name value` line per variable.
 """
-function write_papilo_solution(path::AbstractString, x::AbstractVector, var_names::Vector{String})
+function write_sol_file(path::AbstractString, x::AbstractVector, var_names::Vector{String})
     open(path, "w") do io
         println(io, "=obj= 0")
         for (name, xi) in zip(var_names, x)
@@ -175,12 +205,13 @@ function write_papilo_solution(path::AbstractString, x::AbstractVector, var_name
 end
 
 """
-    read_papilo_solution(path, var_names)
+    read_sol_file(path, var_names)
 
-Parse a plain-text solution file produced by PaPILO's `postsolve` command, returning a vector
-of values indexed like `var_names`. Variables absent from the file default to zero.
+Parse a plain-text `.sol` file (the format shared by SCIP, PaPILO and several other solvers in
+the SCIP ecosystem), returning a vector of values indexed like `var_names`. Variables absent
+from the file default to zero.
 """
-function read_papilo_solution(path::AbstractString, var_names::Vector{String})
+function read_sol_file(path::AbstractString, var_names::Vector{String})
     x = zeros(length(var_names))
     idx = Dict(name => j for (j, name) in enumerate(var_names))
     for line in eachline(path)
@@ -195,47 +226,63 @@ function read_papilo_solution(path::AbstractString, var_names::Vector{String})
 end
 
 """
-    presolve_milp(milp::MILP, params::PresolveParameters)
+    PaPILOPresolver(; verbose = false)
 
-Run PaPILO's presolve on `milp` through a round trip of MPS files, returning
-`(milp_reduced, result)`.
+The [`AbstractPresolver`](@ref) built into CoolPDLP: round-trips `milp` through MPS files and
+calls [PaPILO.jl](https://github.com/scipopt/PaPILO.jl)'s `presolve`/`postsolve` commands.
 
-`milp_reduced` is the (typically smaller) problem to hand over to the algorithm, and `result`
-is a [`PresolveResult`](@ref) to pass to [`postsolve_solution`](@ref) once it has been solved.
+# Fields
 
-If presolve fails for any reason (e.g. the PaPILO binary errors out), a warning is emitted and
-`(milp, nothing)` is returned so that the caller can fall back to solving the original problem.
+$(TYPEDFIELDS)
 
 !!! note
     PaPILO is licensed under Apache-2.0 (unlike the MIT-licensed `CoolPDLP`), so it is only a
-    weak dependency: this method is implemented by the `CoolPDLPPaPILOExt` package extension,
-    and calling it without having run `using PaPILO` first throws an informative error.
+    weak dependency: [`presolve`](@ref)/[`postsolve`](@ref) on a `PaPILOPresolver` are
+    implemented by the `CoolPDLPPaPILOExt` package extension, and calling them without having
+    run `using PaPILO` first throws an informative error.
 """
-function presolve_milp(milp::MILP, params::PresolveParameters)
-    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
-    isnothing(ext) && _error_papilo_not_loaded()
-    return ext.presolve_milp_impl(milp, params)
+struct PaPILOPresolver <: AbstractPresolver
+    "whether to let PaPILO print its own progress to `stdout`"
+    verbose::Bool
+
+    PaPILOPresolver(; verbose::Bool = false) = new(verbose)
+end
+
+function Base.show(io::IO, presolver::PaPILOPresolver)
+    return print(io, "PaPILOPresolver(verbose=$(presolver.verbose))")
 end
 
 """
-    postsolve_solution(result::PresolveResult, sol_reduced::PrimalDualSolution, params::PresolveParameters)
+    PaPILOPresolveState
 
-Map the primal part of `sol_reduced` (a solution of the presolved problem) back to the
-original problem described by `result`, using PaPILO's postsolve mechanism.
+The `state` object produced by `presolve(::PaPILOPresolver, milp)` and consumed by
+`postsolve(::PaPILOPresolver, state, sol_reduced)`.
 
-The dual part is not reconstructed (PaPILO's file-based interface only round-trips primal
-solutions) and is returned as a vector of zeros.
+# Fields
 
-!!! note
-    Like [`presolve_milp`](@ref), this method is only implemented once `PaPILO` has been
-    loaded (see the `CoolPDLPPaPILOExt` package extension).
+$(TYPEDFIELDS)
 """
-function postsolve_solution(
-        result::PresolveResult, sol_reduced::PrimalDualSolution, params::PresolveParameters
-    )
+struct PaPILOPresolveState
+    "path to the postsolve archive written by PaPILO"
+    postsolve_file::String
+    "variable names of the original problem (as they appear in the input MPS file)"
+    var_names_orig::Vector{String}
+    "variable names of the presolved problem (as they appear in the reduced MPS file)"
+    var_names_reduced::Vector{String}
+    "number of constraints in the original problem (the dual, not reconstructed, is `NaN`-filled at this length)"
+    nbcons_orig::Int
+end
+
+function presolve(presolver::PaPILOPresolver, milp::MILP)
     ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
     isnothing(ext) && _error_papilo_not_loaded()
-    return ext.postsolve_solution_impl(result, sol_reduced, params)
+    return ext.papilo_presolve(presolver, milp)
+end
+
+function postsolve(presolver::PaPILOPresolver, state::PaPILOPresolveState, sol_reduced::PrimalDualSolution)
+    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
+    isnothing(ext) && _error_papilo_not_loaded()
+    return ext.papilo_postsolve(presolver, state, sol_reduced)
 end
 
 function _error_papilo_not_loaded()
@@ -244,26 +291,4 @@ function _error_papilo_not_loaded()
             "CoolPDLP, kept optional because of its Apache-2.0 license): run `using PaPILO` " *
             "and try again."
     )
-end
-
-"""
-    postsolve_or_passthrough(presolve_result, sol_reduced, milp_orig, params)
-
-Map `sol_reduced` back to the space of `milp_orig`, returning a `(x, y)` couple of plain
-`Vector{Float64}`.
-
-If `presolve_result` is `nothing` (presolve was a no-op or fell back after failing), `sol_reduced`
-already lives in the original space and is returned as is (converted to plain vectors).
-Otherwise the primal part is mapped back with [`postsolve_solution`](@ref) and the dual part is
-set to zero, since PaPILO's file-based interface does not round-trip dual solutions.
-"""
-function postsolve_or_passthrough(
-        presolve_result, sol_reduced::PrimalDualSolution, milp_orig::MILP, params::PresolveParameters
-    )
-    if isnothing(presolve_result)
-        return Vector{Float64}(Array(sol_reduced.x)), Vector{Float64}(Array(sol_reduced.y))
-    end
-    x = postsolve_solution(presolve_result, sol_reduced, params)
-    y = zeros(Float64, nbcons(milp_orig))
-    return x, y
 end
