@@ -5,8 +5,27 @@ using CoolPDLP:
 using KernelAbstractions: CPU
 using MathOptBenchmarkInstances
 using MathOptInterface: MathOptInterface as MOI
+using PaPILO: PaPILO  # loads the `CoolPDLPPaPILOExt` extension that implements presolve/postsolve
 using SparseArrays
 using Test
+
+@testset "presolve_milp errors informatively when PaPILO is not loaded" begin
+    # spawn a fresh process that never `using`s PaPILO, so `CoolPDLPPaPILOExt` never loads and
+    # `presolve_milp`/`postsolve_solution` stay at their stub definitions
+    script = """
+    using CoolPDLP
+    milp = CoolPDLP.MILP(; c = [1.0], lv = [0.0], uv = [1.0], A = zeros(0, 1), lc = Float64[], uc = Float64[])
+    params = CoolPDLP.PresolveParameters(; enabled = true)
+    try
+        CoolPDLP.presolve_milp(milp, params)
+        println("NO_ERROR")
+    catch e
+        println("ERROR: ", sprint(showerror, e))
+    end
+    """
+    out = read(`$(Base.julia_cmd()) --project=$(Base.active_project()) --startup-file=no -e $script`, String)
+    @test occursin("Presolve requires PaPILO.jl to be loaded", out)
+end
 
 @testset "PresolveParameters" begin
     p = PresolveParameters()

@@ -10,7 +10,6 @@ using IterativeSolvers: powm!
 using JuMP: JuMP
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
-using PaPILO: PaPILO
 using ProgressMeter: ProgressUnknown, finish!, next!
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
 using StableRNGs: StableRNG

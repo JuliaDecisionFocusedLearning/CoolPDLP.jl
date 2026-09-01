@@ -205,34 +205,16 @@ is a [`PresolveResult`](@ref) to pass to [`postsolve_solution`](@ref) once it ha
 
 If presolve fails for any reason (e.g. the PaPILO binary errors out), a warning is emitted and
 `(milp, nothing)` is returned so that the caller can fall back to solving the original problem.
+
+!!! note
+    PaPILO is licensed under Apache-2.0 (unlike the MIT-licensed `CoolPDLP`), so it is only a
+    weak dependency: this method is implemented by the `CoolPDLPPaPILOExt` package extension,
+    and calling it without having run `using PaPILO` first throws an informative error.
 """
 function presolve_milp(milp::MILP, params::PresolveParameters)
-    input_file = postsolve_file = reduced_file = ""
-    try
-        input_file = tempname() * ".mps"
-        postsolve_file = tempname() * ".postsolve"
-        reduced_file = tempname() * ".mps"
-        milp_to_mps(milp, input_file)
-        if params.verbose
-            PaPILO.presolve_write_from_file(input_file, postsolve_file, reduced_file)
-        else
-            redirect_stdout(devnull) do
-                return PaPILO.presolve_write_from_file(input_file, postsolve_file, reduced_file)
-            end
-        end
-        milp_reduced = mps_to_milp(
-            reduced_file; dataset = milp.dataset, name = milp.name, path = milp.path,
-        )
-        result = PresolveResult(postsolve_file, milp.var_names, milp_reduced.var_names)
-        return milp_reduced, result
-    catch e
-        @warn "Presolve failed, falling back to the original problem" exception = e
-        isfile(postsolve_file) && rm(postsolve_file; force = true)
-        return milp, nothing
-    finally
-        isfile(input_file) && rm(input_file; force = true)
-        isfile(reduced_file) && rm(reduced_file; force = true)
-    end
+    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
+    isnothing(ext) && _error_papilo_not_loaded()
+    return ext.presolve_milp_impl(milp, params)
 end
 
 """
@@ -243,28 +225,25 @@ original problem described by `result`, using PaPILO's postsolve mechanism.
 
 The dual part is not reconstructed (PaPILO's file-based interface only round-trips primal
 solutions) and is returned as a vector of zeros.
+
+!!! note
+    Like [`presolve_milp`](@ref), this method is only implemented once `PaPILO` has been
+    loaded (see the `CoolPDLPPaPILOExt` package extension).
 """
 function postsolve_solution(
         result::PresolveResult, sol_reduced::PrimalDualSolution, params::PresolveParameters
     )
-    reduced_sol_file = tempname() * ".sol"
-    original_sol_file = tempname() * ".sol"
-    try
-        write_papilo_solution(reduced_sol_file, Array(sol_reduced.x), result.var_names_reduced)
-        if params.verbose
-            PaPILO.postsolve_from_file(result.postsolve_file, reduced_sol_file, original_sol_file)
-        else
-            redirect_stdout(devnull) do
-                return PaPILO.postsolve_from_file(result.postsolve_file, reduced_sol_file, original_sol_file)
-            end
-        end
-        x_orig = read_papilo_solution(original_sol_file, result.var_names_orig)
-        return x_orig
-    finally
-        rm(reduced_sol_file; force = true)
-        isfile(original_sol_file) && rm(original_sol_file; force = true)
-        isfile(result.postsolve_file) && rm(result.postsolve_file; force = true)
-    end
+    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
+    isnothing(ext) && _error_papilo_not_loaded()
+    return ext.postsolve_solution_impl(result, sol_reduced, params)
+end
+
+function _error_papilo_not_loaded()
+    return error(
+        "Presolve requires PaPILO.jl to be loaded first (it is a weak dependency of " *
+            "CoolPDLP, kept optional because of its Apache-2.0 license): run `using PaPILO` " *
+            "and try again."
+    )
 end
 
 """
