@@ -61,6 +61,18 @@ end
     end
 end
 
+@testset "PDLP with presolve" begin
+    algo = PDLP(
+        Float64, Int, SparseMatrixCSC; backend = CPU(),
+        termination_reltol = 1.0e-5, max_kkt_passes = 10^7, show_progress = false,
+        presolve_enabled = true,
+    )
+    dataset = Netlib
+    @testset for name in small_names
+        test_optimizer(dataset, name, algo; cons_tol = 1.0e-2)
+    end
+end
+
 @testset "CPU-GPU coherence" begin
     milp = netlib_milps[4]
     algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), termination_reltol = 1.0e-3, check_every = 1, show_progress = false)

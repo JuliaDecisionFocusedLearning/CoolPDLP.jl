@@ -4,11 +4,13 @@ module CoolPDLP
 using Adapt: Adapt, adapt
 using Atomix: Atomix
 using BangBang: add!!, broadcast!!
-using DispatchDoctor: @stable
+using DispatchDoctor: @stable, @unstable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
+using JuMP: JuMP
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
+using PaPILO: PaPILO
 using ProgressMeter: ProgressUnknown, finish!, next!
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
 using StableRNGs: StableRNG
@@ -36,6 +38,7 @@ include("public.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")
+    @unstable include("components/presolve.jl")
     include("components/preconditioning.jl")
     include("components/permutation.jl")
     include("components/step_size.jl")
@@ -53,6 +56,7 @@ end
 include("MOI_wrapper.jl")
 
 @public sametype_transpose
+@public PresolveParameters, milp_to_mps, mps_to_milp
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 

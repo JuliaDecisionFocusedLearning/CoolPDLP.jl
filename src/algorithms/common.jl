@@ -19,6 +19,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolve::PresolveParameters
 end
 
 """
@@ -50,6 +51,9 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolve_enabled = false,
+        presolve_verbose = false,
     )
 
 Constructor for algorithm configs.
@@ -82,6 +86,9 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolve_enabled = false,
+        presolve_verbose = false,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -114,6 +121,10 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
+    presolve = PresolveParameters(;
+        enabled = presolve_enabled,
+        verbose = presolve_verbose,
+    )
 
     return Algorithm{A, T, Ti, M, B, typeof(restart)}(
         conversion,
@@ -121,12 +132,13 @@ function Algorithm{A}(
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolve
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolve) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +147,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $presolve"""
     )
 end
 
@@ -235,12 +248,40 @@ function solve(
     return get_solution(state, milp), state.stats
 end
 
-function solve(
+# `algo.presolve.enabled` is a plain runtime `Bool` field (not a type parameter), so Julia's
+# compiler cannot rule out either branch of this `if` ahead of time: to compile *this* method
+# for any concrete `(MILP, Algorithm)` pair, it would otherwise have to fully infer the
+# presolve branch too — which round-trips through JuMP model-building and MOI's MPS I/O, code
+# that is neither meant to be nor cheap to infer to a concrete type. `Base.invokelatest` is a
+# hard opacity barrier: the compiler never attempts to infer through it, so the (large,
+# JuMP-heavy) presolve code path is only ever compiled lazily, the first time presolve is
+# actually turned on at run time. Solving without presolve therefore never pays for it.
+@unstable function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
+    if algo.presolve.enabled
+        return Base.invokelatest(_solve_with_presolve, milp_init_cpu, algo)
+    end
     sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
+end
+
+"""
+    _solve_with_presolve(milp_init_cpu, algo)
+
+Presolve `milp_init_cpu`, solve the (typically smaller) reduced problem, then map the solution
+back to the original problem. Only ever called through `Base.invokelatest`, from the presolve
+branch of the top-level 2-argument [`solve`](@ref) above — see the comment there for why.
+"""
+@unstable function _solve_with_presolve(milp_init_cpu::MILP, algo::Algorithm)
+    isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
+    milp_reduced, presolve_result = presolve_milp(milp_init_cpu, algo.presolve)
+    sol_init_reduced = PrimalDualSolution(milp_reduced)
+    sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
+    x, y = postsolve_or_passthrough(presolve_result, sol_reduced, milp_init_cpu, algo.presolve)
+    sol = perform_conversion(PrimalDualSolution(x, y), algo.conversion)
+    return sol, stats
 end
 
 """
