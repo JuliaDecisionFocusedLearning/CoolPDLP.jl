@@ -12,6 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
+        P <: Union{Nothing, AbstractPresolver},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -19,6 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolver::P
 end
 
 """
@@ -50,9 +52,13 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver = nothing,
     )
 
-Constructor for algorithm configs.
+Constructor for algorithm configs. `presolver` is `nothing` (presolve disabled) or an
+[`AbstractPresolver`](@ref) instance, e.g. `presolver = PaPILOPresolver()` (`using PaPILO`
+first).
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +88,8 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver::Union{Nothing, AbstractPresolver} = nothing,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -114,19 +122,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolver)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +143,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - presolver=$presolver"""
     )
 end
 
@@ -237,10 +246,23 @@ end
 
 function solve(
         milp_init_cpu::MILP,
-        algo::Algorithm
-    )
+        algo::Algorithm{A, T, Ti, M, B, R, Nothing}
+    ) where {A, T, Ti, M, B, R}
     sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
+end
+
+# Method split to contain the impact of presolve-related type instabilities
+@unstable function solve(
+        milp_init_cpu::MILP,
+        algo::Algorithm{A, T, Ti, M, B, R, P}
+    ) where {A, T, Ti, M, B, R, P <: AbstractPresolver}
+    isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
+    milp_reduced, presolve_state = presolve(algo.presolver, milp_init_cpu)
+    sol_init_reduced = PrimalDualSolution(milp_reduced)
+    sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
+    sol = postsolve(algo.presolver, presolve_state, sol_reduced)
+    return sol, stats
 end
 
 """
