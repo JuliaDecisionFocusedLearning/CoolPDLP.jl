@@ -1,7 +1,10 @@
+using Adapt: adapt
 using CoolPDLP
 using CoolPDLP:
-    milp_to_mps, mps_to_milp, PresolveParameters, presolve_enabled, PrimalDualSolution,
-    write_sol_file, read_sol_file, PaPILOPresolveState
+    ConversionParameters, GPUSparseMatrixCSR, milp_to_mps, mps_to_milp, perform_conversion,
+    PresolveParameters, presolve_enabled, PrimalDualSolution, write_sol_file, read_sol_file
+using JLArrays: JLBackend
+using JuMP: JuMP
 using KernelAbstractions: CPU
 using MathOptBenchmarkInstances
 using MathOptInterface: MathOptInterface as MOI
@@ -10,9 +13,11 @@ using SCIP: SCIP
 using SparseArrays
 using Test
 
-@testset "presolve errors informatively when PaPILO is not loaded" begin
+const PaPILOExt = Base.get_extension(CoolPDLP, :CoolPDLPPaPILOExt)
+
+@testset "presolve throws a MethodError (with a hint) when PaPILO is not loaded" begin
     # spawn a fresh process that never `using`s PaPILO, so `CoolPDLPPaPILOExt` never loads and
-    # `presolve`/`postsolve` on a `PaPILOPresolver` stay at their stub definitions
+    # `presolve`/`postsolve` have no method for a `PaPILOPresolver` at all
     script = """
     using CoolPDLP
     milp = CoolPDLP.MILP(; c = [1.0], lv = [0.0], uv = [1.0], A = zeros(0, 1), lc = Float64[], uc = Float64[])
@@ -20,11 +25,12 @@ using Test
         CoolPDLP.presolve(CoolPDLP.PaPILOPresolver(), milp)
         println("NO_ERROR")
     catch e
-        println("ERROR: ", sprint(showerror, e))
+        println("ERROR: ", e isa MethodError, " ", sprint(showerror, e))
     end
     """
     out = read(`$(Base.julia_cmd()) --project=$(Base.active_project()) --startup-file=no -e $script`, String)
-    @test occursin("Presolve requires PaPILO.jl to be loaded", out)
+    @test occursin("ERROR: true", out)
+    @test occursin("run `using PaPILO`", out)
 end
 
 @testset "PresolveParameters" begin
@@ -84,7 +90,7 @@ end
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path)
+    milp2 = mps_to_milp(path, milp)
     rm(path; force = true)
 
     @test nbvar(milp2) == nbvar(milp)
@@ -110,7 +116,7 @@ end
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path)
+    milp2 = mps_to_milp(path, milp)
     rm(path; force = true)
 
     @test milp2.lv == milp.lv  # in particular, the fixed and free variables keep their bounds
@@ -119,16 +125,38 @@ end
     @test nbcons(milp2) == nbcons(milp)
 end
 
-@testset "MPS round trip: batched or GPU MILPs are converted to CPU sparse matrices first" begin
-    c = [1.0, 1.0]
-    lv = [0.0, 0.0]
-    uv = [1.0, 1.0]
-    A = sparse([1.0 1.0])
-    lc, uc = [0.5], [0.5]
-    milp = MILP(; c, lv, uv, A, lc, uc)
+@testset "MPS round trip: types are taken from the MILP to imitate" begin
+    qps, path_afiro = read_instance(Netlib, "afiro")
+    milp_cpu = MILP(qps; path = path_afiro, name = "afiro")
+    params = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
+    milp_gpu = perform_conversion(milp_cpu, params)
+
     path = tempname() * ".mps"
-    @test_nowarn milp_to_mps(milp, path)
+    milp_to_mps(milp_gpu, path)  # MPS is a CPU, `Float64` format: the MILP is brought back first
+    milp2 = mps_to_milp(path, milp_gpu)
     rm(path; force = true)
+
+    @test typeof(milp2) === typeof(milp_gpu)  # element type, index type, matrix type, backend
+    @test nbvar(milp2) == nbvar(milp_gpu)
+    @test nbcons(milp2) == nbcons(milp_gpu)
+    @test Array(milp2.c) ≈ Array(milp_gpu.c)
+    @test Array(milp2.lv) ≈ Array(milp_gpu.lv)
+    @test Array(milp2.uv) ≈ Array(milp_gpu.uv)
+end
+
+@testset "MPS conversion rejects batched MILPs and non-linear models" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(4, 6, 0.5)
+    milp_batch = MILP(; c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
+    @test_throws ArgumentError milp_to_mps(milp_batch, tempname() * ".mps")
+
+    quad_model = JuMP.Model()
+    JuMP.@variable(quad_model, 0 <= q[1:2] <= 1)
+    JuMP.@constraint(quad_model, q[1] * q[2] <= 1)
+    JuMP.@objective(quad_model, Min, sum(q))
+    quad_path = tempname() * ".mps"
+    JuMP.write_to_file(quad_model, quad_path; format = MOI.FileFormats.FORMAT_MPS)
+    @test_throws ArgumentError mps_to_milp(quad_path, milp)
+    rm(quad_path; force = true)
 end
 
 @testset "write_sol_file/read_sol_file round-trip with SCIP" begin
@@ -152,12 +180,15 @@ end
     open(scip_sol_file, "w") do f
         SCIP.LibSCIP.SCIPprintBestSol(scip, Libc.FILE(f), 0)
     end
+    # SCIP writes an `objective value:` header and omits variables at zero: `read_sol_file` must
+    # skip the header and default the missing entries
     @test read_sol_file(scip_sol_file, var_names) ≈ [0.0, 0.0, 6.0]
 
     # `write_sol_file` writes a solution: can SCIP itself read it back correctly?
     x_known = [1.0, 2.0, 3.0]
     my_sol_file = tempname() * ".sol"
-    write_sol_file(my_sol_file, x_known, var_names)
+    write_sol_file(my_sol_file, x_known, var_names, objective_value(x_known, milp))
+    @test occursin("=obj= 2.0", read(my_sol_file, String))
     scip2 = SCIP.Optimizer()
     SCIP.LibSCIP.SCIPreadProb(scip2, path, C_NULL)
     @test SCIP.LibSCIP.SCIPreadSol(scip2, my_sol_file) == SCIP.LibSCIP.SCIP_OKAY
@@ -199,7 +230,7 @@ end
     milp = _core_padded_milp()
     milp_reduced, state = presolve(CoolPDLP.PaPILOPresolver(), milp)
 
-    @test state isa PaPILOPresolveState
+    @test state isa PaPILOExt.PaPILOPresolveState
     @test nbvar(milp_reduced) < nbvar(milp)
     @test nbcons(milp_reduced) < nbcons(milp)
 end
@@ -236,6 +267,39 @@ end
 
     sol_orig = postsolve(presolver, state, sol_reduced)
     @test !is_feasible(sol_orig.x, milp; verbose = false)
+end
+
+@testset "presolve/postsolve preserve element and array types (Float32 on JLArrays)" begin
+    presolver = CoolPDLP.PaPILOPresolver()
+    qps, path = read_instance(Netlib, "afiro")
+    milp_cpu = MILP(qps; path, name = "afiro")
+    params = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
+    milp_gpu = perform_conversion(milp_cpu, params)
+
+    milp_reduced, state = presolve(presolver, milp_gpu)
+    @test typeof(milp_reduced) === typeof(milp_gpu)
+    @test nbvar(milp_reduced) < nbvar(milp_gpu)
+
+    sol_reduced = PrimalDualSolution(milp_reduced)
+    @test typeof(sol_reduced) === typeof(PrimalDualSolution(milp_gpu))
+
+    sol_orig = postsolve(presolver, state, sol_reduced)
+    @test typeof(sol_orig) === typeof(PrimalDualSolution(milp_gpu))
+    @test length(sol_orig.x) == nbvar(milp_gpu)
+    @test all(isnan, Array(sol_orig.y))
+end
+
+@testset "Full solve with presolve on Float32 JLArrays" begin
+    milp = _core_padded_milp()
+    algo = PDLP(
+        Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend(),
+        termination_reltol = 1.0f-5, show_progress = false, presolve = CoolPDLP.PaPILOPresolver(),
+    )
+    sol, stats = solve(milp, algo)
+    @test stats.termination_status == MOI.OPTIMAL
+    @test eltype(sol.x) === Float32
+    @test length(sol.x) == nbvar(milp)
+    @test isapprox(objective_value(Float64.(Array(sol.x)), milp), 8.0; atol = 1.0e-3)
 end
 
 @testset "solve falls back gracefully when presolve fails and strict = false" begin

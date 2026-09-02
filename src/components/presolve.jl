@@ -14,6 +14,10 @@ Reduce `milp` using `presolver`. Return the (typically smaller) reduced [`MILP`]
 over to the algorithm, together with an opaque `state` object to later pass to
 [`postsolve`](@ref) along with a solution of the reduced problem.
 
+`milp_reduced` must have the same element and array types as `milp`, so that the algorithm runs
+in the precision and on the backend it was configured for ([`mps_to_milp`](@ref) takes a MILP to
+imitate for exactly this reason).
+
 `state` is produced by `presolve` and consumed by `postsolve` for the *same* presolver type, so
 it can be any Julia object convenient for that backend: index maps, substitution coefficients,
 a path to some intermediate file, ... there is no file-based or otherwise constrained contract
@@ -26,7 +30,8 @@ function presolve end
     postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
 
 Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
-solution of the original problem, using `state`.
+solution of the original problem, using `state`. The result must have the same element and array
+types as a solution of the original problem.
 
 Implementations that cannot reconstruct the dual solution (e.g. because the underlying tool's
 interface is primal-only, like [`PaPILOPresolver`](@ref)'s) should fill it with `NaN` rather
@@ -83,9 +88,13 @@ Every variable bound is set explicitly (even when infinite), so that reading the
 does not depend on the default bounds assumed by the MPS format.
 """
 function milp_to_mps(milp::MILP, path::AbstractString)
-    (; c, lv, uv, lc, uc, int_var, var_names) = milp
-    n, m = nbvar(milp), nbcons(milp)
-    A = milp.A isa SparseMatrixCSC ? milp.A : SparseMatrixCSC(milp.A)
+    isbatched(milp) && throw(ArgumentError("Cannot write a batched MILP to an MPS file"))
+    # MPS is a plain-text, `Float64` format, and JuMP only understands host arrays, so the
+    # problem is brought back to the CPU whatever backend and matrix type it lived on
+    milp_cpu = adapt(CPU(), milp)
+    (; c, lv, uv, lc, uc, int_var, var_names) = milp_cpu
+    A = SparseMatrixCSC(milp_cpu.A)  # JuMP needs a host CSC matrix to build `A * x`
+    n = nbvar(milp_cpu)
 
     model = JuMP.Model()
     x = JuMP.@variable(model, x[1:n])
@@ -97,22 +106,8 @@ function milp_to_mps(milp::MILP, path::AbstractString)
 
     JuMP.@objective(model, Min, dot(c, x))
 
-    Ax = A * x
-    for i in 1:m
-        li, ui = lc[i], uc[i]
-        con = if li == ui
-            JuMP.@constraint(model, Ax[i] == li)
-        elseif isfinite(li) && isfinite(ui)
-            JuMP.@constraint(model, li <= Ax[i] <= ui)
-        elseif isfinite(li)
-            JuMP.@constraint(model, Ax[i] >= li)
-        elseif isfinite(ui)
-            JuMP.@constraint(model, Ax[i] <= ui)
-        else
-            JuMP.@constraint(model, Ax[i] in MOI.Interval(-Inf, Inf))
-        end
-        JuMP.set_name(con, "R$i")
-    end
+    cons = JuMP.@constraint(model, lc .<= A * x .<= uc)
+    JuMP.set_name.(cons, "R" .* string.(eachindex(cons)))
 
     JuMP.write_to_file(model, path; format = MOI.FileFormats.FORMAT_MPS)
     return path
@@ -124,14 +119,35 @@ _setbounds(s::MOI.GreaterThan) = (s.lower, Inf)
 _setbounds(s::MOI.Interval) = (s.lower, s.upper)
 
 """
-    mps_to_milp(path::AbstractString; kwargs...)
+    mps_to_milp(path::AbstractString, milp_to_imitate::MILP; kwargs...)
 
 Read the MPS file at `path` into a [`MILP`](@ref), using a
 [JuMP](https://github.com/jump-dev/JuMP.jl) model as an intermediate representation.
 
+MPS is a `Float64`, host-memory format, so the element type, index type, matrix type and
+backend of the result are all taken from `milp_to_imitate`. That way a presolver can hand back
+a reduced problem the algorithm can consume directly, in the precision and on the device it was
+configured for.
+
 `kwargs` are forwarded to the [`MILP`](@ref) constructor.
+
+!!! note
+    Constraints are grouped by JuMP constraint type, so the row order of the result need not
+    match the row order of the file. The row *set* is preserved, which is all the algorithm
+    cares about.
 """
-function mps_to_milp(path::AbstractString; kwargs...)
+function mps_to_milp(path::AbstractString, milp_to_imitate::MILP; kwargs...)
+    milp_cpu = _mps_to_milp_cpu(path; kwargs...)
+    T = eltype(milp_to_imitate.c)
+    Ti = _index_type(milp_to_imitate.A)
+    M = Base.typename(typeof(milp_to_imitate.A)).wrapper
+    backend = get_backend(milp_to_imitate)
+    return adapt(backend, set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp_cpu))))
+end
+
+_index_type(::AbstractSparseMatrix{<:Any, Ti}) where {Ti} = Ti
+
+function _mps_to_milp_cpu(path::AbstractString; kwargs...)
     model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
     vars = JuMP.all_variables(model)
     n = length(vars)
@@ -166,7 +182,14 @@ function mps_to_milp(path::AbstractString; kwargs...)
     lc, uc = Float64[], Float64[]
     row = 0
     for (F, S) in JuMP.list_of_constraint_types(model)
-        F <: JuMP.AffExpr || continue
+        # variable bounds and integrality restrictions were already read above
+        F <: JuMP.VariableRef && continue
+        F <: JuMP.AffExpr || throw(
+            ArgumentError(
+                "MILP only supports linear constraints, but $path contains a constraint of " *
+                    "type $F-in-$S"
+            )
+        )
         for cref in JuMP.all_constraints(model, F, S)
             row += 1
             cobj = JuMP.constraint_object(cref)
@@ -188,15 +211,17 @@ function mps_to_milp(path::AbstractString; kwargs...)
 end
 
 """
-    write_sol_file(path, x, var_names)
+    write_sol_file(path, x, var_names, obj)
 
-Write the primal vector `x` (indexed like `var_names`) to `path` in the plain-text `.sol`
-solution format shared by SCIP, PaPILO and several other solvers in the SCIP ecosystem: a
-header line, then one `name value` line per variable.
+Write the primal vector `x` (indexed like `var_names`) with objective value `obj` to `path`, in
+the plain-text `.sol` solution format shared by SCIP, PaPILO and several other solvers in the
+SCIP ecosystem: an `=obj=` header line, then one `name value` line per variable.
 """
-function write_sol_file(path::AbstractString, x::AbstractVector, var_names::Vector{String})
+function write_sol_file(
+        path::AbstractString, x::AbstractVector, var_names::Vector{String}, obj::Number
+    )
     open(path, "w") do io
-        println(io, "=obj= 0")
+        println(io, "=obj= ", obj)
         for (name, xi) in zip(var_names, x)
             println(io, name, " ", xi)
         end
@@ -237,9 +262,9 @@ $(TYPEDFIELDS)
 
 !!! note
     PaPILO is licensed under Apache-2.0 (unlike the MIT-licensed `CoolPDLP`), so it is only a
-    weak dependency: [`presolve`](@ref)/[`postsolve`](@ref) on a `PaPILOPresolver` are
-    implemented by the `CoolPDLPPaPILOExt` package extension, and calling them without having
-    run `using PaPILO` first throws an informative error.
+    weak dependency: [`presolve`](@ref)/[`postsolve`](@ref) for a `PaPILOPresolver` are defined
+    by the `CoolPDLPPaPILOExt` package extension, and calling them before running
+    `using PaPILO` throws a `MethodError` (with a hint pointing at the missing `using`).
 """
 struct PaPILOPresolver <: AbstractPresolver
     "whether to let PaPILO print its own progress to `stdout`"
@@ -250,45 +275,4 @@ end
 
 function Base.show(io::IO, presolver::PaPILOPresolver)
     return print(io, "PaPILOPresolver(verbose=$(presolver.verbose))")
-end
-
-"""
-    PaPILOPresolveState
-
-The `state` object produced by `presolve(::PaPILOPresolver, milp)` and consumed by
-`postsolve(::PaPILOPresolver, state, sol_reduced)`.
-
-# Fields
-
-$(TYPEDFIELDS)
-"""
-struct PaPILOPresolveState
-    "path to the postsolve archive written by PaPILO"
-    postsolve_file::String
-    "variable names of the original problem (as they appear in the input MPS file)"
-    var_names_orig::Vector{String}
-    "variable names of the presolved problem (as they appear in the reduced MPS file)"
-    var_names_reduced::Vector{String}
-    "number of constraints in the original problem (the dual, not reconstructed, is `NaN`-filled at this length)"
-    nbcons_orig::Int
-end
-
-function presolve(presolver::PaPILOPresolver, milp::MILP)
-    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
-    isnothing(ext) && _error_papilo_not_loaded()
-    return ext.papilo_presolve(presolver, milp)
-end
-
-function postsolve(presolver::PaPILOPresolver, state::PaPILOPresolveState, sol_reduced::PrimalDualSolution)
-    ext = Base.get_extension(@__MODULE__, :CoolPDLPPaPILOExt)
-    isnothing(ext) && _error_papilo_not_loaded()
-    return ext.papilo_postsolve(presolver, state, sol_reduced)
-end
-
-function _error_papilo_not_loaded()
-    return error(
-        "Presolve requires PaPILO.jl to be loaded first (it is a weak dependency of " *
-            "CoolPDLP, kept optional because of its Apache-2.0 license): run `using PaPILO` " *
-            "and try again."
-    )
 end

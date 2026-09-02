@@ -259,16 +259,7 @@ function solve(
     return solve(milp_init_cpu, sol_init_cpu, algo)
 end
 
-# `PresolveParameters{P}` bakes the presolver type `P` into the type of `algo` (see its
-# docstring), so this method is only ever reachable — and thus only ever compiled — for an
-# `algo` configured with a real presolver: solving without presolve (the `Nothing` method
-# above) needs no `@unstable` and never pays for compiling this one. This method itself still
-# needs `@unstable`, but for an unrelated and unavoidable reason: a presolver like
-# `PaPILOPresolver` may reach its implementation through `Base.get_extension` (PaPILO is a weak
-# dependency), and *which* extensions are loaded is only known at run time — so no amount of
-# `@constprop`/type-parameter trickery can make that call inferrable ahead of time. A presolver
-# that doesn't dispatch through an extension wouldn't need this, but `@unstable` is a per-method
-# annotation, so it applies uniformly here regardless of which concrete presolver is plugged in.
+# Method split to contain the impact of presolve-related type instabilities
 @unstable function solve(
         milp_init_cpu::MILP,
         algo::Algorithm{A, T, Ti, M, B, R, PresolveParameters{P}}
@@ -285,7 +276,7 @@ end
     sol_init_reduced = PrimalDualSolution(milp_reduced)
     sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
     sol_orig = if isnothing(presolve_state)
-        PrimalDualSolution(Vector{Float64}(Array(sol_reduced.x)), Vector{Float64}(Array(sol_reduced.y)))
+        sol_reduced
     else
         postsolve(params.presolver, presolve_state, sol_reduced)
     end
