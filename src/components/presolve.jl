@@ -2,7 +2,7 @@
     AbstractPresolver
 
 Supertype for pluggable presolve backends. To plug a custom presolver into [`Algorithm`](@ref)
-(`presolve = MyPresolver(...)`), define a subtype and implement [`presolve`](@ref) and
+(`presolver = MyPresolver(...)`), define a subtype and implement [`presolve`](@ref) and
 [`postsolve`](@ref) for it. [`PaPILOPresolver`](@ref) is the presolver built into CoolPDLP.
 """
 abstract type AbstractPresolver end
@@ -30,12 +30,14 @@ with respect to the original `MILP`. Typically, that may require storing a proto
 function presolve end
 
 """
-    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution, conversion::ConversionParameters) -> PrimalDualSolution
+    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
 
 Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
-solution of the original problem, using `state`. The result must be typed for `conversion`,
-which a backend working in CPU-`Float64` obtains by handing its result to
-[`perform_conversion`](@ref).
+solution of the original problem, using `state`.
+
+The result must have the shape of the original problem, which `state` memorized, and the element
+and array types of `sol_reduced`, which the algorithm produced: `solve` hands it straight back to
+the caller without converting it any further.
 
 Implementations that cannot reconstruct the dual solution (e.g. because the underlying tool's
 interface is primal-only, like [`PaPILOPresolver`](@ref)'s) should fill it with `NaN` rather
@@ -43,44 +45,6 @@ than `0.0`: `NaN` propagates loudly through any arithmetic that touches it, rath
 mistaken for a real (zero) dual value.
 """
 function postsolve end
-
-"""
-    PresolveParameters{P}
-
-`P`, the type of the configured presolver (`Nothing` when presolve is disabled), is a type
-parameter rather than a field, much like [`isbatched`](@ref) for a [`MILP`](@ref): this lets
-`solve` dispatch on it at compile time, so that solving without presolve never needs to compile
-the presolve code path at all.
-
-# Fields
-
-$(TYPEDFIELDS)
-"""
-struct PresolveParameters{P <: Union{Nothing, AbstractPresolver}}
-    "the presolver to use, or `nothing` to disable presolve"
-    presolver::P
-    "whether to let a presolve failure error instead of falling back to the original problem"
-    strict::Bool
-
-    function PresolveParameters(;
-            presolver::Union{Nothing, AbstractPresolver} = nothing, strict::Bool = false
-        )
-        return new{typeof(presolver)}(presolver, strict)
-    end
-end
-
-"""
-    presolve_enabled(params::PresolveParameters)
-
-Return whether presolve is enabled, as a plain `Bool` extracted from the type of `params`.
-"""
-presolve_enabled(::PresolveParameters{Nothing}) = false
-presolve_enabled(::PresolveParameters) = true
-
-function Base.show(io::IO, params::PresolveParameters)
-    (; presolver, strict) = params
-    return print(io, "PresolveParameters: presolver=$presolver, strict=$strict")
-end
 
 """
     milp_to_mps(milp::MILP, path::AbstractString)

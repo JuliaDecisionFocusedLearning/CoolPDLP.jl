@@ -55,8 +55,7 @@ end
 include("MOI_wrapper.jl")
 
 @public sametype_transpose
-@public PresolveParameters, milp_to_mps, mps_to_milp, write_sol_file, read_sol_file
-@public ConversionParameters, perform_conversion
+@public milp_to_mps, mps_to_milp, write_sol_file, read_sol_file
 
 export AbstractPresolver, presolve, postsolve, PaPILOPresolver
 

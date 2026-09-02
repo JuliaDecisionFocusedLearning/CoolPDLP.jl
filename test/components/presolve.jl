@@ -2,7 +2,7 @@ using Adapt: adapt
 using CoolPDLP
 using CoolPDLP:
     ConversionParameters, GPUSparseMatrixCSR, milp_to_mps, mps_to_milp, perform_conversion,
-    PresolveParameters, presolve_enabled, PrimalDualSolution, write_sol_file, read_sol_file
+    PrimalDualSolution, write_sol_file, read_sol_file
 using JLArrays: JLBackend
 using JuMP: JuMP
 using KernelAbstractions: CPU
@@ -14,7 +14,6 @@ using SparseArrays
 using Test
 
 const PaPILOExt = Base.get_extension(CoolPDLP, :CoolPDLPPaPILOExt)
-const CPU_CONV = ConversionParameters(Float64, Int, SparseMatrixCSC; backend = CPU())
 const GPU_CONV = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
 
 @testset "presolve throws a MethodError (with a hint) when PaPILO is not loaded" begin
@@ -35,39 +34,21 @@ const GPU_CONV = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backen
     @test occursin("run `using PaPILO`", out)
 end
 
-@testset "PresolveParameters" begin
-    p = PresolveParameters()
-    @test !presolve_enabled(p)
-    @test !p.strict
-    @test isnothing(p.presolver)
-
-    p2 = PresolveParameters(; presolver = CoolPDLP.PaPILOPresolver(; verbose = true), strict = true)
-    @test presolve_enabled(p2)
-    @test p2.strict
-    @test p2.presolver.verbose
-    @test occursin("PaPILOPresolver", string(p2))
-    @test occursin("strict=true", string(p2))
-end
-
 @testset "Algorithm propagation" begin
     algo_default = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU())
-    @test !presolve_enabled(algo_default.presolve)
-    @test isnothing(algo_default.presolve.presolver)
-    @test !algo_default.presolve.strict
+    @test isnothing(algo_default.presolver)
 
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
-        presolve = CoolPDLP.PaPILOPresolver(; verbose = true), presolve_strict = true,
+        presolver = CoolPDLP.PaPILOPresolver(; verbose = true),
     )
-    @test presolve_enabled(algo.presolve)
-    @test algo.presolve.presolver isa CoolPDLP.PaPILOPresolver
-    @test algo.presolve.presolver.verbose
-    @test algo.presolve.strict
-    @test occursin("PresolveParameters", string(algo))
+    @test algo.presolver isa CoolPDLP.PaPILOPresolver
+    @test algo.presolver.verbose
+    @test occursin("PaPILOPresolver", string(algo))
     # the presolver type is baked into the type of `algo`, so it should be inferred as a constant
-    val_presolve_enabled(a) = Val(presolve_enabled(a.presolve))
-    @test @inferred(val_presolve_enabled(algo)) === Val(true)
-    @test @inferred(val_presolve_enabled(algo_default)) === Val(false)
+    uses_presolve(a) = Val(!isnothing(a.presolver))
+    @test @inferred(uses_presolve(algo)) === Val(true)
+    @test @inferred(uses_presolve(algo_default)) === Val(false)
 end
 
 @testset "MPS round trip: mixed bounds and integrality" begin
@@ -209,6 +190,21 @@ end
     rm(my_sol_file; force = true)
 end
 
+@testset "read_sol_file indexes by var_names, whatever the file order" begin
+    # PaPILO writes the postsolved variables in its own order and omits some of them, so the
+    # parser must key on the names, not on the line order, to stay aligned with the MILP columns
+    var_names = ["alpha", "beta", "gamma"]
+    path = tempname() * ".sol"
+    open(path, "w") do io
+        println(io, "=obj= 42")
+        println(io, "gamma 3.0")   # last column first
+        println(io, "alpha 1.0")   # `beta` omitted entirely: it must come back as zero
+        println(io, "unrelated 99.0")  # a name the MILP does not have: ignored
+    end
+    @test read_sol_file(path, var_names) == [1.0, 0.0, 3.0]
+    rm(path; force = true)
+end
+
 function _core_padded_milp()
     # a tiny 2-variable, 2-constraint "core" LP, padded with redundant structure that a
     # presolver should strip entirely: a fixed variable, a variable absent from every
@@ -249,7 +245,7 @@ end
     x_reduced[.!isfinite.(x_reduced)] .= 0.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced, CPU_CONV)
+    sol_orig = postsolve(presolver, state, sol_reduced)
     @test is_feasible(sol_orig.x, milp)
     @test isapprox(objective_value(sol_orig.x, milp), 8.0; atol = 1.0e-6)
     @test all(isnan, sol_orig.y)  # PaPILO's file-based interface does not round-trip duals
@@ -268,14 +264,14 @@ end
     x_reduced = min.(milp_reduced.uv, 1.0e6) .+ 1000.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced, CPU_CONV)
+    sol_orig = postsolve(presolver, state, sol_reduced)
     @test !is_feasible(sol_orig.x, milp; verbose = false)
 end
 
-@testset "postsolve types its result for the ConversionParameters" begin
+@testset "postsolve types its result like the reduced solution it is given" begin
     # `presolve` may return whatever it likes (here a host `Float64` problem, since PaPILO reads
     # it back from an MPS file), but `postsolve` must hand back a solution the caller can use as
-    # is: `Float32` + JLArrays when that is what the algorithm was configured for
+    # is: the shape of the original problem, with `sol_reduced`'s element and array types
     presolver = CoolPDLP.PaPILOPresolver()
     qps, path = read_instance(Netlib, "afiro")
     milp_cpu = MILP(qps; path, name = "afiro")
@@ -286,7 +282,7 @@ end
     @test nbvar(milp_reduced) < nbvar(milp_cpu)
 
     sol_reduced = perform_conversion(PrimalDualSolution(milp_reduced), GPU_CONV)
-    sol_orig = postsolve(presolver, state, sol_reduced, GPU_CONV)
+    sol_orig = postsolve(presolver, state, sol_reduced)
     @test typeof(sol_orig) === typeof(PrimalDualSolution(milp_gpu))
     @test length(sol_orig.x) == nbvar(milp_cpu)
     @test all(isnan, Array(sol_orig.y))
@@ -296,7 +292,7 @@ end
     milp = _core_padded_milp()
     algo = PDLP(
         Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend(),
-        termination_reltol = 1.0f-5, show_progress = false, presolve = CoolPDLP.PaPILOPresolver(),
+        termination_reltol = 1.0f-5, show_progress = false, presolver = CoolPDLP.PaPILOPresolver(),
     )
     sol, stats = solve(milp, algo)
     @test stats.termination_status == MOI.OPTIMAL
@@ -305,24 +301,11 @@ end
     @test isapprox(objective_value(Float64.(Array(sol.x)), milp), 8.0; atol = 1.0e-3)
 end
 
-@testset "solve falls back gracefully when presolve fails and strict = false" begin
+@testset "solve lets a presolve failure propagate" begin
     milp, _ = CoolPDLP.random_milp_and_sol(3, 4, 0.6)
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
-        presolve = CoolPDLP.PaPILOPresolver(), presolve_strict = false, show_progress = false,
-    )
-    bogus_dir = joinpath(tempdir(), "coolpdlp-does-not-exist-$(rand(UInt64))")
-    sol, stats = withenv("TMPDIR" => bogus_dir) do
-        @test_logs (:warn, r"Presolve failed") match_mode = :any solve(milp, algo)
-    end
-    @test length(sol.x) == nbvar(milp)  # solved the *original* (non-reduced) problem
-end
-
-@testset "solve errors instead of falling back when presolve fails and strict = true" begin
-    milp, _ = CoolPDLP.random_milp_and_sol(3, 4, 0.6)
-    algo = PDLP(
-        Float64, Int, SparseMatrixCSC; backend = CPU(),
-        presolve = CoolPDLP.PaPILOPresolver(), presolve_strict = true, show_progress = false,
+        presolver = CoolPDLP.PaPILOPresolver(), show_progress = false,
     )
     bogus_dir = joinpath(tempdir(), "coolpdlp-does-not-exist-$(rand(UInt64))")
     withenv("TMPDIR" => bogus_dir) do
@@ -334,7 +317,7 @@ end
     milp = _core_padded_milp()
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
-        termination_reltol = 1.0e-8, show_progress = false, presolve = CoolPDLP.PaPILOPresolver(),
+        termination_reltol = 1.0e-8, show_progress = false, presolver = CoolPDLP.PaPILOPresolver(),
     )
     sol, stats = solve(milp, algo)
     @test stats.termination_status == MOI.OPTIMAL
@@ -350,7 +333,7 @@ end
     milp_batch = MILP(; c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
-        presolve = CoolPDLP.PaPILOPresolver(), show_progress = false,
+        presolver = CoolPDLP.PaPILOPresolver(), show_progress = false,
     )
     @test_throws ArgumentError solve(milp_batch, algo)
 end
@@ -375,7 +358,7 @@ end
 
     common_opts = (; termination_reltol = 1.0e-8, max_kkt_passes = 10^6, show_progress = false)
     algo_np = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...)
-    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolve = CoolPDLP.PaPILOPresolver())
+    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver = CoolPDLP.PaPILOPresolver())
 
     sol_np, stats_np = solve(milp, algo_np)
     sol_p, stats_p = solve(milp, algo_p)

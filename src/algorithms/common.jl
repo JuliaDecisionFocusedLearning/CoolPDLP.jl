@@ -12,7 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
-        P <: PresolveParameters,
+        P <: Union{Nothing, AbstractPresolver},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -20,7 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
-    presolve::P
+    presolver::P
 end
 
 """
@@ -53,12 +53,11 @@ end
         max_kkt_passes = 10^5,
         time_limit = 100.0,
         # presolve
-        presolve = nothing,
-        presolve_strict = false,
+        presolver = nothing,
     )
 
-Constructor for algorithm configs. `presolve` is `nothing` (disabled) or an
-[`AbstractPresolver`](@ref) instance, e.g. `presolve = PaPILOPresolver()` (`using PaPILO`
+Constructor for algorithm configs. `presolver` is `nothing` (presolve disabled) or an
+[`AbstractPresolver`](@ref) instance, e.g. `presolver = PaPILOPresolver()` (`using PaPILO`
 first).
 """
 function Algorithm{A}(
@@ -90,8 +89,7 @@ function Algorithm{A}(
         max_kkt_passes = 10^5,
         time_limit = 100.0,
         # presolve
-        presolve::Union{Nothing, AbstractPresolver} = nothing,
-        presolve_strict = false,
+        presolver::Union{Nothing, AbstractPresolver} = nothing,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -124,24 +122,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-    presolve_params = PresolveParameters(;
-        presolver = presolve,
-        strict = presolve_strict,
-    )
-
-    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolve_params)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolver)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
         termination,
-        presolve_params
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination, presolve) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -151,7 +144,7 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $restart
         - $generic
         - $termination
-        - $presolve"""
+        - presolver=$presolver"""
     )
 end
 
@@ -253,7 +246,7 @@ end
 
 function solve(
         milp_init_cpu::MILP,
-        algo::Algorithm{A, T, Ti, M, B, R, PresolveParameters{Nothing}}
+        algo::Algorithm{A, T, Ti, M, B, R, Nothing}
     ) where {A, T, Ti, M, B, R}
     sol_init_cpu = PrimalDualSolution(milp_init_cpu)
     return solve(milp_init_cpu, sol_init_cpu, algo)
@@ -262,27 +255,13 @@ end
 # Method split to contain the impact of presolve-related type instabilities
 @unstable function solve(
         milp_init_cpu::MILP,
-        algo::Algorithm{A, T, Ti, M, B, R, PresolveParameters{P}}
+        algo::Algorithm{A, T, Ti, M, B, R, P}
     ) where {A, T, Ti, M, B, R, P <: AbstractPresolver}
     isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
-    params = algo.presolve
-    milp_reduced, presolve_state = try
-        presolve(params.presolver, milp_init_cpu)
-    catch e
-        params.strict && rethrow()
-        @warn "Presolve failed, falling back to the original problem" exception = e
-        milp_init_cpu, nothing
-    end
+    milp_reduced, presolve_state = presolve(algo.presolver, milp_init_cpu)
     sol_init_reduced = PrimalDualSolution(milp_reduced)
     sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
-    # the reduced problem needs no particular type (the inner `solve` converts it), but the
-    # solution returned here does: `sol_reduced` is already converted, and `postsolve` gets
-    # `algo.conversion` so that it can convert its own result
-    sol = if isnothing(presolve_state)
-        sol_reduced
-    else
-        postsolve(params.presolver, presolve_state, sol_reduced, algo.conversion)
-    end
+    sol = postsolve(algo.presolver, presolve_state, sol_reduced)
     return sol, stats
 end
 

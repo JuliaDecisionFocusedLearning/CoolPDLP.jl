@@ -66,7 +66,7 @@ end
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
         termination_reltol = 1.0e-5, max_kkt_passes = 10^7, show_progress = false,
-        presolve = CoolPDLP.PaPILOPresolver(),
+        presolver = CoolPDLP.PaPILOPresolver(),
     )
     dataset = Netlib
     @testset for name in small_names
@@ -79,7 +79,7 @@ end
     # get closer to the true optimum than solving the original (padded, unreduced) problem does
     budget_opts = (; termination_reltol = 1.0e-9, max_kkt_passes = 50, show_progress = false)
     algo_np = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts...)
-    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts..., presolve = CoolPDLP.PaPILOPresolver())
+    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts..., presolver = CoolPDLP.PaPILOPresolver())
     dataset = Netlib
     @testset for name in small_names
         qps, path = read_instance(dataset, name)

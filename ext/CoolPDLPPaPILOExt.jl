@@ -1,8 +1,8 @@
 module CoolPDLPPaPILOExt
 
 using CoolPDLP:
-    CoolPDLP, ConversionParameters, MILP, PrimalDualSolution, PaPILOPresolver,
-    milp_to_mps, mps_to_milp, perform_conversion, write_sol_file, read_sol_file
+    CoolPDLP, MILP, PrimalDualSolution, PaPILOPresolver,
+    milp_to_mps, mps_to_milp, write_sol_file, read_sol_file
 using DocStringExtensions: TYPEDFIELDS
 using LinearAlgebra: dot
 using PaPILO: PaPILO
@@ -11,7 +11,7 @@ using PaPILO: PaPILO
     PaPILOPresolveState
 
 The `state` object produced by `presolve(::PaPILOPresolver, milp)` and consumed by
-`postsolve(::PaPILOPresolver, state, sol_reduced, conversion)`. It lives in the `CoolPDLPPaPILOExt`
+`postsolve(::PaPILOPresolver, state, sol_reduced)`. It lives in the `CoolPDLPPaPILOExt`
 extension rather than in `CoolPDLP` itself, since nothing outside this backend needs it.
 
 # Fields
@@ -72,18 +72,17 @@ function CoolPDLP.presolve(presolver::PaPILOPresolver, milp::MILP)
 end
 
 """
-    postsolve(presolver::PaPILOPresolver, state, sol_reduced, conversion) -> PrimalDualSolution
+    postsolve(presolver::PaPILOPresolver, state, sol_reduced) -> PrimalDualSolution
 
 Write `sol_reduced`'s primal part to a plain-text solution file, run PaPILO's postsolve command,
-and read the original-space primal solution back, typed for `conversion` by
-`perform_conversion`.
+and read the original-space primal solution back, converting it to the proper format (the shape
+`state` memorized, and the element and array types of `sol_reduced`).
 
 The dual part is filled with `NaN` since PaPILO's file-based interface does not round-trip dual
 solutions (see `CoolPDLP.postsolve`'s docstring).
 """
 function CoolPDLP.postsolve(
-        presolver::PaPILOPresolver, state::PaPILOPresolveState,
-        sol_reduced::PrimalDualSolution, conversion::ConversionParameters
+        presolver::PaPILOPresolver, state::PaPILOPresolveState, sol_reduced::PrimalDualSolution
     )
     reduced_sol_file = tempname() * ".sol"
     original_sol_file = tempname() * ".sol"
@@ -99,11 +98,15 @@ function CoolPDLP.postsolve(
                 return PaPILO.postsolve_from_file(state.postsolve_file, reduced_sol_file, original_sol_file)
             end
         end
+        # `read_sol_file` returns the primal indexed like `state.var_names_orig`, i.e. in the
+        # column order of the original MILP; the shapes come from the state's prototype and the
+        # containers from `sol_reduced`, which the algorithm already produced in its own types
         x_orig = read_sol_file(original_sol_file, state.var_names_orig)
         proto = state.sol_orig_proto
-        x = copyto!(similar(proto.x), x_orig)
-        y = fill!(similar(proto.y), NaN)
-        return perform_conversion(PrimalDualSolution(x, y), conversion)
+        T = eltype(sol_reduced.x)
+        x = copyto!(similar(sol_reduced.x, length(proto.x)), map(T, x_orig))
+        y = fill!(similar(sol_reduced.y, length(proto.y)), T(NaN))
+        return PrimalDualSolution(x, y)
     finally
         isfile(reduced_sol_file) && rm(reduced_sol_file; force = true)
         isfile(original_sol_file) && rm(original_sol_file; force = true)
