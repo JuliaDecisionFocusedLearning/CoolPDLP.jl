@@ -27,7 +27,7 @@ struct PaPILOPresolveState{V <: AbstractVector, S <: PrimalDualSolution}
     var_names_reduced::Vector{String}
     "objective vector of the presolved problem, to report its objective value to PaPILO"
     c_reduced::V
-    "zero solution of the original problem, giving `postsolve` its shape and its host containers"
+    "zero solution of the original problem, giving `postsolve` its shape"
     sol_orig_proto::S
 end
 
@@ -35,7 +35,7 @@ end
     presolve(presolver::PaPILOPresolver, milp) -> (milp_reduced, state)
 
 Write `milp` to a temporary MPS file, run PaPILO's presolve command, and read the (typically
-smaller) reduced problem back as a CPU-`Float64` `MILP` (`solve` converts it).
+smaller) reduced problem back as a CPU-`Float64` `MILP` (`solve` converts it afterwards anyway).
 """
 function CoolPDLP.presolve(presolver::PaPILOPresolver, milp::MILP)
     input_file = tempname() * ".mps"

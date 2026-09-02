@@ -95,7 +95,7 @@ end
         sol_p, _ = solve(milp, algo_p)
         err_np = abs(objective_value(Array(sol_np.x), milp) - true_obj) / max(1, abs(true_obj))
         err_p = abs(objective_value(Array(sol_p.x), milp) - true_obj) / max(1, abs(true_obj))
-        @test err_p <= err_np
+        @test err_p < err_np
     end
 end
 
