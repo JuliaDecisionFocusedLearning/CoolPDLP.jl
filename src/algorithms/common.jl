@@ -275,12 +275,14 @@ end
     end
     sol_init_reduced = PrimalDualSolution(milp_reduced)
     sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
-    sol_orig = if isnothing(presolve_state)
+    # the reduced problem needs no particular type (the inner `solve` converts it), but the
+    # solution returned here does: `sol_reduced` is already converted, and `postsolve` gets
+    # `algo.conversion` so that it can convert its own result
+    sol = if isnothing(presolve_state)
         sol_reduced
     else
-        postsolve(params.presolver, presolve_state, sol_reduced)
+        postsolve(params.presolver, presolve_state, sol_reduced, algo.conversion)
     end
-    sol = perform_conversion(sol_orig, algo.conversion)
     return sol, stats
 end
 

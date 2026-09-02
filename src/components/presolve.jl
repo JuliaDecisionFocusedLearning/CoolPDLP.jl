@@ -14,24 +14,28 @@ Reduce `milp` using `presolver`. Return the (typically smaller) reduced [`MILP`]
 over to the algorithm, together with an opaque `state` object to later pass to
 [`postsolve`](@ref) along with a solution of the reduced problem.
 
-`milp_reduced` must have the same element and array types as `milp`, so that the algorithm runs
-in the precision and on the backend it was configured for ([`mps_to_milp`](@ref) takes a MILP to
-imitate for exactly this reason).
+`milp_reduced` needs no particular element or array type: `solve` feeds it back through
+`preprocess`, which preconditions on the host and then calls [`perform_conversion`](@ref)
+anyway. A CPU-`Float64` problem — what an external presolver naturally produces — is fine.
 
 `state` is produced by `presolve` and consumed by `postsolve` for the *same* presolver type, so
 it can be any Julia object convenient for that backend: index maps, substitution coefficients,
 a path to some intermediate file, ... there is no file-based or otherwise constrained contract
 here, unlike [`PaPILOPresolver`](@ref)'s own state which happens to hold a file path because
 that particular backend is file-based.
+
+Note that the `state` must allow returning a postsolved `PrimalDualSolution` of the correct type
+with respect to the original `MILP`. Typically, that may require storing a prototype solution.
 """
 function presolve end
 
 """
-    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
+    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution, conversion::ConversionParameters) -> PrimalDualSolution
 
 Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
-solution of the original problem, using `state`. The result must have the same element and array
-types as a solution of the original problem.
+solution of the original problem, using `state`. The result must be typed for `conversion`,
+which a backend working in CPU-`Float64` obtains by handing its result to
+[`perform_conversion`](@ref).
 
 Implementations that cannot reconstruct the dual solution (e.g. because the underlying tool's
 interface is primal-only, like [`PaPILOPresolver`](@ref)'s) should fill it with `NaN` rather
@@ -119,15 +123,14 @@ _setbounds(s::MOI.GreaterThan) = (s.lower, Inf)
 _setbounds(s::MOI.Interval) = (s.lower, s.upper)
 
 """
-    mps_to_milp(path::AbstractString, milp_to_imitate::MILP; kwargs...)
+    mps_to_milp(path::AbstractString; kwargs...)
 
 Read the MPS file at `path` into a [`MILP`](@ref), using a
 [JuMP](https://github.com/jump-dev/JuMP.jl) model as an intermediate representation.
 
-MPS is a `Float64`, host-memory format, so the element type, index type, matrix type and
-backend of the result are all taken from `milp_to_imitate`. That way a presolver can hand back
-a reduced problem the algorithm can consume directly, in the precision and on the device it was
-configured for.
+MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`](@ref) built on
+`SparseMatrixCSC`. `solve` runs [`perform_conversion`](@ref) on whatever [`presolve`](@ref)
+hands back, so a file-based presolver has nothing else to do.
 
 `kwargs` are forwarded to the [`MILP`](@ref) constructor.
 
@@ -136,18 +139,7 @@ configured for.
     match the row order of the file. The row *set* is preserved, which is all the algorithm
     cares about.
 """
-function mps_to_milp(path::AbstractString, milp_to_imitate::MILP; kwargs...)
-    milp_cpu = _mps_to_milp_cpu(path; kwargs...)
-    T = eltype(milp_to_imitate.c)
-    Ti = _index_type(milp_to_imitate.A)
-    M = Base.typename(typeof(milp_to_imitate.A)).wrapper
-    backend = get_backend(milp_to_imitate)
-    return adapt(backend, set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp_cpu))))
-end
-
-_index_type(::AbstractSparseMatrix{<:Any, Ti}) where {Ti} = Ti
-
-function _mps_to_milp_cpu(path::AbstractString; kwargs...)
+function mps_to_milp(path::AbstractString; kwargs...)
     model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
     vars = JuMP.all_variables(model)
     n = length(vars)

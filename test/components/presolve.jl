@@ -14,6 +14,8 @@ using SparseArrays
 using Test
 
 const PaPILOExt = Base.get_extension(CoolPDLP, :CoolPDLPPaPILOExt)
+const CPU_CONV = ConversionParameters(Float64, Int, SparseMatrixCSC; backend = CPU())
+const GPU_CONV = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
 
 @testset "presolve throws a MethodError (with a hint) when PaPILO is not loaded" begin
     # spawn a fresh process that never `using`s PaPILO, so `CoolPDLPPaPILOExt` never loads and
@@ -90,7 +92,7 @@ end
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path, milp)
+    milp2 = mps_to_milp(path)
     rm(path; force = true)
 
     @test nbvar(milp2) == nbvar(milp)
@@ -116,7 +118,7 @@ end
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path, milp)
+    milp2 = mps_to_milp(path)
     rm(path; force = true)
 
     @test milp2.lv == milp.lv  # in particular, the fixed and free variables keep their bounds
@@ -125,23 +127,24 @@ end
     @test nbcons(milp2) == nbcons(milp)
 end
 
-@testset "MPS round trip: types are taken from the MILP to imitate" begin
+@testset "MPS round trip: a Float32 GPU MILP comes back as a host Float64 MILP" begin
+    # MPS is a host, `Float64` format, so `milp_to_mps` must accept a MILP living anywhere and
+    # `mps_to_milp` always hands back a host problem — `solve` converts it afterwards anyway
     qps, path_afiro = read_instance(Netlib, "afiro")
     milp_cpu = MILP(qps; path = path_afiro, name = "afiro")
-    params = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
-    milp_gpu = perform_conversion(milp_cpu, params)
+    milp_gpu = perform_conversion(milp_cpu, GPU_CONV)
 
     path = tempname() * ".mps"
-    milp_to_mps(milp_gpu, path)  # MPS is a CPU, `Float64` format: the MILP is brought back first
-    milp2 = mps_to_milp(path, milp_gpu)
+    milp_to_mps(milp_gpu, path)
+    milp2 = mps_to_milp(path)
     rm(path; force = true)
 
-    @test typeof(milp2) === typeof(milp_gpu)  # element type, index type, matrix type, backend
+    @test typeof(milp2) === typeof(milp_cpu)
     @test nbvar(milp2) == nbvar(milp_gpu)
     @test nbcons(milp2) == nbcons(milp_gpu)
-    @test Array(milp2.c) ≈ Array(milp_gpu.c)
-    @test Array(milp2.lv) ≈ Array(milp_gpu.lv)
-    @test Array(milp2.uv) ≈ Array(milp_gpu.uv)
+    @test milp2.c ≈ Float64.(Array(milp_gpu.c))
+    @test milp2.lv ≈ Float64.(Array(milp_gpu.lv))
+    @test milp2.uv ≈ Float64.(Array(milp_gpu.uv))
 end
 
 @testset "MPS conversion rejects batched MILPs and non-linear models" begin
@@ -155,7 +158,7 @@ end
     JuMP.@objective(quad_model, Min, sum(q))
     quad_path = tempname() * ".mps"
     JuMP.write_to_file(quad_model, quad_path; format = MOI.FileFormats.FORMAT_MPS)
-    @test_throws ArgumentError mps_to_milp(quad_path, milp)
+    @test_throws ArgumentError mps_to_milp(quad_path)
     rm(quad_path; force = true)
 end
 
@@ -246,7 +249,7 @@ end
     x_reduced[.!isfinite.(x_reduced)] .= 0.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_orig = postsolve(presolver, state, sol_reduced, CPU_CONV)
     @test is_feasible(sol_orig.x, milp)
     @test isapprox(objective_value(sol_orig.x, milp), 8.0; atol = 1.0e-6)
     @test all(isnan, sol_orig.y)  # PaPILO's file-based interface does not round-trip duals
@@ -265,27 +268,27 @@ end
     x_reduced = min.(milp_reduced.uv, 1.0e6) .+ 1000.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_orig = postsolve(presolver, state, sol_reduced, CPU_CONV)
     @test !is_feasible(sol_orig.x, milp; verbose = false)
 end
 
-@testset "presolve/postsolve preserve element and array types (Float32 on JLArrays)" begin
+@testset "postsolve types its result for the ConversionParameters" begin
+    # `presolve` may return whatever it likes (here a host `Float64` problem, since PaPILO reads
+    # it back from an MPS file), but `postsolve` must hand back a solution the caller can use as
+    # is: `Float32` + JLArrays when that is what the algorithm was configured for
     presolver = CoolPDLP.PaPILOPresolver()
     qps, path = read_instance(Netlib, "afiro")
     milp_cpu = MILP(qps; path, name = "afiro")
-    params = ConversionParameters(Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend())
-    milp_gpu = perform_conversion(milp_cpu, params)
+    milp_gpu = perform_conversion(milp_cpu, GPU_CONV)
 
-    milp_reduced, state = presolve(presolver, milp_gpu)
-    @test typeof(milp_reduced) === typeof(milp_gpu)
-    @test nbvar(milp_reduced) < nbvar(milp_gpu)
+    milp_reduced, state = presolve(presolver, milp_cpu)
+    @test typeof(milp_reduced) === typeof(milp_cpu)
+    @test nbvar(milp_reduced) < nbvar(milp_cpu)
 
-    sol_reduced = PrimalDualSolution(milp_reduced)
-    @test typeof(sol_reduced) === typeof(PrimalDualSolution(milp_gpu))
-
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_reduced = perform_conversion(PrimalDualSolution(milp_reduced), GPU_CONV)
+    sol_orig = postsolve(presolver, state, sol_reduced, GPU_CONV)
     @test typeof(sol_orig) === typeof(PrimalDualSolution(milp_gpu))
-    @test length(sol_orig.x) == nbvar(milp_gpu)
+    @test length(sol_orig.x) == nbvar(milp_cpu)
     @test all(isnan, Array(sol_orig.y))
 end
 
