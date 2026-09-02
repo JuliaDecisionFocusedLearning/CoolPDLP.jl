@@ -40,9 +40,6 @@ end
 
 Convert `milp` or `sol` to the element type, index type, matrix type and backend described by
 `params`.
-
-This is how a [`postsolve`](@ref) implementation gives its result the type `solve` is expected
-to return, starting from the CPU-`Float64` solution an external presolver hands back.
 """
 function perform_conversion(
         milp::MILP,

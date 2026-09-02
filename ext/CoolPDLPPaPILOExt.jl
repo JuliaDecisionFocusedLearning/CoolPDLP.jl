@@ -36,9 +36,6 @@ end
 
 Write `milp` to a temporary MPS file, run PaPILO's presolve command, and read the (typically
 smaller) reduced problem back as a CPU-`Float64` `MILP` (`solve` converts it).
-
-Raises on failure — the generic fallback-vs-error handling lives in `CoolPDLP`'s top-level
-`solve`, driven by `PresolveParameters.strict`, not here.
 """
 function CoolPDLP.presolve(presolver::PaPILOPresolver, milp::MILP)
     input_file = tempname() * ".mps"
@@ -103,9 +100,8 @@ function CoolPDLP.postsolve(
         # containers from `sol_reduced`, which the algorithm already produced in its own types
         x_orig = read_sol_file(original_sol_file, state.var_names_orig)
         proto = state.sol_orig_proto
-        T = eltype(sol_reduced.x)
-        x = copyto!(similar(sol_reduced.x, length(proto.x)), map(T, x_orig))
-        y = fill!(similar(sol_reduced.y, length(proto.y)), T(NaN))
+        x = copyto!(similar(sol_reduced.x, size(proto.x)), x_orig)
+        y = fill!(similar(sol_reduced.y, size(proto.y)), NaN)
         return PrimalDualSolution(x, y)
     finally
         isfile(reduced_sol_file) && rm(reduced_sol_file; force = true)
