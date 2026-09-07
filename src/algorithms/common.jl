@@ -35,6 +35,8 @@ end
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
+        spectral_norm_tol = 1.0e-3,
+        spectral_norm_maxiter = 1000,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -65,6 +67,8 @@ function Algorithm{A}(
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
+        spectral_norm_tol = 1.0e-3,
+        spectral_norm_maxiter = 1000,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -91,6 +95,8 @@ function Algorithm{A}(
         invnorm_scaling = _T(invnorm_scaling),
         primal_weight_damping = _T(primal_weight_damping),
         zero_tol = _T(zero_tol),
+        spectral_norm_tol = _T(spectral_norm_tol),
+        spectral_norm_maxiter,
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),
@@ -207,10 +213,23 @@ function solve(
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    if nbcons(milp) == 0 && all(iszero, milp.c) # early exit for 0 obj/no cons
-        @. sol.x = clamp(zero(eltype(milp.lv)), milp.lv, milp.uv)
-        state.stats.termination_status = OPTIMAL
-        return get_solution(state, milp), state.stats
+    (; c, lv, uv) = milp
+    if nbcons(milp) == 0
+        # with no constraint rows, the box-constrained optimum can be read off `c` and the
+        # bounds directly, as long as the box is feasible and bounded in the direction `c`
+        # pushes towards (otherwise fall through to the general loop below, same as any other
+        # infeasible/unbounded problem: this package has no dedicated status for either, so it
+        # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
+        box_feasible = all(lv .<= uv)
+        bounded_below = !any(@. (c > 0) & isinf(lv))
+        bounded_above = !any(@. (c < 0) & isinf(uv))
+        if box_feasible && bounded_below && bounded_above
+            @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
+            kkt_errors!(state.stats.err, state.scratch, sol, milp)
+            state.stats.time_elapsed = time() - starting_time
+            state.stats.termination_status = MOI.OPTIMAL
+            return get_solution(state, milp), state.stats
+        end
     end
     solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
@@ -243,7 +262,7 @@ function termination_check!(
         push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
     end
     stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
-    return stats.termination_status !== STILL_RUNNING
+    return stats.termination_status !== MOI.OPTIMIZE_NOT_CALLED
 end
 
 function get_solution(state::AbstractState, milp::MILP)

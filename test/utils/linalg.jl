@@ -90,10 +90,43 @@ end
     rng = Xoshiro(42)
     for _ in 1:10
         A = randn(rng, 10, 20)
-        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7)
+        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7, maxiter = 1000)
         s1_ref = opnorm(A, 2)
-        @test s1 ≈ s1_ref rtol = 1.0e-1
+        # normalizing the initial guess and giving the power method a generous,
+        # size-independent iteration budget (#95) makes this accurate to near machine
+        # precision, instead of the `rtol = 1.0e-1` this used to require
+        @test s1 ≈ s1_ref rtol = 1.0e-10
     end
+end
+
+@testset "Spectral norm requires an explicit tolerance and iteration budget" begin
+    # neither `tol` nor `maxiter` may fall back to IterativeSolvers' size-dependent
+    # defaults (see #95): those scale as `eps(T) * n^3` and `size(B, 2)` respectively,
+    # which become far too loose (or too small) to trust at scale
+    A = randn(5, 5)
+    Aᵀ = Matrix(transpose(A))
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-7)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; maxiter = 1000)
+end
+
+@testset "Spectral norm of a zero matrix is exactly zero" begin
+    # `Kᵀ * K` is positive semidefinite, so the power method's Rayleigh quotient `λ` is
+    # mathematically nonnegative; a genuinely zero spectral norm (no constraint rows, or
+    # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
+    # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
+    Z = zeros(2, 2)
+    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3, maxiter = 1000) == 0.0
+end
+
+@testset "Spectral norm errors instead of silently under-converging" begin
+    # a `maxiter` too small for the requested `tol` (rather than IterativeSolvers'
+    # size-tied default) must surface as an error instead of an inaccurate estimate
+    rng = Xoshiro(42)
+    A = randn(rng, 10, 20)
+    @test_throws AssertionError CoolPDLP.spectral_norm(
+        A, Matrix(transpose(A)); tol = 1.0e-12, maxiter = 1
+    )
 end
 
 @testset "Column reductions" begin

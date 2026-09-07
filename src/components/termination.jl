@@ -1,18 +1,4 @@
 """
-    TerminationStatus
-
-Enum for the various ways that an algorithm can terminate.
-
-Possible values:
-
-- `OPTIMAL`
-- `TIME_LIMIT`
-- `ITERATION_LIMIT`
-- `STILL_RUNNING`
-"""
-@enum TerminationStatus OPTIMAL TIME_LIMIT ITERATION_LIMIT STILL_RUNNING
-
-"""
     TerminationParameters
 
 # Fields
@@ -50,8 +36,8 @@ mutable struct ConvergenceStats{T <: BatchedNumber}
     time_elapsed::Float64
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::Int
-    "termination stats (should be `STILL_RUNNING` until the algorithm actually terminates)"
-    termination_status::TerminationStatus
+    "termination status (should be `MOI.OPTIMIZE_NOT_CALLED` until the algorithm actually terminates)"
+    termination_status::MOI.TerminationStatusCode
     "history of KKT errors, indexed by number of KKT passes"
     const error_history::Vector{Tuple{Int, KKTErrors{T}}}
 
@@ -60,7 +46,7 @@ mutable struct ConvergenceStats{T <: BatchedNumber}
             starting_time = time(),
             time_elapsed = 0.0,
             kkt_passes = 0,
-            termination_status = STILL_RUNNING,
+            termination_status = MOI.OPTIMIZE_NOT_CALLED,
             error_history = Tuple{Int, KKTErrors{T}}[]
         ) where {T}
         return new{T}(
@@ -106,16 +92,15 @@ function termination_status!!(
     )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    st = if batched_all(<=(termination_reltol), relative!!(dest, err))
-        OPTIMAL
+    if batched_all(<=(termination_reltol), relative!!(dest, err))
+        return MOI.OPTIMAL
     elseif time_elapsed >= time_limit
-        TIME_LIMIT
+        return MOI.TIME_LIMIT
     elseif kkt_passes >= max_kkt_passes
-        ITERATION_LIMIT
+        return MOI.ITERATION_LIMIT
     else
-        STILL_RUNNING
+        return MOI.OPTIMIZE_NOT_CALLED
     end
-    return st
 end
 
 function should_terminate!!(

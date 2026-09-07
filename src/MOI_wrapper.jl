@@ -218,17 +218,21 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
 
     milp = MILP(; c, lv, uv, A, lc, uc)
 
-    algorithm = pop!(dest.options, :algorithm, PDLP)
+    algorithm = get(dest.options, :algorithm, PDLP)
 
-    float_type = pop!(dest.options, :float_type, T)
+    float_type = get(dest.options, :float_type, T)
     if float_type !== T
         @warn "Got mismatched float type: solving in $float_type but returning the solution in $T."
     end
-    int_type = pop!(dest.options, :int_type, Int)
-    matrix_type = pop!(dest.options, :matrix_type, SparseMatrixCSC)
+    int_type = get(dest.options, :int_type, Int)
+    matrix_type = get(dest.options, :matrix_type, SparseMatrixCSC)
 
+    # these four keys configure `optimize!` itself rather than `Algorithm`, so they must stay in
+    # `dest.options` (unlike `pop!`) for a second `optimize!` call or a later `MOI.get` to see them
+    algorithm_option_keys = (:algorithm, :float_type, :int_type, :matrix_type)
     algo_opts = Dict{Symbol, Any}(:show_progress => !dest.silent)
     for (k, v) in dest.options
+        k in algorithm_option_keys && continue
         algo_opts[k] = v
     end
     algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
@@ -251,19 +255,13 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status
-    ts, ps, ds = if cts == OPTIMAL
-        MOI.OPTIMAL, MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
-    elseif cts == TIME_LIMIT
-        MOI.TIME_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
-    elseif cts == ITERATION_LIMIT
-        MOI.ITERATION_LIMIT, MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
+    @assert cts != MOI.OPTIMIZE_NOT_CALLED "solve did not reach a terminal status"
+    dest.termination_status = cts
+    dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL
+        MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
     else
-        @assert cts == STILL_RUNNING
-        MOI.OTHER_ERROR, MOI.NO_SOLUTION, MOI.NO_SOLUTION
+        MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
     end
-    dest.termination_status = ts
-    dest.primal_status = ps
-    dest.dual_status = ds
 
     return index_map, false
 end
