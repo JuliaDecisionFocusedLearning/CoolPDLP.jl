@@ -1,16 +1,23 @@
 module CoolPDLPReactantExt
 
 using CoolPDLP:
+    Algorithm,
     CoolPDLP,
     ConvergenceStats,
+    ConversionParameters,
+    GenericParameters,
     KKTErrors,
     MILP,
     PDHGState,
+    PreconditioningParameters,
     PrimalDualSolution,
+    RestartParameters,
     Scratch,
+    StepSizeParameters,
     StepSizes,
+    TerminationParameters,
     custom_to_rarray
-using Reactant: ConcreteRArray, to_rarray
+using Reactant: ConcreteRArray, ConcreteRNumber, to_rarray
 
 function CoolPDLP.custom_to_rarray(milp::MILP; kwargs...)
     return to_rarray(milp; kwargs...)
@@ -58,6 +65,64 @@ function CoolPDLP.custom_to_rarray(state::PDHGState; kwargs...)
         scratch = scratch_r,
         stats = stats_r,
     )
+end
+
+function CoolPDLP.custom_to_rarray(conversion::ConversionParameters; kwargs...)
+    return to_rarray(conversion; kwargs...)
+end
+
+function CoolPDLP.custom_to_rarray(preconditioning::PreconditioningParameters; kwargs...)
+    return to_rarray(preconditioning; kwargs...)
+end
+
+function CoolPDLP.custom_to_rarray(step_size::StepSizeParameters; kwargs...)
+    return to_rarray(step_size; kwargs...)
+end
+
+function CoolPDLP.custom_to_rarray(restart::RestartParameters; kwargs...)
+    (; sufficient_decay, necessary_decay, artificial_decay, batch_aggregation) = restart
+    return RestartParameters(;
+        sufficient_decay = ConcreteRNumber(sufficient_decay),
+        necessary_decay = ConcreteRNumber(necessary_decay),
+        artificial_decay = ConcreteRNumber(artificial_decay),
+        batch_aggregation = batch_aggregation
+    )
+end
+
+function CoolPDLP.custom_to_rarray(generic::GenericParameters; kwargs...)
+    (; show_progress, check_every, record_error_history) = generic
+    return GenericParameters(;
+        show_progress,
+        check_every = ConcreteRNumber(check_every),
+        record_error_history
+    )
+end
+
+function CoolPDLP.custom_to_rarray(termination::TerminationParameters; kwargs...)
+    (; termination_reltol, max_kkt_passes, time_limit) = termination
+    return TerminationParameters(;
+        termination_reltol = ConcreteRNumber(termination_reltol),
+        max_kkt_passes = ConcreteRNumber(max_kkt_passes),
+        time_limit = time_limit
+    )
+end
+
+function CoolPDLP.custom_to_rarray(algo::Algorithm{A}; kwargs...) where {A}
+    conversion_r = custom_to_rarray(algo.conversion; kwargs...)
+    preconditioning_r = custom_to_rarray(algo.preconditioning; kwargs...)
+    step_size_r = custom_to_rarray(algo.step_size; kwargs...)
+    restart_r = custom_to_rarray(algo.restart; kwargs...)
+    generic_r = custom_to_rarray(algo.generic; kwargs...)
+    termination_r = custom_to_rarray(algo.termination; kwargs...)
+    return Algorithm{A}(
+        conversion_r,
+        preconditioning_r,
+        step_size_r,
+        restart_r,
+        generic_r,
+        termination_r,
+    )
+    return to_rarray(algo; kwargs...)
 end
 
 end

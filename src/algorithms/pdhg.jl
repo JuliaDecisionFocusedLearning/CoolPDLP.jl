@@ -70,18 +70,13 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDHG}
     )
-    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
-    while true
-        yield()
-        for _ in 1:algo.generic.check_every
+    must_terminate = false
+    @trace while !must_terminate
+        @trace for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = () -> prog_showvalues(state))
         end
-        if termination_check!(state, milp, algo)
-            break
-        end
+        must_terminate = termination_check!(state, milp, algo)
     end
-    finish!(prog)
     return state
 end
 

@@ -5,11 +5,11 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct TerminationParameters{T <: Number}
+@kwdef struct TerminationParameters{T <: Number, I <: Number}
     "tolerance on KKT relative errors to decide termination"
     termination_reltol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
-    max_kkt_passes::Int
+    max_kkt_passes::I
     "time limit in seconds"
     time_limit::Float64
 end

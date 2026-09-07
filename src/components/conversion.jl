@@ -12,9 +12,9 @@
 $(TYPEDFIELDS)
 """
 struct ConversionParameters{
-        T <: Number, Ti <: Integer, M <: AbstractMatrix, B <: Backend,
+        T <: Number, Ti <: Integer, M <: AbstractMatrix, B <: Union{Backend, Nothing},
     }
-    "CPU or GPU backend used for computations"
+    "CPU or GPU backend used for computations, or `nothing` to avoid any backend conversion"
     backend::B
 
     function ConversionParameters(
@@ -40,8 +40,11 @@ function perform_conversion(
     ) where {T, Ti, M}
     (; backend) = params
     milp_righttypes = set_matrix_type(M, set_indtype(Ti, set_eltype(T, milp)))
-    milp_adapted = adapt(backend, milp_righttypes)
-    return milp_adapted
+    if isnothing(backend)
+        return milp_righttypes
+    else
+        return adapt(backend, milp_righttypes)
+    end
 end
 
 function perform_conversion(
@@ -50,6 +53,9 @@ function perform_conversion(
     ) where {T}
     (; backend) = params
     sol_righttypes = set_eltype(T, sol)
-    sol_adapted = adapt(backend, sol_righttypes)
-    return sol_adapted
+    if isnothing(backend)
+        return sol_righttypes
+    else
+        return adapt(backend, sol_righttypes)
+    end
 end

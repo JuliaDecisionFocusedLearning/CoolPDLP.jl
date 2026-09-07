@@ -7,18 +7,38 @@ $(TYPEDFIELDS)
 """
 struct Algorithm{
         A,
-        T <: Number,
-        Ti <: Integer,
+        cT <: Number,
+        cTi <: Number,
         M <: AbstractMatrix,
-        B <: Backend,
+        B <: Union{Backend, Nothing},
+        T <: Number,
         R <: RestartParameters{T},
     }
-    conversion::ConversionParameters{T, Ti, M, B}
+    conversion::ConversionParameters{cT, cTi, M, B}
     preconditioning::PreconditioningParameters{T}
     step_size::StepSizeParameters{T}
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+
+    function Algorithm{A}(
+            conversion::ConversionParameters{cT, cTi, M, B},
+            preconditioning::PreconditioningParameters{T},
+            step_size::StepSizeParameters{T},
+            restart::R,
+            generic::GenericParameters,
+            termination::TerminationParameters{T},
+        ) where {A, cT, cTi, M, B, T, R}
+        return new{A, cT, cTi, M, B, T, R}(
+            conversion,
+            preconditioning,
+            step_size,
+            restart,
+            generic,
+            termination,
+        )
+        return
+    end
 end
 
 """
@@ -115,7 +135,7 @@ function Algorithm{A}(
         time_limit
     )
 
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A}(
         conversion,
         preconditioning,
         step_size,
