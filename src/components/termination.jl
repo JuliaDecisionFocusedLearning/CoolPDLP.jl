@@ -48,7 +48,7 @@ function ConvergenceStats(
         time_elapsed = 0.0,
         kkt_passes::I = 0,
         termination_status = MOI.OPTIMIZE_NOT_CALLED,
-        error_history = [(kkt_passes, err)]
+        error_history = [(kkt_passes, copy(err))]
     ) where {T, I}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{T, F, I}(
@@ -87,6 +87,10 @@ end
     set_termination_status!!(stats, dest, params)
 
 Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
+
+Set `stats.termination_status` and return whether the algorithm should stop. The returned
+boolean is traced under Reactant, unlike the `MOI.TerminationStatusCode` enum, so it is what
+the solve loops branch on.
 """
 function set_termination_status!!(
         stats::ConvergenceStats,
@@ -96,26 +100,20 @@ function set_termination_status!!(
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
     is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
+    is_time_limit = time_elapsed >= time_limit
+    is_iteration_limit = kkt_passes >= max_kkt_passes
     # Reactant doesn't like `elseif`, see https://github.com/EnzymeAD/Reactant.jl/issues/2563#issuecomment-5584197336
+    # The branches are ordered by increasing priority, so that the last write wins.
+    @trace if is_iteration_limit
+        stats.termination_status = MOI.ITERATION_LIMIT
+    end
+    @trace if is_time_limit
+        stats.termination_status = MOI.TIME_LIMIT
+    end
     @trace if is_optimal
         stats.termination_status = MOI.OPTIMAL
     end
-    @trace if time_elapsed >= time_limit
-        stats.termination_status = MOI.TIME_LIMIT
-    end
-    @trace if kkt_passes >= max_kkt_passes
-        stats.termination_status = MOI.ITERATION_LIMIT
-    end
-    return nothing
-end
-
-function should_terminate!!(
-        dest::BatchedNumber, stats::ConvergenceStats, params::TerminationParameters
-    )
-    (; err, time_elapsed, kkt_passes) = stats
-    (; termination_reltol, time_limit, max_kkt_passes) = params
-    is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
-    is_time_limit = time_elapsed >= time_limit
-    is_iteration_limit = kkt_passes >= max_kkt_passes
-    return is_optimal || is_time_limit || is_iteration_limit
+    # `stats.termination_status` is a plain enum, so it cannot drive traced control flow.
+    # Return the decision as a (possibly traced) boolean instead.
+    return is_optimal | is_time_limit | is_iteration_limit
 end

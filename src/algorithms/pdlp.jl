@@ -80,14 +80,16 @@ function initialize(
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(sol)
-    stats = ConvergenceStats(KKTErrors(sol); starting_time)
+    # The error history is seeded with the starting point, and `restart_check!` reads the errors
+    # of the restart point without recomputing them, so both must be filled already.
+    err = KKTErrors(sol)
+    kkt_errors!(err, scratch, sol, milp)
+    restart_stats.err_restart = copy(err)
+    stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
         step_sizes, scratch, iteration, restart_stats, stats
     )
-    # `restart_check!` reads the errors of the restart point without recomputing them, so
-    # they must be filled for the starting point already
-    kkt_errors!(restart_stats.err_restart, scratch, sol, milp)
     return state
 end
 
@@ -103,14 +105,17 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDLP}
     )
+    prog = init_progress("PDLP iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
         @trace for _ in 1:algo.generic.check_every
             step!(state, milp)
+            next_progress!(prog, state)
         end
         must_terminate = termination_check!(state, milp, algo)
         maybe_restart!(!must_terminate & restart_check!(state, milp, algo), state, algo)
     end
+    finish_progress!(prog)
     return state
 end
 

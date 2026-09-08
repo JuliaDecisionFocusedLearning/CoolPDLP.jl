@@ -103,3 +103,57 @@ end
         @test stats.termination_status != MOI.OPTIMAL
     end
 end
+
+@testset "Error history" begin
+    Random.seed!(0)
+    milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
+    check_every, max_kkt_passes = 10, 100
+
+    @testset "$alg" for alg in (PDHG, PDLP)
+        algo = alg(;
+            termination_reltol = 0.0, check_every, max_kkt_passes,
+            record_error_history = true,
+        )
+        _, stats = solve(milp, algo)
+        history = stats.error_history
+
+        # the history is actually recorded, not left at its single seed entry
+        @test length(history) > 1
+        @test length(history) == 1 + div(max_kkt_passes, check_every)
+
+        passes, errors = first.(history), last.(history)
+
+        # it is indexed by the number of KKT passes, starting at the initial point
+        @test first(passes) == 0
+        @test issorted(passes)
+        @test last(passes) == stats.kkt_passes
+
+        recorded = map(CoolPDLP.relative, errors)
+
+        # the seed is the initial point, whose errors must be filled in rather than left NaN
+        @test all(isfinite, recorded)
+        # the history must not be the same value repeated: it tracks an evolving quantity
+        @test first(recorded) != last(recorded)
+        # the last entry reflects the errors the algorithm actually terminated on
+        @test last(recorded) == CoolPDLP.relative(stats.err)
+
+        # every entry is an independent snapshot: mutating the live errors afterwards, as
+        # `kkt_errors!` does on every check, must not rewrite what was already recorded
+        @test all(err -> err !== stats.err, errors)
+        @test allunique(map(objectid, errors))
+        stats.err.primal += 1
+        @test map(CoolPDLP.relative, last.(stats.error_history)) == recorded
+    end
+
+    @testset "disabled: $alg" for alg in (PDHG, PDLP)
+        algo = alg(;
+            termination_reltol = 0.0, check_every, max_kkt_passes,
+            record_error_history = false,
+        )
+        _, stats = solve(milp, algo)
+        # only the seed entry survives, and it is still a usable snapshot
+        @test length(stats.error_history) == 1
+        @test first(first(stats.error_history)) == 0
+        @test isfinite(CoolPDLP.relative(last(first(stats.error_history))))
+    end
+end
