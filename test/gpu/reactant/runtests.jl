@@ -29,7 +29,7 @@ state = initialize(milp, sol, algo; starting_time = time());
 
 milp_r = to_rarray(milp; track_numbers = true);
 state_r = to_rarray(state; track_numbers = true);
-algo_r = to_rarray(algo; track_numbers = true)
+algo_r = to_rarray(algo; track_numbers = true);
 
 @test_nowarn compiled_step! = @compile CoolPDLP.step!(state_r, milp_r)
 @test_nowarn compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
@@ -37,5 +37,5 @@ algo_r = to_rarray(algo; track_numbers = true)
 compiled_step! = @compile CoolPDLP.step!(state_r, milp_r)
 compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
 
-@test_nowarn compiled_step!(deepcopy(state_r), milp_r)
-@test_nowarn compiled_solve!(deepcopy(state_r), milp_r, algo_r)
+@test_nowarn compiled_step!(deepcopy(state_r), milp_r);
+@test_nowarn compiled_solve!(deepcopy(state_r), milp_r, algo_r);
