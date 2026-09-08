@@ -5,13 +5,13 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct TerminationParameters{T <: Number, I <: Number}
+@kwdef struct TerminationParameters{T <: Number, I <: Number, F <: Number}
     "tolerance on KKT relative errors to decide termination"
     termination_reltol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
     "time limit in seconds"
-    time_limit::Float64
+    time_limit::F
 end
 
 function Base.show(io::IO, params::TerminationParameters)
@@ -27,37 +27,37 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct ConvergenceStats{T <: BatchedNumber}
+mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number}
     "current KKT error"
     err::KKTErrors{T}
     "time at which the algorithm started, in seconds"
-    starting_time::Float64
+    starting_time::F
     "time elapsed since the algorithm started, in seconds"
-    time_elapsed::Float64
+    time_elapsed::F
     "number of multiplications by both the KKT matrix and its transpose"
-    kkt_passes::Int
+    kkt_passes::I
     "termination status (should be `MOI.OPTIMIZE_NOT_CALLED` until the algorithm actually terminates)"
     termination_status::MOI.TerminationStatusCode
     "history of KKT errors, indexed by number of KKT passes"
-    const error_history::Vector{Tuple{Int, KKTErrors{T}}}
+    const error_history::Vector{Tuple{I, KKTErrors{T}}}
+end
 
-    function ConvergenceStats(
-            err::KKTErrors{T};
-            starting_time = time(),
-            time_elapsed = 0.0,
-            kkt_passes = 0,
-            termination_status = MOI.OPTIMIZE_NOT_CALLED,
-            error_history = Tuple{Int, KKTErrors{T}}[]
-        ) where {T}
-        return new{T}(
-            err,
-            starting_time,
-            time_elapsed,
-            kkt_passes,
-            termination_status,
-            error_history
-        )
-    end
+function ConvergenceStats(
+        err::KKTErrors{T};
+        starting_time = time(),
+        time_elapsed = 0.0,
+        kkt_passes = 0,
+        termination_status = MOI.OPTIMIZE_NOT_CALLED,
+        error_history = Tuple{Int, KKTErrors{T}}[]
+    ) where {T}
+    return ConvergenceStats{T, Float64, Int}(
+        err,
+        starting_time,
+        time_elapsed,
+        kkt_passes,
+        termination_status,
+        error_history
+    )
 end
 
 function instance(stats::ConvergenceStats, i::Int)

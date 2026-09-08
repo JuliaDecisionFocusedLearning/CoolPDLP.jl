@@ -5,13 +5,13 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct GenericParameters{I <: Number}
+@kwdef struct GenericParameters{I <: Number, B}
     "whether to show a progress bar"
-    show_progress::Bool
+    show_progress::B
     "frequency of restart or termination checks"
     check_every::I
     "whether or not to record error evolution"
-    record_error_history::Bool
+    record_error_history::B
 end
 
 function Base.show(io::IO, params::GenericParameters)

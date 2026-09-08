@@ -52,7 +52,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDHG, T};
+        algo::Algorithm{:PDHG};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)

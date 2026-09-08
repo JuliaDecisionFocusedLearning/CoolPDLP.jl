@@ -7,29 +7,29 @@ $(TYPEDFIELDS)
 """
 struct Algorithm{
         A,
-        cT <: Number,
-        cTi <: Number,
-        M <: AbstractMatrix,
-        B <: Union{Backend, Nothing},
-        T <: Number,
-        R <: RestartParameters{T},
+        C <: ConversionParameters,
+        P <: PreconditioningParameters,
+        S <: StepSizeParameters,
+        R <: RestartParameters,
+        G <: GenericParameters,
+        T <: TerminationParameters,
     }
-    conversion::ConversionParameters{cT, cTi, M, B}
-    preconditioning::PreconditioningParameters{T}
-    step_size::StepSizeParameters{T}
+    conversion::C
+    preconditioning::P
+    step_size::S
     restart::R
-    generic::GenericParameters
-    termination::TerminationParameters{T}
+    generic::G
+    termination::T
 
     function Algorithm{A}(
-            conversion::ConversionParameters{cT, cTi, M, B},
-            preconditioning::PreconditioningParameters{T},
-            step_size::StepSizeParameters{T},
+            conversion::C,
+            preconditioning::P,
+            step_size::S,
             restart::R,
-            generic::GenericParameters,
-            termination::TerminationParameters{T},
-        ) where {A, cT, cTi, M, B, T, R}
-        return new{A, cT, cTi, M, B, T, R}(
+            generic::G,
+            termination::T,
+        ) where {A, C, P, S, R, G, T}
+        return new{A, C, P, S, R, G, T}(
             conversion,
             preconditioning,
             step_size,
@@ -287,4 +287,17 @@ end
 
 function get_solution(state::AbstractState, milp::MILP)
     return unprecondition(state.sol, Preconditioner(milp))
+end
+
+function no_conversion(alg::Algorithm{A}) where {A}
+    (; preconditioning, step_size, restart, generic, termination) = alg
+    no_conversion = ConversionParameters()
+    return Algorithm{A}(
+        no_conversion,
+        preconditioning,
+        step_size,
+        restart,
+        generic,
+        termination
+    )
 end
