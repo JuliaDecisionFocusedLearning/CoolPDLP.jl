@@ -12,7 +12,7 @@ end
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = set_eltype(T, c),
@@ -26,6 +26,7 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
         D2 = set_eltype(T, D2),
         int_var,
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -52,7 +53,7 @@ end
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c,
@@ -66,6 +67,7 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
         D2,
         int_var,
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -80,7 +82,7 @@ Convert the sparse matrices inside `milp` using constructor `M`.
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     A_M = M(A)
     At_M = M(At)
@@ -98,6 +100,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         D2 = adapt(backend, D2),
         int_var = adapt(backend, int_var),
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -111,7 +114,7 @@ end
 function Adapt.adapt_structure(to, milp::MILP)
     (;
         c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = adapt(to, c),
@@ -125,6 +128,7 @@ function Adapt.adapt_structure(to, milp::MILP)
         D2 = adapt(to, D2),
         int_var = adapt(to, int_var),
         var_names,
+        con_names,
         dataset,
         name,
         path

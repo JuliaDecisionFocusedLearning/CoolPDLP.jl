@@ -39,10 +39,12 @@ The result must have the shape of the original problem, which `state` memorized,
 and array types of `sol_reduced`, which the algorithm produced: `solve` hands it straight back to
 the caller without converting it any further.
 
-Implementations that cannot reconstruct the dual solution (e.g. because the underlying tool's
-interface is primal-only, like [`PaPILOPresolver`](@ref)'s) should fill it with `NaN` rather
-than `0.0`: `NaN` propagates loudly through any arithmetic that touches it, rather than being
-mistaken for a real (zero) dual value.
+Both halves of the solution must be mapped back: `solve` recomputes the KKT errors of the result
+on the original problem, so a dual that is not postsolved shows up as a solution that misses the
+requested tolerance. Implementations that genuinely cannot reconstruct the dual (because the
+underlying tool's interface is primal-only) should fill it with `NaN` rather than `0.0`: `NaN`
+propagates loudly through any arithmetic that touches it, rather than being mistaken for a real
+(zero) dual value.
 """
 function postsolve end
 
@@ -52,15 +54,16 @@ function postsolve end
 Write `milp` to an MPS file at `path`, using a [JuMP](https://github.com/jump-dev/JuMP.jl)
 model as an intermediate representation.
 
-Every variable bound is set explicitly (even when infinite), so that reading the file back
-does not depend on the default bounds assumed by the MPS format.
+Variables and constraints are written under the MILP's own `var_names` and `con_names`, which
+is what lets a solution file produced by an external tool be matched back to the columns and
+rows of the problem.
 """
 function milp_to_mps(milp::MILP, path::AbstractString)
     isbatched(milp) && throw(ArgumentError("Cannot write a batched MILP to an MPS file"))
     # MPS is a plain-text, `Float64` format, and JuMP only understands host arrays, so the
     # problem is brought back to the CPU whatever backend and matrix type it lived on
     milp_cpu = adapt(CPU(), milp)
-    (; c, lv, uv, lc, uc, int_var, var_names) = milp_cpu
+    (; c, lv, uv, lc, uc, int_var, var_names, con_names) = milp_cpu
     A = SparseMatrixCSC(milp_cpu.A)  # JuMP needs a host CSC matrix to build `A * x`
     n = nbvar(milp_cpu)
 
@@ -75,7 +78,7 @@ function milp_to_mps(milp::MILP, path::AbstractString)
     JuMP.@objective(model, Min, dot(c, x))
 
     cons = JuMP.@constraint(model, lc .<= A * x .<= uc)
-    JuMP.set_name.(cons, "R" .* string.(eachindex(cons)))
+    JuMP.set_name.(cons, con_names)
 
     JuMP.write_to_file(model, path; format = MOI.FileFormats.FORMAT_MPS)
     return path
@@ -100,8 +103,8 @@ hands back, so a file-based presolver has nothing else to do.
 
 !!! note
     Constraints are grouped by JuMP constraint type, so the row order of the result need not
-    match the row order of the file. The row *set* is preserved, which is all the algorithm
-    cares about.
+    match the row order of the file. The row *set* is preserved, and `con_names` keeps track of
+    which row of the result is which row of the file.
 """
 function mps_to_milp(path::AbstractString; kwargs...)
     model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
@@ -136,6 +139,7 @@ function mps_to_milp(path::AbstractString; kwargs...)
 
     rows_i, rows_j, rows_v = Int[], Int[], Float64[]
     lc, uc = Float64[], Float64[]
+    con_names = String[]
     row = 0
     for (F, S) in JuMP.list_of_constraint_types(model)
         # variable bounds and integrality restrictions were already read above
@@ -157,57 +161,18 @@ function mps_to_milp(path::AbstractString; kwargs...)
             li, ui = _setbounds(cobj.set)
             push!(lc, li)
             push!(uc, ui)
+            push!(con_names, JuMP.name(cref))
         end
     end
     m = row
     A = sparse(rows_i, rows_j, rows_v, m, n)
     At = sparse(rows_j, rows_i, rows_v, n, m)
 
-    return MILP(; c, lv, uv, A, At, lc, uc, int_var, var_names, kwargs...)
+    return MILP(; c, lv, uv, A, At, lc, uc, int_var, var_names, con_names, kwargs...)
 end
 
 """
-    write_sol_file(path, x, var_names, obj)
-
-Write the primal vector `x` (indexed like `var_names`) with objective value `obj` to `path`, in
-the plain-text `.sol` solution format shared by SCIP, PaPILO and several other solvers in the
-SCIP ecosystem: an `=obj=` header line, then one `name value` line per variable.
-"""
-function write_sol_file(
-        path::AbstractString, x::AbstractVector, var_names::Vector{String}, obj::Number
-    )
-    open(path, "w") do io
-        println(io, "=obj= ", obj)
-        for (name, xi) in zip(var_names, x)
-            println(io, name, " ", xi)
-        end
-    end
-    return path
-end
-
-"""
-    read_sol_file(path, var_names)
-
-Parse a plain-text `.sol` file (the format shared by SCIP, PaPILO and several other solvers in
-the SCIP ecosystem), returning a vector of values indexed like `var_names`. Variables absent
-from the file default to zero.
-"""
-function read_sol_file(path::AbstractString, var_names::Vector{String})
-    x = zeros(length(var_names))
-    idx = Dict(name => j for (j, name) in enumerate(var_names))
-    for line in eachline(path)
-        startswith(line, "=obj=") && continue
-        tokens = split(line)
-        isempty(tokens) && continue
-        j = get(idx, tokens[1], nothing)
-        isnothing(j) && continue
-        x[j] = parse(Float64, tokens[2])
-    end
-    return x
-end
-
-"""
-    PaPILOPresolver(; verbose = false)
+    PaPILOPresolver(; verbose = false, dual_postsolve = true)
 
 The [`AbstractPresolver`](@ref) built into CoolPDLP: round-trips `milp` through MPS files and
 calls [PaPILO.jl](https://github.com/scipopt/PaPILO.jl)'s `presolve`/`postsolve` commands.
@@ -225,10 +190,20 @@ $(TYPEDFIELDS)
 struct PaPILOPresolver <: AbstractPresolver
     "whether to let PaPILO print its own progress to `stdout`"
     verbose::Bool
+    """
+    whether to recover the dual solution as well as the primal one. PaPILO only records the
+    information needed for that when presolving is restricted to the reductions that support
+    it, which leaves a larger reduced problem, and it never records it for a problem with
+    integer variables, on which `presolve` therefore throws when this is set
+    """
+    dual_postsolve::Bool
 
-    PaPILOPresolver(; verbose::Bool = false) = new(verbose)
+    function PaPILOPresolver(; verbose::Bool = false, dual_postsolve::Bool = true)
+        return new(verbose, dual_postsolve)
+    end
 end
 
 function Base.show(io::IO, presolver::PaPILOPresolver)
-    return print(io, "PaPILOPresolver(verbose=$(presolver.verbose))")
+    (; verbose, dual_postsolve) = presolver
+    return print(io, "PaPILOPresolver(verbose=$verbose, dual_postsolve=$dual_postsolve)")
 end

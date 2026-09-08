@@ -258,11 +258,87 @@ end
         algo::Algorithm{A, T, Ti, M, B, R, P}
     ) where {A, T, Ti, M, B, R, P <: AbstractPresolver}
     isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
+    starting_time = time()
     milp_reduced, presolve_state = presolve(algo.presolver, milp_init_cpu)
     sol_init_reduced = PrimalDualSolution(milp_reduced)
-    sol_reduced, stats = solve(milp_reduced, sol_init_reduced, algo)
-    sol = postsolve(algo.presolver, presolve_state, sol_reduced)
+    sol_reduced, stats_reduced = solve(milp_reduced, sol_init_reduced, algo)
+    sol_postsolved = postsolve(algo.presolver, presolve_state, sol_reduced)
+    sol, stats = polish(sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
+    stats.starting_time = starting_time
+    stats.time_elapsed = time() - starting_time
     return sol, stats
+end
+
+"""
+    polish(sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
+
+Turn a solution of the reduced problem, mapped back by [`postsolve`](@ref), into a solution of
+the problem the caller actually asked about, and return it with its own stats.
+
+Solving the reduced problem to `termination_reltol` does not guarantee that much on the original
+problem: postsolve reintroduces the eliminated rows and columns, and a presolver's dual
+reconstruction can be far off when it is handed an inexact solution to begin with. So the KKT
+errors are recomputed on `milp_init_cpu`, and if they miss the tolerance, `sol_postsolved`
+warm-starts an ordinary solve of the original problem — usually a short one, since it starts
+near the answer — which reports on the right problem by construction.
+
+That polish shares the budget of the whole call: it gets whatever KKT passes and time the solve
+of the reduced problem left over, and its `kkt_passes` count includes them. When there is no
+budget left to polish with, the postsolved solution is returned as is and an `OPTIMAL` status
+that the recomputed errors do not back up is demoted to `ALMOST_OPTIMAL`.
+"""
+function polish(
+        sol_postsolved::PrimalDualSolution,
+        stats_reduced::ConvergenceStats,
+        milp_init_cpu::MILP,
+        algo::Algorithm{A, T, Ti, M, B, R},
+        starting_time::Float64,
+    ) where {A, T, Ti, M, B, R}
+    (; termination_reltol, max_kkt_passes, time_limit) = algo.termination
+    milp = perform_conversion(milp_init_cpu, algo.conversion)
+    kkt_errors!(stats_reduced.err, Scratch(sol_postsolved), sol_postsolved, milp)
+    solved = batched_all(<=(termination_reltol), relative(stats_reduced.err))
+    passes_left = max_kkt_passes - stats_reduced.kkt_passes
+    time_left = time_limit - (time() - starting_time)
+    if solved || passes_left <= 0 || time_left <= 0
+        if !solved && stats_reduced.termination_status === MOI.OPTIMAL
+            stats_reduced.termination_status = MOI.ALMOST_OPTIMAL
+        end
+        return sol_postsolved, stats_reduced
+    end
+
+    algo_polish = Algorithm{A, T, Ti, M, B, R, Nothing}(
+        algo.conversion,
+        algo.preconditioning,
+        algo.step_size,
+        algo.restart,
+        algo.generic,
+        TerminationParameters(;
+            termination_reltol,
+            max_kkt_passes = passes_left,
+            time_limit = time_left,
+        ),
+        nothing,
+    )
+    sol, stats = solve(milp_init_cpu, warm_start(sol_postsolved), algo_polish)
+    stats.kkt_passes += stats_reduced.kkt_passes
+    return sol, stats
+end
+
+"""
+    warm_start(sol_postsolved)
+
+Turn a postsolved solution into a starting point for a host solve of the original problem.
+
+A presolver that cannot reconstruct the dual fills it with `NaN` (see [`postsolve`](@ref)), and
+a `NaN` start would poison every iterate that follows, so the non-finite entries are replaced by
+zeros rather than carried over. The finite ones, primal included, are kept: they are the whole
+point of starting from here.
+"""
+function warm_start(sol_postsolved::PrimalDualSolution)
+    sol_cpu = adapt(CPU(), sol_postsolved)
+    finite_or_zero(v) = ifelse(isfinite(v), v, zero(v))
+    return PrimalDualSolution(map(finite_or_zero, sol_cpu.x), map(finite_or_zero, sol_cpu.y))
 end
 
 """
