@@ -288,16 +288,3 @@ end
 function get_solution(state::AbstractState, milp::MILP)
     return unprecondition(state.sol, Preconditioner(milp))
 end
-
-function no_conversion(alg::Algorithm{A}) where {A}
-    (; preconditioning, step_size, restart, generic, termination) = alg
-    no_conversion = ConversionParameters()
-    return Algorithm{A}(
-        no_conversion,
-        preconditioning,
-        step_size,
-        restart,
-        generic,
-        termination
-    )
-end
