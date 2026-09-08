@@ -23,7 +23,7 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber,
+        T <: Number, V <: AbstractVecOrMat{T},
         SS <: StepSizes, Sc <: Scratch, CS <: ConvergenceStats,
     } <: AbstractState{T, V}
     "current solution"
