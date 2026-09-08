@@ -1,5 +1,4 @@
 using CoolPDLP
-using CoolPDLP: custom_to_rarray
 using MathOptBenchmarkInstances
 using Reactant
 using Reactant: to_rarray
