@@ -31,5 +31,8 @@ milp_r = to_rarray(milp; track_numbers = true);
 state_r = to_rarray(state; track_numbers = true);
 algo_r = to_rarray(algo; track_numbers = true)
 
+stats_r = state_r.stats
+stats_r.error_history
+
 compiled_step! = @compile CoolPDLP.step!(state_r, milp_r)
 compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)

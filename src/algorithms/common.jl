@@ -278,10 +278,10 @@ function termination_check!(
     (; sol, scratch, stats) = state
     stats.time_elapsed = time() - stats.starting_time
     kkt_errors!(stats.err, scratch, sol, milp)
-    if algo.generic.record_error_history
-        push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
-    end
-    stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
+    # @trace if algo.generic.record_error_history
+    #     push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
+    # end
+    set_termination_status!!(stats, scratch.b1, algo.termination)
     return stats.termination_status !== MOI.OPTIMIZE_NOT_CALLED
 end
 

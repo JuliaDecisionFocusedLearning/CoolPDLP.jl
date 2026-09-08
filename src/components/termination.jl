@@ -39,18 +39,19 @@ mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number}
     "termination status (should be `MOI.OPTIMIZE_NOT_CALLED` until the algorithm actually terminates)"
     termination_status::MOI.TerminationStatusCode
     "history of KKT errors, indexed by number of KKT passes"
-    const error_history::Vector{Tuple{I, KKTErrors{T}}}
+    error_history::Vector{Tuple{I, KKTErrors{T}}}
 end
 
 function ConvergenceStats(
         err::KKTErrors{T};
         starting_time = time(),
         time_elapsed = 0.0,
-        kkt_passes = 0,
+        kkt_passes::I = 0,
         termination_status = MOI.OPTIMIZE_NOT_CALLED,
-        error_history = Tuple{Int, KKTErrors{T}}[]
-    ) where {T}
-    return ConvergenceStats{T, Float64, Int}(
+        error_history = [(kkt_passes, err)]
+    ) where {T, I}
+    F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
+    return ConvergenceStats{T, F, I}(
         err,
         starting_time,
         time_elapsed,
@@ -77,30 +78,35 @@ function Base.show(io::IO, stats::ConvergenceStats)
         io,
         """Convergence stats with termination status $termination_status:
         - $err
-        - time elapsed: $(round(time_elapsed; digits = 3)) seconds
+        - time elapsed: $time_elapsed seconds
         - KKT passes: $kkt_passes""",
     )
 end
 
 """
-    termination_status!!(dest, stats, params)
+    set_termination_status!!(stats, dest, params)
 
 Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
 """
-function termination_status!!(
-        dest::BatchedNumber, stats::ConvergenceStats, params::TerminationParameters
+function set_termination_status!!(
+        stats::ConvergenceStats,
+        dest::BatchedNumber,
+        params::TerminationParameters
     )
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
-    if batched_all(<=(termination_reltol), relative!!(dest, err))
-        return MOI.OPTIMAL
-    elseif time_elapsed >= time_limit
-        return MOI.TIME_LIMIT
-    elseif kkt_passes >= max_kkt_passes
-        return MOI.ITERATION_LIMIT
-    else
-        return MOI.OPTIMIZE_NOT_CALLED
+    is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
+    # Reactant doesn't like `elseif`, see https://github.com/EnzymeAD/Reactant.jl/issues/2563#issuecomment-5584197336
+    @trace if is_optimal
+        stats.termination_status = MOI.OPTIMAL
     end
+    @trace if time_elapsed >= time_limit
+        stats.termination_status = MOI.TIME_LIMIT
+    end
+    @trace if kkt_passes >= max_kkt_passes
+        stats.termination_status = MOI.ITERATION_LIMIT
+    end
+    return nothing
 end
 
 function should_terminate!!(
