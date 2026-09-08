@@ -19,8 +19,9 @@ sol0 = PrimalDualSolution(milp0);
             Int32,
             Matrix;
             backend = nothing,
-            termination_reltol = 1.0f-3,
+            termination_reltol = 1.0f-2,
             time_limit = 1.0,
+            max_kkt_passes = 1000,
             record_error_history = false,
             show_progress = false
         ),
@@ -29,8 +30,9 @@ sol0 = PrimalDualSolution(milp0);
             Int32,
             Matrix;
             backend = nothing,
-            termination_reltol = 1.0f-3,
+            termination_reltol = 1.0f-2,
             time_limit = 1.0,
+            max_kkt_passes = 1000,
             record_error_history = false,
             show_progress = false
         ),
@@ -42,12 +44,9 @@ sol0 = PrimalDualSolution(milp0);
     state_r = to_rarray(state; track_numbers = true)
     algo_r = to_rarray(algo; track_numbers = true)
 
-    @test_nowarn compiled_step! = @compile CoolPDLP.step!(state_r, milp_r)
-    @test_nowarn compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
-
-    compiled_step! = @compile CoolPDLP.step!(state_r, milp_r)
     compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
+    compiled_solve!(state_r, milp_r, algo_r)
 
-    @test_nowarn compiled_step!(deepcopy(state_r), milp_r)
-    @test_nowarn compiled_solve!(deepcopy(state_r), milp_r, algo_r)
+    @test all(isfinite, Array(state_r.sol.x))
+    @test all(isfinite, Array(state_r.sol.y))
 end

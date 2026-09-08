@@ -106,5 +106,5 @@ function step!(
 
     # other updates
     state.stats.kkt_passes += 1
-    return state, milp
+    return nothing
 end
