@@ -261,7 +261,11 @@ end
     starting_time = time()
     milp_reduced, presolve_state = presolve(algo.presolver, milp_init_cpu)
     sol_init_reduced = PrimalDualSolution(milp_reduced)
-    sol_reduced, stats_reduced = solve(milp_reduced, sol_init_reduced, algo)
+    # every phase is charged to the budget of the call as a whole, presolve included
+    algo_reduced = with_budget(
+        algo, algo.termination.max_kkt_passes, algo.termination.time_limit - (time() - starting_time)
+    )
+    sol_reduced, stats_reduced = solve(milp_reduced, sol_init_reduced, algo_reduced)
     sol_postsolved = postsolve(algo.presolver, presolve_state, sol_reduced)
     sol, stats = polish(sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
     stats.starting_time = starting_time
@@ -307,22 +311,36 @@ function polish(
         return sol_postsolved, stats_reduced
     end
 
-    algo_polish = Algorithm{A, T, Ti, M, B, R, Nothing}(
+    algo_polish = with_budget(algo, passes_left, time_left)
+    sol, stats = solve(milp_init_cpu, warm_start(sol_postsolved), algo_polish)
+    stats.kkt_passes += stats_reduced.kkt_passes
+    return sol, stats
+end
+
+"""
+    with_budget(algo, max_kkt_passes, time_limit)
+
+Copy `algo` with a new KKT-pass and time budget, and without its presolver.
+
+A presolved solve runs the algorithm more than once, on the reduced problem and then possibly on
+the original one, so each phase gets what the previous ones left of the budget the caller set for
+the call as a whole. Dropping the presolver is what keeps `solve` from presolving all over again.
+"""
+function with_budget(
+        algo::Algorithm{A, T, Ti, M, B, R}, max_kkt_passes::Integer, time_limit::Real
+    ) where {A, T, Ti, M, B, R}
+    termination = TerminationParameters(;
+        algo.termination.termination_reltol, max_kkt_passes, time_limit = Float64(time_limit)
+    )
+    return Algorithm{A, T, Ti, M, B, R, Nothing}(
         algo.conversion,
         algo.preconditioning,
         algo.step_size,
         algo.restart,
         algo.generic,
-        TerminationParameters(;
-            termination_reltol,
-            max_kkt_passes = passes_left,
-            time_limit = time_left,
-        ),
+        termination,
         nothing,
     )
-    sol, stats = solve(milp_init_cpu, warm_start(sol_postsolved), algo_polish)
-    stats.kkt_passes += stats_reduced.kkt_passes
-    return sol, stats
 end
 
 """
