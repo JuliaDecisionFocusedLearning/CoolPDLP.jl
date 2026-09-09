@@ -66,9 +66,9 @@ function solve_plain_and_compiled(algo::CoolPDLP.Algorithm)
     return state, state_r
 end
 
-# `time_limit` is deliberately left out: the compiled loop cannot call `time()` at each
-# iteration, so a binding time limit would stop the two runs after different numbers of
-# iterations and make them incomparable. The KKT pass budget bounds the runtime instead.
+# `time_limit` is deliberately left out. The compiled loop does read the clock at each check
+# now, so a binding time limit would stop the two runs after different numbers of iterations
+# and make them incomparable. The KKT pass budget bounds the runtime instead.
 configs = [
     (:PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
     (:PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
@@ -112,5 +112,51 @@ configs = [
             err_r = unwrap(getfield(state_r.stats.err, field))
             @test isapprox(err_r, err; rtol)
         end
+    end
+end
+
+@testset verbose = true "Time limit" begin
+    # `termination_reltol` is unreachable and the KKT budget is far away, so the time limit is
+    # the only thing that can stop this solve. The budget is still finite, to bound the damage
+    # if the limit stops working.
+    time_limit = 0.5
+    max_kkt_passes = 20_000
+    algo = PDLP(
+        Float64,
+        Int64,
+        Matrix;
+        backend = nothing,
+        termination_reltol = 1.0e-12,
+        time_limit,
+        max_kkt_passes,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    milp, sol = preprocess(milp0, sol0, algo)
+    state = initialize(milp, sol, algo; starting_time = time())
+
+    milp_r = to_rarray(milp; track_numbers = true)
+    state_r = to_rarray(state; track_numbers = true)
+    algo_r = to_rarray(algo; track_numbers = true)
+
+    compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
+    # compilation happens after `initialize`, and counts against the time limit like any other
+    # elapsed time, so restart the clock now that it is over
+    state_r.stats.starting_time = to_rarray(time(); track_numbers = true)
+    compiled_solve!(state_r, milp_r, algo_r)
+
+    elapsed = unwrap(state_r.stats.time_elapsed)
+    passes = unwrap(state_r.stats.kkt_passes)
+
+    @testset "The clock advances inside the compiled loop" begin
+        # without the host callback, `time()` is folded to its trace-time value and the elapsed
+        # time is a constant fixed before the run, here a negative one
+        @test elapsed > 0
+    end
+
+    @testset "The solve stops on the time limit" begin
+        @test elapsed >= time_limit
+        @test passes < max_kkt_passes
     end
 end

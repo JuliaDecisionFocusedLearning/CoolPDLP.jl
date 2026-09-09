@@ -1,4 +1,17 @@
 """
+    current_time()
+
+Return the current time in seconds, like `Base.time()`.
+
+This indirection exists for Reactant. `time()` is an ordinary Julia call, so tracing it folds
+its trace-time value into the compiled program as a constant: the elapsed time would never
+advance inside a compiled solve loop and the time limit could never fire. The `Reactant`
+extension overlays this method with a host callback, which is re-evaluated at every iteration
+of the compiled loop.
+"""
+current_time() = time()
+
+"""
     TerminationParameters
 
 # Fields
@@ -44,7 +57,7 @@ end
 
 function ConvergenceStats(
         err::KKTErrors{T};
-        starting_time = time(),
+        starting_time = current_time(),
         time_elapsed = 0.0,
         kkt_passes::I = 0,
         termination_status = MOI.OPTIMIZE_NOT_CALLED,
@@ -100,7 +113,7 @@ function set_termination_status!!(
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
     is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
-    is_time_limit = time_elapsed >= time_limit  # TODO: trace with Reactant (maybe Reactant.Ops.julia_callback(time, ((Float64, ()),); has_side_effect = true))
+    is_time_limit = time_elapsed >= time_limit
     is_iteration_limit = kkt_passes >= max_kkt_passes
     # Reactant doesn't like `elseif`, see https://github.com/EnzymeAD/Reactant.jl/issues/2563#issuecomment-5584197336
     # The branches are ordered by increasing priority, so that the last write wins.
