@@ -83,7 +83,7 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp)
+    kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
     restart_stats.err_restart = copy(err)
     stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;

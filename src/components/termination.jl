@@ -100,7 +100,7 @@ function set_termination_status!!(
     (; err, time_elapsed, kkt_passes) = stats
     (; termination_reltol, time_limit, max_kkt_passes) = params
     is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
-    is_time_limit = time_elapsed >= time_limit
+    is_time_limit = time_elapsed >= time_limit  # TODO: trace with Reactant (maybe Reactant.Ops.julia_callback(time, ((Float64, ()),); has_side_effect = true))
     is_iteration_limit = kkt_passes >= max_kkt_passes
     # Reactant doesn't like `elseif`, see https://github.com/EnzymeAD/Reactant.jl/issues/2563#issuecomment-5584197336
     # The branches are ordered by increasing priority, so that the last write wins.
