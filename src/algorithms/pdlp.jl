@@ -154,6 +154,16 @@ function update_average!(state::PDLPState)
     return nothing
 end
 
+"""
+    restart_check!(state, milp, algo)
+
+Refresh the restart statistics of `state` and decide whether the next iteration should restart.
+
+Pick the better of the current and averaged iterates as the restart candidate, record which one
+it was (column by column) in `state.restart_stats.restart_from_avg`, and return the decision of
+[`should_restart`](@ref): a single boolean for the whole batch, which is what [`restart!`](@ref)
+is guarded by.
+"""
 function restart_check!(
         state::PDLPState,
         milp::MILP,
