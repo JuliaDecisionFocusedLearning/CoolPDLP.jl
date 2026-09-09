@@ -233,26 +233,33 @@ function solve(
     starting_time = time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    (; c, lv, uv) = milp
-    if nbcons(milp) == 0
-        # with no constraint rows, the box-constrained optimum can be read off `c` and the
-        # bounds directly, as long as the box is feasible and bounded in the direction `c`
-        # pushes towards (otherwise fall through to the general loop below, same as any other
-        # infeasible/unbounded problem: this package has no dedicated status for either, so it
-        # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
-        box_feasible = all(lv .<= uv)
-        bounded_below = !any(@. (c > 0) & isinf(lv))
-        bounded_above = !any(@. (c < 0) & isinf(uv))
-        if box_feasible && bounded_below && bounded_above
-            @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-            kkt_errors!(state.stats.err, state.scratch, sol, milp)
-            state.stats.time_elapsed = time() - starting_time
-            state.stats.termination_status = MOI.OPTIMAL
-            return get_solution(state, milp), state.stats
-        end
+    trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp)
+    if !trivial_solve
+        solve!(state, milp, algo)
     end
-    solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
+end
+
+function try_solve_noconstraints!(state::AbstractState, milp::MILP)
+    (; c, lv, uv) = milp
+    (; sol) = state
+    # with no constraint rows, the box-constrained optimum can be read off `c` and the
+    # bounds directly, as long as the box is feasible and bounded in the direction `c`
+    # pushes towards (otherwise fall through to the general loop below, same as any other
+    # infeasible/unbounded problem: this package has no dedicated status for either, so it
+    # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
+    box_feasible = all(lv .<= uv)
+    bounded_below = !any(@. (c > 0) & isinf(lv))
+    bounded_above = !any(@. (c < 0) & isinf(uv))
+    if box_feasible && bounded_below && bounded_above
+        @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
+        kkt_errors!(state.stats.err, state.scratch, sol, milp)
+        state.stats.time_elapsed = time() - state.convergence_stats.starting_time
+        state.stats.termination_status = MOI.OPTIMAL
+        return true
+    else
+        return false
+    end
 end
 
 function solve(
