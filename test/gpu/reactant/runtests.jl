@@ -119,6 +119,15 @@ end
 # backend can service; the extension falls back to the frozen trace-time clock when it cannot.
 const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
 
+@testset "Backend support for host callbacks" begin
+    @test REACTANT_EXT.host_callbacks_supported() isa Bool
+    # the fallback keeps a compiled solve working on backends that cannot run a callback: it
+    # reads the clock once, while tracing, and says so
+    frozen = @test_logs (:warn,) match_mode = :any REACTANT_EXT.frozen_clock()
+    @test frozen isa Float64
+    @test frozen > 0
+end
+
 if !REACTANT_EXT.host_callbacks_supported()
     @info "Skipping the time limit tests: this backend cannot run a host callback" REACTANT_PLATFORM
 else
