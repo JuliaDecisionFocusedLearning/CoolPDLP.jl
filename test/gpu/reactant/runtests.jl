@@ -5,6 +5,22 @@ using Reactant
 using Reactant: to_rarray
 using Test
 
+# The same test suite runs on CPU and on GPU; the Buildkite `cuda` queue sets this to "gpu".
+const REACTANT_BACKEND = get(ENV, "COOLPDLP_REACTANT_BACKEND", "cpu")
+Reactant.set_default_backend(REACTANT_BACKEND)
+const REACTANT_PLATFORM = Reactant.XLA.platform_name(Reactant.XLA.default_backend())
+@info "Running Reactant tests" REACTANT_BACKEND REACTANT_PLATFORM Reactant.devices()
+
+@testset "Requested backend is in use" begin
+    # Reactant falls back to the CPU client when no accelerator is available, which would
+    # let the GPU job pass green without ever touching the device
+    if REACTANT_BACKEND == "cpu"
+        @test lowercase(REACTANT_PLATFORM) == "cpu"
+    else
+        @test lowercase(REACTANT_PLATFORM) != "cpu"
+    end
+end
+
 dataset = Netlib
 list = list_instances(dataset);
 name = list[1]
