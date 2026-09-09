@@ -93,13 +93,6 @@ function initialize(
     return state
 end
 
-function maybe_restart!(should_restart, state, algo)
-    @trace if should_restart
-        restart!(state, algo)
-    end
-    return nothing
-end
-
 function solve!(
         state::PDLPState,
         milp::MILP,
@@ -113,7 +106,7 @@ function solve!(
             next_progress!(prog, state)
         end
         must_terminate = termination_check!(state, milp, algo)
-        maybe_restart!(!must_terminate & restart_check!(state, milp, algo), state, algo)
+        restart!(state, algo, !must_terminate & restart_check!(state, milp, algo))
     end
     finish_progress!(prog)
     return state
@@ -161,6 +154,16 @@ function update_average!(state::PDLPState)
     return nothing
 end
 
+"""
+    restart_check!(state, milp, algo)
+
+Refresh the restart statistics of `state` and decide whether the next iteration should restart.
+
+Pick the better of the current and averaged iterates as the restart candidate, record which one
+it was (column by column) in `state.restart_stats.restart_from_avg`, and return the decision of
+[`should_restart`](@ref): a single boolean for the whole batch, which is what [`restart!`](@ref)
+is guarded by.
+"""
 function restart_check!(
         state::PDLPState,
         milp::MILP,
@@ -210,28 +213,44 @@ function best_error!!(
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 
-function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
+"""
+    restart!(state, algo, should_restart = true)
+
+Restart the PDLP iterations from the candidate selected by [`restart_check!`](@ref), if `should_restart` holds.
+
+The condition guards the body from the inside instead of being a branch at the call site, for
+two reasons. ReactantCore cannot nest a `@trace if` inside the `@trace while` of [`solve!`](@ref),
+so the branch has to sit in a function of its own. And that function has to be this one: with a
+separate wrapper delegating to `restart!`, the `solve!` → wrapper → `restart!` chain becomes too
+deep for inference to see through every `DispatchDoctor.@stable` layer, the call degrades to a
+dynamic dispatch, and `algo` gets boxed on every single restart.
+"""
+function restart!(
+        state::PDLPState{T}, algo::Algorithm{:PDLP}, should_restart = true
+    ) where {T}
     (;
         sol, sol_avg, sol_restart,
         step_sizes, iteration, scratch, restart_stats,
     ) = state
 
-    # identify candidate, column by column
-    batched_select!(sol, restart_stats.restart_from_avg, sol_avg)
-    # the restart point is the candidate just selected, so its errors are already known
-    select_errors!!(
-        restart_stats.err_restart, restart_stats.restart_from_avg,
-        restart_stats.err_avg, restart_stats.err_current,
-    )
-    # update step sizes (must be done before losing previous restart)
-    reset_stepsize!(step_sizes)
-    step_sizes.ω = primal_weight_update!!(
-        scratch, step_sizes, sol, sol_restart, algo.step_size
-    )
-    # update solutions
-    zero!(sol_avg)
-    copy!(sol_restart, sol)
-    # update counters
-    add_outer!(iteration)
+    @trace if should_restart
+        # identify candidate, column by column
+        batched_select!(sol, restart_stats.restart_from_avg, sol_avg)
+        # the restart point is the candidate just selected, so its errors are already known
+        select_errors!!(
+            restart_stats.err_restart, restart_stats.restart_from_avg,
+            restart_stats.err_avg, restart_stats.err_current,
+        )
+        # update step sizes (must be done before losing previous restart)
+        reset_stepsize!(step_sizes)
+        step_sizes.ω = primal_weight_update!!(
+            scratch, step_sizes, sol, sol_restart, algo.step_size
+        )
+        # update solutions
+        zero!(sol_avg)
+        copy!(sol_restart, sol)
+        # update counters
+        add_outer!(iteration)
+    end
     return nothing
 end
