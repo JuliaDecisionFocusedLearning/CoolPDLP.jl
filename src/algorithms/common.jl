@@ -278,11 +278,55 @@ function termination_check!(
     (; sol, scratch, stats) = state
     stats.time_elapsed = time() - stats.starting_time
     kkt_errors!(stats.err, scratch, sol, milp)
-    # @trace if algo.generic.record_error_history
-    #     push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
-    # end
-    set_termination_status!!(stats, scratch.b1, algo.termination)
-    return stats.termination_status !== MOI.OPTIMIZE_NOT_CALLED
+    record_error_history!(stats, algo.generic.record_error_history)
+    return set_termination_status!!(stats, scratch.b1, algo.termination)
+end
+
+"""
+    record_error_history!(stats, record)
+
+Append a snapshot of the current errors to `stats.error_history` when `record` is `true`.
+
+Skipped inside a Reactant compilation context, where the history cannot be grown.
+"""
+function record_error_history!(stats::ConvergenceStats, record)
+    within_compile() && return nothing
+    if record
+        push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
+    end
+    return nothing
+end
+
+"""
+    init_progress(desc, show_progress)
+
+Build a progress bar, or `nothing` inside a Reactant compilation context, where it cannot be updated.
+"""
+function init_progress(desc::String, show_progress)
+    within_compile() && return nothing
+    return ProgressUnknown(; desc, enabled = show_progress)
+end
+
+"""
+    next_progress!(prog, state)
+
+Advance the progress bar built by [`init_progress`](@ref), unless it was skipped.
+"""
+function next_progress!(prog, state::AbstractState)
+    within_compile() && return nothing
+    next!(prog; showvalues = () -> prog_showvalues(state))
+    return nothing
+end
+
+"""
+    finish_progress!(prog)
+
+Close the progress bar built by [`init_progress`](@ref), unless it was skipped.
+"""
+function finish_progress!(prog)
+    within_compile() && return nothing
+    finish!(prog)
+    return nothing
 end
 
 function get_solution(state::AbstractState, milp::MILP)
