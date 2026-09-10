@@ -78,3 +78,69 @@ end
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
 end
+
+# `mul!` on a `GPUSparseMatrixCSR` picks a kernel from the matrix's average row length, so
+# the matrices above (at most nine nonzeros per row) only reach the narrow sub-groups. These
+# build one matrix per branch instead of hoping a random density lands in it.
+"""
+    banded_csr(m, n, nz_per_row)
+
+Sparse `m x n` matrix with exactly `nz_per_row` nonzeros in every row, at columns spread
+across the row so the kernels do a real gather rather than a contiguous read.
+"""
+function banded_csr(m, n, nz_per_row)
+    stride = max(n ÷ nz_per_row, 1)
+    I = repeat(1:m, inner = nz_per_row)
+    J = [mod1(1 + ((i + k) * stride) % n, n) for i in 1:m for k in 1:nz_per_row]
+    V = [float(i + k) for i in 1:m for k in 1:nz_per_row]
+    return sparse(I, J, V, m, n, +)
+end
+
+@testset "CSR sub-group sizes" begin
+    # row counts are deliberately not multiples of the workgroup size, so the padded launch
+    # has to discard its trailing work items
+    @testset "$nz_per_row nonzeros per row" for (m, n, nz_per_row, expected) in (
+            (1013, 40, 1, 1),
+            (1013, 40, 3, 2),
+            (1013, 40, 5, 4),
+            (1013, 60, 11, 8),
+            (523, 80, 20, 16),
+            (523, 150, 41, 32),
+            (523, 150, 130, 32),
+        )
+        A = banded_csr(m, n, nz_per_row)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        @test CoolPDLP.subgroup_size(A_jl) == expected
+        b, c = rand(n), rand(m)
+        @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        @test mul!(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        B, C = rand(n, 3), rand(m, 3)
+        @test mul!(jl(copy(C)), A_jl, jl(B), α, β) ≈ α * (A * B) + β * C
+        @test mul!(jl(fill(NaN, m, 3)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+
+    # a few very long rows next to empty ones: the shape that sub-groups exist to handle,
+    # and the one where a row spans several passes of the strided inner loop
+    @testset "skewed rows" begin
+        m, n = 401, 260
+        A = banded_csr(m, n, 6)
+        A[3, :] .= 0
+        A[4, :] .= 0
+        A[7, :] = 1:n
+        A[m, :] = 1:n
+        A = sparse(A)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        b, c = rand(n), rand(m)
+        @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        @test mul!(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        B = rand(n, 2)
+        @test mul!(jl(fill(NaN, m, 2)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+
+    @testset "no nonzeros at all" begin
+        A = spzeros(37, 21)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        @test CoolPDLP.subgroup_size(A_jl) == 1
+        @test mul!(jl(fill(NaN, 37)), A_jl, jl(rand(21)), 1.0, 0.0) ≈ zeros(37)
+    end
+end
