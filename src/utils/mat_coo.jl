@@ -53,7 +53,7 @@ end
 
 function GPUSparseMatrixCOO(A::SparseMatrixCSC{T, Ti}) where {T, Ti}
     # `findnz(A)` lists the nonzeros column by column; transposing first lists them row by
-    # row, which is what lets [`spmv_coo!`](@ref) accumulate a whole row before touching
+    # row, which is what lets `spmv_coo!` accumulate a whole row before touching
     # `c`. Any order gives the right answer, this one just gives fewer atomics.
     At = SparseMatrixCSC(transpose(A))
     colval, rowval, nzval = findnz(At)
@@ -91,8 +91,8 @@ stored in; fast when they are grouped by row, which is how [`GPUSparseMatrixCOO`
 builds them.
 
 Work is split by nonzero rather than by row, so a matrix with one enormous row costs no
-more here than an even one -- unlike [`spmv_csr!`](@ref), whose sub-groups still have to
-walk the longest row.
+more here than an even one, which is not true of the CSR kernels: they divide the work by
+row, so whoever gets the longest row sets the pace.
 
 `c` must already hold `β * c` on entry.
 """
