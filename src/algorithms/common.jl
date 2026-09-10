@@ -230,7 +230,7 @@ function solve(
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm
     )
-    starting_time = time()
+    starting_time = current_time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
     trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp)
@@ -254,7 +254,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP)
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
         kkt_errors!(state.stats.err, state.scratch, sol, milp)
-        state.stats.time_elapsed = time() - state.convergence_stats.starting_time
+        state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status = MOI.OPTIMAL
         return true
     else
@@ -283,7 +283,7 @@ function termination_check!(
         algo::Algorithm
     )
     (; sol, scratch, stats) = state
-    stats.time_elapsed = time() - stats.starting_time
+    stats.time_elapsed = current_time() - stats.starting_time
     kkt_errors!(stats.err, scratch, sol, milp)
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination)

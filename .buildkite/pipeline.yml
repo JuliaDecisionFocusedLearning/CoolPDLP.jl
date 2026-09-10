@@ -25,8 +25,9 @@ steps:
       COOLPDLP_TEST_GROUP: "{{matrix.queue}}"
 
   # Reactant ships its own CUDA runtime, so this only needs an NVIDIA agent, not CUDA.jl.
-  # Coverage instrumentation makes Reactant tracing and compilation dramatically slower, so
-  # the coverage plugin is left out (same tradeoff as the GitHub Actions workflow).
+  # The coverage plugin is left out: this job runs the same test files as the GitHub Actions
+  # `Reactant` job, which does collect coverage, so instrumenting the GPU run too would only
+  # slow it down without reaching any new line.
   - label: "reactant gpu tests - Julia {{matrix.version}}"
     matrix:
       setup:
