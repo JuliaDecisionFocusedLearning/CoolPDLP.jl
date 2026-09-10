@@ -1,5 +1,6 @@
 using CoolPDLP
-using CoolPDLP: KKTErrors
+using CoolPDLP: KKTErrors, termination_status
+import MathOptInterface as MOI
 using MathOptBenchmarkInstances
 using Reactant
 using Reactant: to_rarray
@@ -113,6 +114,13 @@ configs = [
             @test isapprox(err_r, err; rtol)
         end
     end
+
+    @testset "Same termination status" begin
+        # the status is stored as a traced integer code, so the compiled run reports the
+        # criterion it actually stopped on instead of the trace-time `OPTIMIZE_NOT_CALLED`
+        @test termination_status(state_r.stats) != MOI.OPTIMIZE_NOT_CALLED
+        @test termination_status(state_r.stats) == termination_status(state.stats)
+    end
 end
 
 # Reading the host clock inside a compiled program needs a Reactant callback, which not every
@@ -174,6 +182,7 @@ else
         @testset "The solve stops on the time limit" begin
             @test elapsed >= time_limit
             @test passes < max_kkt_passes
+            @test termination_status(state_r.stats) == MOI.TIME_LIMIT
         end
     end
 end

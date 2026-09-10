@@ -255,7 +255,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP)
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
         kkt_errors!(state.stats.err, state.scratch, sol, milp)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
-        state.stats.termination_status = MOI.OPTIMAL
+        state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         return true
     else
         return false
