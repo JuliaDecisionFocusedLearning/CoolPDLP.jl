@@ -7,7 +7,8 @@ using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
-using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
+using KernelAbstractions: KernelAbstractions, Backend, CPU, @groupsize, @index, @kernel,
+    @localmem, @synchronize, @uniform, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
