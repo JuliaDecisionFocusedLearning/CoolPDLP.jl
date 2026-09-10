@@ -259,14 +259,23 @@ end
     ) where {A, T, Ti, M, B, R, P <: AbstractPresolver}
     isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
     starting_time = time()
-    milp_reduced, presolve_state = presolve(algo.presolver, milp_init_cpu)
+    # the reduced problem lives wherever the presolver put it (for a file-based backend like
+    # `PaPILOPresolver`, a host `Float64` problem), and the inner `solve` preconditions and
+    # converts it just like it would the original one
+    milp_reduced, presolve_info = presolve(algo.presolver, milp_init_cpu)
     sol_init_reduced = PrimalDualSolution(milp_reduced)
     # every phase is charged to the budget of the call as a whole, presolve included
     algo_reduced = with_budget(
         algo, algo.termination.max_kkt_passes, algo.termination.time_limit - (time() - starting_time)
     )
+    # `sol_reduced` solves the *reduced* problem, in the element and array types of
+    # `algo.conversion` (the inner `solve` unpreconditions it on the way out, so its values are
+    # in the reduced problem's own scale, not the preconditioned one)
     sol_reduced, stats_reduced = solve(milp_reduced, sol_init_reduced, algo_reduced)
-    sol_postsolved = postsolve(algo.presolver, presolve_state, sol_reduced)
+    # `sol_postsolved` solves the *original* problem, in those same types: that is the contract
+    # `postsolve` implementations must respect
+    sol_postsolved = postsolve(algo.presolver, presolve_info, sol_reduced)
+    # `sol` is that same solution, graded — and if need be improved — on the original problem
     sol, stats = polish(sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
     stats.starting_time = starting_time
     stats.time_elapsed = time() - starting_time
@@ -299,6 +308,9 @@ function polish(
         starting_time::Float64,
     ) where {A, T, Ti, M, B, R}
     (; termination_reltol, max_kkt_passes, time_limit) = algo.termination
+    # `sol_postsolved` has the shape of the original problem and the element and array types of
+    # `algo.conversion`, which is what `postsolve` promises, so the original problem is converted
+    # to match — but not preconditioned, since the solution is not in a preconditioned scale
     milp = perform_conversion(milp_init_cpu, algo.conversion)
     kkt_errors!(stats_reduced.err, Scratch(sol_postsolved), sol_postsolved, milp)
     solved = batched_all(<=(termination_reltol), relative(stats_reduced.err))
@@ -311,6 +323,8 @@ function polish(
         return sol_postsolved, stats_reduced
     end
 
+    # the warm start goes back to the host, since `solve` preprocesses a host problem and a host
+    # starting point, and comes back converted again
     algo_polish = with_budget(algo, passes_left, time_left)
     sol, stats = solve(milp_init_cpu, warm_start(sol_postsolved), algo_polish)
     stats.kkt_passes += stats_reduced.kkt_passes
@@ -330,7 +344,7 @@ function with_budget(
         algo::Algorithm{A, T, Ti, M, B, R}, max_kkt_passes::Integer, time_limit::Real
     ) where {A, T, Ti, M, B, R}
     termination = TerminationParameters(;
-        algo.termination.termination_reltol, max_kkt_passes, time_limit = Float64(time_limit)
+        algo.termination.termination_reltol, max_kkt_passes, time_limit
     )
     return Algorithm{A, T, Ti, M, B, R, Nothing}(
         algo.conversion,

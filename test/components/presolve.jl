@@ -179,9 +179,9 @@ end
 
 @testset "presolve(::PaPILOPresolver, ...) strips redundant structure" begin
     milp = _core_padded_milp()
-    milp_reduced, state = presolve(CoolPDLP.PaPILOPresolver(), milp)
+    milp_reduced, presolve_info = presolve(CoolPDLP.PaPILOPresolver(), milp)
 
-    @test state isa PaPILOExt.PaPILOPresolveState
+    @test presolve_info isa PaPILOExt.PaPILOPresolveInfo
     @test nbvar(milp_reduced) < nbvar(milp)
     @test nbcons(milp_reduced) < nbcons(milp)
 end
@@ -189,7 +189,7 @@ end
 @testset "postsolve(::PaPILOPresolver, ...) recovers a feasible, optimal reduced solution" begin
     presolver = CoolPDLP.PaPILOPresolver()
     milp = _core_padded_milp()
-    milp_reduced, state = presolve(presolver, milp)
+    milp_reduced, presolve_info = presolve(presolver, milp)
 
     # the only genuine degree of freedom left after presolve should be a single variable fixed
     # by the RHS (x1 == x2 == 4), so any value compatible with its own bounds is optimal
@@ -197,7 +197,7 @@ end
     x_reduced[.!isfinite.(x_reduced)] .= 0.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
     @test is_feasible(sol_orig.x, milp)
     @test isapprox(objective_value(sol_orig.x, milp), 8.0; atol = 1.0e-6)
     @test !any(isnan, sol_orig.y)  # the dual travels back with the primal
@@ -209,14 +209,14 @@ end
     presolver = CoolPDLP.PaPILOPresolver()
     qps, path = read_instance(Netlib, "afiro")
     milp = MILP(qps; path, name = "afiro")
-    milp_reduced, state = presolve(presolver, milp)
+    milp_reduced, presolve_info = presolve(presolver, milp)
     @test nbvar(milp_reduced) > 0
 
     # push every surviving reduced variable far out of its bounds
     x_reduced = min.(milp_reduced.uv, 1.0e6) .+ 1000.0
     sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
 
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
     @test !is_feasible(sol_orig.x, milp; verbose = false)
 end
 
@@ -229,12 +229,12 @@ end
     milp_cpu = MILP(qps; path, name = "afiro")
     milp_gpu = perform_conversion(milp_cpu, GPU_CONV)
 
-    milp_reduced, state = presolve(presolver, milp_cpu)
+    milp_reduced, presolve_info = presolve(presolver, milp_cpu)
     @test typeof(milp_reduced) === typeof(milp_cpu)
     @test nbvar(milp_reduced) < nbvar(milp_cpu)
 
     sol_reduced = perform_conversion(PrimalDualSolution(milp_reduced), GPU_CONV)
-    sol_orig = postsolve(presolver, state, sol_reduced)
+    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
     @test typeof(sol_orig) === typeof(PrimalDualSolution(milp_gpu))
     @test length(sol_orig.x) == nbvar(milp_cpu)
     @test length(sol_orig.y) == nbcons(milp_cpu)
@@ -247,7 +247,7 @@ end
     presolver = CoolPDLP.PaPILOPresolver()
     qps, path = read_instance(Netlib, "afiro")
     milp = MILP(qps; path, name = "afiro")
-    milp_reduced, state = presolve(presolver, milp)
+    milp_reduced, presolve_info = presolve(presolver, milp)
 
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
@@ -257,7 +257,7 @@ end
     @test stats_reduced.termination_status == MOI.OPTIMAL
     @test relative_kkt_error(sol_reduced, milp_reduced) <= 1.0e-9
 
-    sol = postsolve(presolver, state, sol_reduced)
+    sol = postsolve(presolver, presolve_info, sol_reduced)
     @test !any(isnan, sol.y)
     @test relative_kkt_error(sol, milp) <= 1.0e-6
 end
@@ -267,26 +267,35 @@ end
     qps, path = read_instance(Netlib, "afiro")
     milp = MILP(qps; path, name = "afiro")
     milp_dual, _ = presolve(CoolPDLP.PaPILOPresolver(), milp)
-    milp_primal, state = presolve(CoolPDLP.PaPILOPresolver(; dual_postsolve = false), milp)
+    milp_primal, presolve_info = presolve(CoolPDLP.PaPILOPresolver(; dual_postsolve = false), milp)
     @test nbvar(milp_primal) < nbvar(milp_dual)
 
     sol_reduced = PrimalDualSolution(milp_primal)
-    sol = postsolve(CoolPDLP.PaPILOPresolver(; dual_postsolve = false), state, sol_reduced)
+    sol = postsolve(CoolPDLP.PaPILOPresolver(; dual_postsolve = false), presolve_info, sol_reduced)
     @test length(sol.x) == nbvar(milp)
     @test all(isnan, sol.y)
 end
 
-@testset "presolve refuses to drop the dual of a problem with integer variables" begin
-    # PaPILO never records dual information for an integer problem, so asking for both is an
-    # error rather than a silently primal-only answer
+@testset "presolve hands PaPILO the continuous relaxation of an integer problem" begin
+    # `solve` only ever tackles the relaxation, so that is what gets presolved: an integer
+    # problem reduces exactly like its relaxation, and its dual comes back — which it could not
+    # if PaPILO saw the integrality, since it records no dual information for such a problem
+    presolver = CoolPDLP.PaPILOPresolver()
     milp = _core_padded_milp()
     milp_int = MILP(;
         milp.c, milp.lv, milp.uv, milp.A, milp.lc, milp.uc,
         int_var = [true, false, false, false],
     )
-    @test_throws ArgumentError presolve(CoolPDLP.PaPILOPresolver(), milp_int)
-    milp_reduced, _ = presolve(CoolPDLP.PaPILOPresolver(; dual_postsolve = false), milp_int)
-    @test nbvar(milp_reduced) <= nbvar(milp_int)
+
+    milp_reduced, _ = presolve(presolver, milp)
+    milp_reduced_int, presolve_info = presolve(presolver, milp_int)
+    @test nbvar(milp_reduced_int) == nbvar(milp_reduced)
+    @test nbcons(milp_reduced_int) == nbcons(milp_reduced)
+    @test nbvar_int(milp_reduced_int) == 0
+
+    sol = postsolve(presolver, presolve_info, PrimalDualSolution(milp_reduced_int))
+    @test length(sol.x) == nbvar(milp_int)
+    @test !any(isnan, sol.y)
 end
 
 @testset "Full solve with presolve on Float32 JLArrays" begin
@@ -353,11 +362,11 @@ end
     presolver = CoolPDLP.PaPILOPresolver()
     common_opts = (; termination_reltol = 1.0e-5, max_kkt_passes = 10^7, show_progress = false)
 
-    milp_reduced, state = presolve(presolver, milp)
+    milp_reduced, presolve_info = presolve(presolver, milp)
     algo_reduced = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...)
     sol_reduced, stats_reduced = solve(milp_reduced, PrimalDualSolution(milp_reduced), algo_reduced)
     @test stats_reduced.termination_status == MOI.OPTIMAL
-    sol_postsolved = postsolve(presolver, state, sol_reduced)
+    sol_postsolved = postsolve(presolver, presolve_info, sol_reduced)
     @test relative_kkt_error(sol_postsolved, milp) > 1.0e-5  # nowhere near what was asked for
 
     algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver)
@@ -367,6 +376,23 @@ end
     @test CoolPDLP.relative(stats.err) ≈ relative_kkt_error(sol, milp)
     # the polish is charged to the same budget as the solve of the reduced problem
     @test stats.kkt_passes > stats_reduced.kkt_passes
+end
+
+@testset "the polish runs in the algorithm's own element and array types" begin
+    # a `NaN` dual can never meet the tolerance, so the polish is guaranteed to run here: the
+    # conversion of the original problem, the recomputed KKT errors, the warm start and the
+    # returned solution must all agree with the types the algorithm works in
+    milp = _core_padded_milp()
+    algo = PDLP(
+        Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend(),
+        termination_reltol = 1.0f-5, show_progress = false,
+        presolver = CoolPDLP.PaPILOPresolver(; dual_postsolve = false),
+    )
+    sol, stats = solve(milp, algo)
+    @test typeof(sol) === typeof(PrimalDualSolution(perform_conversion(milp, GPU_CONV)))
+    @test stats.termination_status == MOI.OPTIMAL
+    @test !any(isnan, Array(sol.y))
+    @test isapprox(objective_value(Float64.(Array(sol.x)), milp), 8.0; atol = 1.0e-3)
 end
 
 @testset "a `NaN` dual is dropped from the warm start rather than propagated" begin

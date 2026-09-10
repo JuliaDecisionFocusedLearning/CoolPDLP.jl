@@ -8,36 +8,41 @@ Supertype for pluggable presolve backends. To plug a custom presolver into [`Alg
 abstract type AbstractPresolver end
 
 """
-    presolve(presolver::AbstractPresolver, milp::MILP) -> (milp_reduced, state)
+    presolve(presolver::AbstractPresolver, milp::MILP) -> (milp_reduced, presolve_info)
 
 Reduce `milp` using `presolver`. Return the (typically smaller) reduced [`MILP`](@ref) to hand
-over to the algorithm, together with an opaque `state` object to later pass to
+over to the algorithm, together with an opaque `presolve_info` object to later pass to
 [`postsolve`](@ref) along with a solution of the reduced problem.
 
 `milp_reduced` needs no particular element or array type: `solve` feeds it back through
 `preprocess`, which preconditions on the host and then calls [`perform_conversion`](@ref)
 anyway. A CPU-`Float64` problem — what an external presolver naturally produces — is fine.
 
-`state` is produced by `presolve` and consumed by `postsolve` for the *same* presolver type, so
-it can be any Julia object convenient for that backend: index maps, substitution coefficients,
-a path to some intermediate file, ... there is no file-based or otherwise constrained contract
-here, unlike [`PaPILOPresolver`](@ref)'s own state which happens to hold a file path because
-that particular backend is file-based.
+`presolve_info` is produced by `presolve` and consumed by `postsolve` for the *same* presolver
+type, so it can be any Julia object convenient for that backend: index maps, substitution
+coefficients, a path to some intermediate file, ... there is no file-based or otherwise
+constrained contract here, unlike [`PaPILOPresolver`](@ref)'s own info object which happens to
+hold a file path because that particular backend is file-based.
 
-Note that the `state` must allow returning a postsolved `PrimalDualSolution` of the correct type
-with respect to the original `MILP`. Typically, that may require storing a prototype solution.
+Note that `presolve_info` must allow returning a postsolved `PrimalDualSolution` of the correct
+type with respect to the original `MILP`. Typically, that may require storing a prototype
+solution.
+
+`solve` only ever tackles the continuous relaxation of `milp` (see [`relax`](@ref)), so a
+presolver is free to ignore integrality — and should not apply an integer-specific reduction,
+which would reduce a problem nobody is solving.
 """
 function presolve end
 
 """
-    postsolve(presolver::AbstractPresolver, state, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
+    postsolve(presolver::AbstractPresolver, presolve_info, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
 
 Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
-solution of the original problem, using `state`.
+solution of the original problem, using `presolve_info`.
 
-The result must have the shape of the original problem, which `state` memorized, and the element
-and array types of `sol_reduced`, which the algorithm produced: `solve` hands it straight back to
-the caller without converting it any further.
+The result must have the shape of the original problem, which `presolve_info` memorized, and the
+element and array types of `sol_reduced`, which the algorithm produced: `solve` hands it straight
+back to the caller without converting it any further.
 
 Both halves of the solution must be mapped back: `solve` recomputes the KKT errors of the result
 on the original problem, so a dual that is not postsolved shows up as a solution that misses the
@@ -193,8 +198,7 @@ struct PaPILOPresolver <: AbstractPresolver
     """
     whether to recover the dual solution as well as the primal one. PaPILO only records the
     information needed for that when presolving is restricted to the reductions that support
-    it, which leaves a larger reduced problem, and it never records it for a problem with
-    integer variables, on which `presolve` therefore throws when this is set
+    it, which leaves a larger reduced problem
     """
     dual_postsolve::Bool
 

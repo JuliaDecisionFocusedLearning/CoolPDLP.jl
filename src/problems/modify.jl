@@ -134,3 +134,37 @@ function Adapt.adapt_structure(to, milp::MILP)
         path
     )
 end
+
+"""
+    relax(milp)
+
+Return the continuous relaxation of `milp`, i.e. the same problem with its integrality
+restrictions dropped.
+
+`solve` only ever tackles that relaxation (see [`solve`](@ref)), so a tool which does apply
+integer-specific transformations — a presolver, say — must be handed the relaxation rather than
+`milp` itself, on pain of working on a problem nobody is solving.
+"""
+function relax(milp::MILP)
+    (;
+        c, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
+    ) = milp
+    return MILP(;
+        c,
+        lv,
+        uv,
+        A,
+        At,
+        lc,
+        uc,
+        D1,
+        D2,
+        int_var = zero!(similar(int_var)),
+        var_names,
+        con_names,
+        dataset,
+        name,
+        path
+    )
+end
