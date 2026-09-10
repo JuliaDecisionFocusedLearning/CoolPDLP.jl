@@ -89,6 +89,31 @@ Largest number of work items [`subgroup_size`](@ref) will put on a single row.
 const MAX_SUBGROUP = 32
 
 """
+    BATCH_SHIFT
+
+How many powers of two the batch has to grow by before [`subgroup_size`](@ref) halves the
+sub-group.
+"""
+const BATCH_SHIFT = 5
+
+"""
+    MIN_BATCHED
+
+Narrowest sub-group [`subgroup_size(A, nbatch)`](@ref) will narrow down to. It is a bound on
+the narrowing, not a floor on the result: a matrix whose rows already ask for fewer work
+items than this keeps what [`subgroup_size(A)`](@ref) gave it.
+"""
+const MIN_BATCHED = 4
+
+"""
+    MAX_BATCHED
+
+Widest sub-group [`subgroup_size(A, nbatch)`](@ref) will narrow at all. A matrix that wants
+more lanes than this wants them because its rows are long, which batching does not change.
+"""
+const MAX_BATCHED = 16
+
+"""
     subgroup_size(A)
 
 Number of work items to assign to each row of `A`: the largest power of two no greater than
@@ -114,6 +139,35 @@ function subgroup_size(A::GPUSparseMatrixCSR)
     m = size(A, 1)
     m == 0 && return 1
     return min(prevpow(2, max(nnz(A) ÷ m, 1)), MAX_SUBGROUP)
+end
+
+"""
+    subgroup_size(A, nbatch)
+
+Number of work items per row when the same `A` is multiplied by `nbatch` right-hand sides
+at once: [`subgroup_size(A)`](@ref), narrowed as the batch grows.
+
+A sub-group does two jobs at once and only one of them survives batching. It shortens the
+longest row's critical path and makes lanes read consecutive nonzeros, neither of which a
+batch changes; but it also creates parallelism, which a batch dimension supplies for free.
+Once the batch is wide the second job is already done and the reduction's barriers stop
+paying for themselves -- measurably so: with the batch ignored, this kernel was up to 2.4x
+slower than one work item per row at `nbatch >= 100` on eight of forty MIPLIB instances.
+
+Narrowing is deliberately confined to the middle of the range, between [`MIN_BATCHED`](@ref)
+and [`MAX_BATCHED`](@ref) work items per row. Below it sit matrices whose rows are already
+barely worth splitting, where dropping further means falling back to one work item per row
+and losing badly on the ones with a long row hiding behind a short average; above it sit
+matrices of genuinely long rows, which keep wanting every lane they can get however wide
+the batch is -- narrowing those cost 2.2x on the worst of them.
+"""
+function subgroup_size(A::GPUSparseMatrixCSR, nbatch::Integer)
+    S = subgroup_size(A)
+    S > MAX_BATCHED && return S
+    shift = trailing_zeros(nextpow(2, max(nbatch, 1))) ÷ BATCH_SHIFT
+    # `MIN_BATCHED` bounds how far the sub-group narrows, so it must never widen one that
+    # already starts out below it
+    return max(S >> shift, min(S, MIN_BATCHED))
 end
 
 """
@@ -354,14 +408,13 @@ end
 
 Launch the SpMM kernel best suited to `A`'s rows, per [`subgroup_size`](@ref).
 
-Sub-groups of two are not worth their barriers here, so anything below four work items per
-row falls back to [`spmm_csr!`](@ref). Matrices that sparse would gain instead from having
-one work item own a row and several batch columns, so that its row of `A` is fetched once
-and reused, which is worth a further ~1.6x on them but is a loss on the skewed matrices
-this kernel is for; it is not implemented.
+The sub-group is sized from the batch as well as the matrix, per
+[`subgroup_size(A, nbatch)`](@ref). Sub-groups of two are not worth their barriers here, so
+anything below four work items per row -- which a wide batch will often produce -- falls
+back to [`spmm_csr!`](@ref).
 """
 function launch_spmm_csr!(c, A::GPUSparseMatrixCSR, b, α::Number, β::Number, backend)
-    S = subgroup_size(A)
+    S = subgroup_size(A, size(c, 2))
     if S >= 32
         launch_spmm_csr!(c, A, b, α, β, backend, Val(32))
     elseif S >= 16
