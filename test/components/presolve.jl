@@ -449,8 +449,10 @@ end
     algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver)
     algo_plain = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...)
     @inferred solve(milp, algo)
-    @test Base.infer_return_type(solve, Tuple{typeof(milp), typeof(algo)}) ===
-        Base.infer_return_type(solve, Tuple{typeof(milp), typeof(algo_plain)})
+    # `Base.return_types` rather than `Base.infer_return_type`, which needs Julia >= 1.11
+    solve_type(a) = only(Base.return_types(solve, Tuple{typeof(milp), typeof(a)}))
+    @test isconcretetype(solve_type(algo))
+    @test solve_type(algo) === solve_type(algo_plain)
 end
 
 @testset "Presolve does not support batched MILPs" begin
