@@ -1,7 +1,19 @@
 module CoolPDLPReactantExt
 
 using CoolPDLP: CoolPDLP
-using Reactant: Reactant, @reactant_overlay
+using Reactant: Reactant, TracedRArray, TracedRNumber, @reactant_overlay
+
+"""
+    CoolPDLP.batched_bool_type(v)
+
+Give the type of the boolean that reducing a traced batch yields.
+
+Reactant types every reduction over a `TracedRArray` as `Union{TracedRArray, TracedRNumber}`,
+accurate enough to trace but too coarse for the callers: the abstract type would escape into
+the return type of the termination and restart checks of a batched solve. The reduced value is
+in fact a traced scalar, which is what this returns.
+"""
+CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
 
 """
     write_time!(out)
