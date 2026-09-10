@@ -129,21 +129,26 @@ function spmul!(
 end
 
 @kernel function spmm_csr!(
-        c::DenseMatrix{T},
+        c::DenseVector{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseMatrix{T},
+        b::DenseVector{T},
+        m::Int,
+        n::Int,
         α::Number,
         β::Number
     ) where {T, Ti}
+    # `c` and `b` are the batches flattened column-major: column `batch_idx` of an `m × nb`
+    # (resp. `n × nb`) matrix starts at offset `(batch_idx - 1) * m` (resp. `n`)
     i, batch_idx = @index(Global, NTuple)
     s = zero(T)
     for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
         j = A_colval[k]
-        s += A_nzval[k] * b[j, batch_idx]
+        s += A_nzval[k] * b[j + (batch_idx - 1) * n]
     end
-    c[i, batch_idx] = α * s + β * c[i, batch_idx]
+    ci = i + (batch_idx - 1) * m
+    c[ci] = α * s + β * c[ci]
 end
 
 function LinearAlgebra.mul!(
@@ -164,18 +169,32 @@ function spmul!(
         β::Number
     ) where {T <: Number}
     check_mul_dims(c, A, b)
+    spmm!(vec(c), A, vec(b), size(c, 2), α, β)
+    return c
+end
+
+function spmm!(
+        c::DenseVector{T},
+        A::GPUSparseMatrixCSR{T},
+        b::DenseVector{T},
+        nb::Int,
+        α::Number,
+        β::Number
+    ) where {T <: Number}
     backend = common_backend(c, A, b)
+    m, n = size(A)
     kernel! = spmm_csr!(backend)
     α_is_one = isone(α)
     β_is_zero = iszero(β)
+    ndrange = (m, nb)
     if α_is_one && β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, One(), Zero(); ndrange)
     elseif α_is_one
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, One(), β; ndrange)
     elseif β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, α, Zero(); ndrange)
     else
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, α, β; ndrange)
     end
     return c
 end

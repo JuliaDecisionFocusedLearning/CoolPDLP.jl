@@ -110,16 +110,19 @@ function spmul!(
 end
 
 @kernel function spmm_coo!(
-        c::DenseMatrix{T},
+        c::DenseVector{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseMatrix{T},
+        b::DenseVector{T},
+        m::Int,
+        n::Int,
         α::Number,
     ) where {T, Ti}
+    # `c` and `b` are the batches flattened column-major, see `spmm_csr!`
     k, batch_idx = @index(Global, NTuple)
     i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
-    Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
+    Atomix.@atomic c[i + (batch_idx - 1) * m] += α * v * b[j + (batch_idx - 1) * n]
 end
 
 function LinearAlgebra.mul!(
@@ -140,18 +143,31 @@ function spmul!(
         β::Number
     ) where {T <: Number}
     check_mul_dims(c, A, b)
+    spmm!(vec(c), A, vec(b), size(c, 2), α, β)
+    return c
+end
+
+function spmm!(
+        c::DenseVector{T},
+        A::GPUSparseMatrixCOO{T},
+        b::DenseVector{T},
+        nb::Int,
+        α::Number,
+        β::Number
+    ) where {T <: Number}
     backend = common_backend(c, A, b)
+    m, n = size(A)
     kernel! = spmm_coo!(backend)
     if iszero(β)
         zero!(c)
     elseif !isone(β)
         c .*= β
     end
-    ndrange = (length(A.nzval), size(c, 2))
+    ndrange = (length(A.nzval), nb)
     if isone(α)
-        kernel!(c, A.rowval, A.colval, A.nzval, b, One(); ndrange)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, m, n, One(); ndrange)
     else
-        kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, m, n, α; ndrange)
     end
     return c
 end

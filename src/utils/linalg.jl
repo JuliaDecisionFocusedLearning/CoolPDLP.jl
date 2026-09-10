@@ -27,6 +27,21 @@ but ambiguous with `MutableArithmetics.mul!(::AbstractVector{<:AbstractMutable},
 function spmul! end
 
 """
+    spmm!(c, A, b, nb, α, β)
+
+The batched product behind [`spmul!`](@ref) on **flattened** operands: `c` and `b` are the
+column-major flattenings of the `m × nb` and `n × nb` batches, and each kernel recovers column
+`batch_idx` from the offset `(batch_idx - 1) * m` (resp. `n`).
+
+The plain path passes `vec` views, so nothing is copied. The point of the flat signature is
+`Reactant`: a 2-D array handed to a kernel inside a compiled loop can be silently laid out
+row-major by XLA when a reduction follows the loop, since the kernel call pins no layout of its
+own; a 1-D array has a single layout, so the extension routes a batched product through here
+on reshaped operands.
+"""
+function spmm! end
+
+"""
     sametype_transpose(A::AbstractMatrix)
 
 Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).

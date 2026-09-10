@@ -80,7 +80,7 @@ end
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat, α::Number, β::Number
     )
-    return CoolPDLP.spmul!(c, A, b, α, β)
+    return spmul_batched!(c, A, b, α, β)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
@@ -92,7 +92,38 @@ end
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat
     )
-    return CoolPDLP.spmul!(c, A, b, true, false)
+    return spmul_batched!(c, A, b, true, false)
+end
+
+"""
+    spmul_batched!(c, A, b, α, β)
+
+A batched sparse product inside a compiled program, run on flattened operands.
+
+This works around a miscompilation on Reactant's CUDA backend: a 2-D array written by a
+`KernelAbstractions` kernel inside a `@trace for` loop and reduced after the loop comes back
+wrong. XLA's layout assignment lets the reduction pick a row-major layout for the loop-carried
+array, and since the `enzymexla.kernel_call` pins neither its operand nor its result layouts,
+XLA hands the kernel's column-major bytes over as if they were row-major. Nothing placed between
+the loop and the reduction helps (`copy`, a broadcast, an `optimization_barrier` -- the
+preference propagates through them all), and writing the kernel's output into a fresh 2-D array
+gets undone by XLA's copy elision in a program of this size.
+
+A 1-D array has a single layout, and `Reactant.Ops.reshape` is an op XLA has to honour, so the
+kernel here reads a reshaped copy of `b`, writes a fresh 1-D buffer, and `c` is filled from its
+reshape. The vector case has nothing to fix and keeps the direct launch. The proper fix belongs
+upstream: the lowering of `enzymexla.kernel_call` should carry `operand_layouts` *and*
+`result_layouts`, as `Reactant.Ops.julia_callback` already does for its own custom call.
+"""
+function spmul_batched!(c::AbstractMatrix, A, b::AbstractMatrix, α::Number, β::Number)
+    m, nb = size(c)
+    b_flat = Reactant.Ops.reshape(b, length(b))
+    tmp = similar(c, length(c))
+    # the kernel reads its destination whenever it accumulates into it
+    (β isa TracedRNumber || !iszero(β)) && (tmp .= Reactant.Ops.reshape(c, length(c)))
+    CoolPDLP.spmm!(tmp, A, b_flat, nb, α, β)
+    c .= Reactant.Ops.reshape(tmp, m, nb)
+    return c
 end
 
 """

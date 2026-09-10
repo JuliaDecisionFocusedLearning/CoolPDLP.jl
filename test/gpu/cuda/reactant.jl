@@ -49,23 +49,27 @@ const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO
     end
 end
 
-# A whole solve, to check that nothing else in the loop objects to a sparse matrix.
+# A whole solve, single-instance and batched, to check that nothing else in the loop objects to a
+# sparse matrix.
 #
-# Only the single-instance case is checked here. A *batched* solve on this backend comes out wrong
-# from its second iteration, and the cause is not in these formats:
-#
-#   - the same batched solve on Reactant's CPU backend agrees with the plain loop;
-#   - the same batched solve with a dense `Matrix` agrees to 2.6e-16 in this very harness;
-#   - a batched product is exact on this backend on its own (the testset above), and stays exact
-#     when its intermediate is internal to the compiled program and when it runs inside a
-#     `@trace while` loop.
-#
-# What is left is how Reactant compiles a `KernelAbstractions` launch interleaved with the
-# broadcasts that share `step!`'s scratch space. That belongs upstream rather than here.
+# The batched case is the one to watch: without the flattened launch in the extension's
+# `spmul_batched!`, it comes out wrong from its second iteration on this backend. XLA's layout
+# assignment lets the reductions of `kkt_errors!` pick a row-major layout for the loop-carried
+# scratch that the sparse kernels write, and the kernel call pins no layout of its own. A vector
+# has a single layout, which is why the single-instance solve was never affected.
 @testset verbose = true "Compiled solve" begin
     milp0, sol0 = CoolPDLP.random_milp_and_sol(Xoshiro(0), 20, 30, 0.4)
 
-    @testset "$M" for M in MATRIX_TYPES
+    # the batch rescales the objective of the same problem, one factor per column
+    milp_batch = MILP(;
+        c = stack(s * milp0.c for s in (1.0, 1.01, 0.99)),
+        lv = repeat(milp0.lv, 1, 3), uv = repeat(milp0.uv, 1, 3), milp0.A,
+        lc = repeat(milp0.lc, 1, 3), uc = repeat(milp0.uc, 1, 3), milp0.int_var,
+    )
+    sol_batch = PrimalDualSolution(milp_batch)
+
+    @testset "$M, $(batched ? "batched" : "single")" for M in MATRIX_TYPES, batched in (false, true)
+        milp_init, sol_init = batched ? (milp_batch, sol_batch) : (milp0, sol0)
         algo = PDLP(
             Float64,
             Int32,
@@ -79,13 +83,13 @@ end
             show_progress = false,
         )
 
-        milp, sol = preprocess(milp0, sol0, algo)
+        milp, sol = preprocess(milp_init, sol_init, algo)
         state = initialize(milp, sol, algo; starting_time = time())
         CoolPDLP.solve!(state, milp, algo)
 
         # `solve!` mutates the scratch space it shares with the problem, so the compiled run
         # starts from its own copy
-        milp_copy, sol_copy = preprocess(milp0, sol0, algo)
+        milp_copy, sol_copy = preprocess(milp_init, sol_init, algo)
         state_copy = initialize(milp_copy, sol_copy, algo; starting_time = time())
         milp_r = to_rarray(milp_copy; track_numbers = true)
         state_r = to_rarray(state_copy; track_numbers = true)
