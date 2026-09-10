@@ -54,16 +54,16 @@ propagates loudly through any arithmetic that touches it, rather than being mist
 function postsolve end
 
 """
-    milp_to_mps(milp::MILP, path::AbstractString)
+    milp_to_mps(milp::MILP, file::AbstractString)
 
-Write `milp` to an MPS file at `path`, using a [JuMP](https://github.com/jump-dev/JuMP.jl)
+Write `milp` to an MPS file at `file`, using a [JuMP](https://github.com/jump-dev/JuMP.jl)
 model as an intermediate representation.
 
 Variables and constraints are written under the MILP's own `var_names` and `con_names`, which
 is what lets a solution file produced by an external tool be matched back to the columns and
 rows of the problem.
 """
-function milp_to_mps(milp::MILP, path::AbstractString)
+function milp_to_mps(milp::MILP, file::AbstractString)
     isbatched(milp) && throw(ArgumentError("Cannot write a batched MILP to an MPS file"))
     # MPS is a plain-text, `Float64` format, and JuMP only understands host arrays, so the
     # problem is brought back to the CPU whatever backend and matrix type it lived on
@@ -85,8 +85,8 @@ function milp_to_mps(milp::MILP, path::AbstractString)
     cons = JuMP.@constraint(model, lc .<= A * x .<= uc)
     JuMP.set_name.(cons, con_names)
 
-    JuMP.write_to_file(model, path; format = MOI.FileFormats.FORMAT_MPS)
-    return path
+    JuMP.write_to_file(model, file; format = MOI.FileFormats.FORMAT_MPS)
+    return file
 end
 
 _setbounds(s::MOI.EqualTo) = (s.value, s.value)
@@ -95,24 +95,31 @@ _setbounds(s::MOI.GreaterThan) = (s.lower, Inf)
 _setbounds(s::MOI.Interval) = (s.lower, s.upper)
 
 """
-    mps_to_milp(path::AbstractString; kwargs...)
+    mps_to_milp(file::AbstractString; dataset = "", name = "", path = "")
 
-Read the MPS file at `path` into a [`MILP`](@ref), using a
+Read the MPS file at `file` into a [`MILP`](@ref), using a
 [JuMP](https://github.com/jump-dev/JuMP.jl) model as an intermediate representation.
 
 MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`](@ref) built on
 `SparseMatrixCSC`. `solve` runs [`perform_conversion`](@ref) on whatever [`presolve`](@ref)
 hands back, so a file-based presolver has nothing else to do.
 
-`kwargs` are forwarded to the [`MILP`](@ref) constructor.
+`dataset`, `name` and `path` are the provenance metadata of the [`MILP`](@ref) to build, and
+describe the problem the caller cares about rather than `file` — a presolver reading its reduced
+problem out of a temporary file passes the original problem's own. They are spelled out instead
+of forwarded from a `kwargs...`, because inference gives up on this function's `MILP` call when
+its keywords arrive through a splat, which costs the return type of every caller.
 
 !!! note
     Constraints are grouped by JuMP constraint type, so the row order of the result need not
     match the row order of the file. The row *set* is preserved, and `con_names` keeps track of
     which row of the result is which row of the file.
 """
-function mps_to_milp(path::AbstractString; kwargs...)
-    model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
+function mps_to_milp(
+        file::AbstractString;
+        dataset::AbstractString = "", name::AbstractString = "", path::AbstractString = "",
+    )
+    model = JuMP.read_from_file(file; format = MOI.FileFormats.FORMAT_MPS)
     vars = JuMP.all_variables(model)
     n = length(vars)
     col = Dict(v => j for (j, v) in enumerate(vars))
@@ -151,7 +158,7 @@ function mps_to_milp(path::AbstractString; kwargs...)
         F <: JuMP.VariableRef && continue
         F <: JuMP.AffExpr || throw(
             ArgumentError(
-                "MILP only supports linear constraints, but $path contains a constraint of " *
+                "MILP only supports linear constraints, but $file contains a constraint of " *
                     "type $F-in-$S"
             )
         )
@@ -173,7 +180,7 @@ function mps_to_milp(path::AbstractString; kwargs...)
     A = sparse(rows_i, rows_j, rows_v, m, n)
     At = sparse(rows_j, rows_i, rows_v, n, m)
 
-    return MILP(; c, lv, uv, A, At, lc, uc, int_var, var_names, con_names, kwargs...)
+    return MILP(; c, lv, uv, A, At, lc, uc, int_var, var_names, con_names, dataset, name, path)
 end
 
 """
