@@ -254,7 +254,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
     dest.solve_time = stats.time_elapsed
 
-    cts = stats.termination_status
+    cts = termination_status(stats)
     @assert cts != MOI.OPTIMIZE_NOT_CALLED "solve did not reach a terminal status"
     dest.termination_status = cts
     dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL
