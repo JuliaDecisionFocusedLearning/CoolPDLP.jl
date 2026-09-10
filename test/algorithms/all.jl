@@ -1,5 +1,6 @@
 using Adapt
 using CoolPDLP
+using CoolPDLP: termination_status
 using HiGHS: HiGHS
 using JLArrays
 using KernelAbstractions
@@ -33,7 +34,7 @@ function test_optimizer(
     sol, stats = solve(milp, algo)
     x = sol.x
 
-    @test stats.termination_status == MOI.OPTIMAL
+    @test termination_status(stats) == MOI.OPTIMAL
     @test is_feasible(Array(x), milp; cons_tol, int_tol)
     @test isapprox(objective_value(jump_x, milp), objective_value(Array(x), milp); rtol = obj_rtol)
     return nothing

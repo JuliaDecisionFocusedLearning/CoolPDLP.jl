@@ -5,7 +5,7 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct StepSizeParameters{T <: Number}
+@kwdef struct StepSizeParameters{T <: Number, I <: Number}
     "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size"
     invnorm_scaling::T
     "primal weight update damping"
@@ -15,7 +15,7 @@ $(TYPEDFIELDS)
     "absolute tolerance in iterative spectral norm computation"
     spectral_norm_tol::T
     "maximum number of power method iterations in iterative spectral norm computation"
-    spectral_norm_maxiter::Int
+    spectral_norm_maxiter::I
 end
 
 function Base.show(io::IO, params::StepSizeParameters)
@@ -91,7 +91,7 @@ Compute the new primal weight, column by column, into `step_sizes.ω`.
 """
 function primal_weight_update!!(
         scratch::Scratch,
-        step_sizes::StepSizes,
+        step_sizes::StepSizes{<:AbstractVector},
         sol_cand::PrimalDualSolution,
         sol_restart::PrimalDualSolution,
         params::StepSizeParameters
@@ -102,10 +102,29 @@ function primal_weight_update!!(
     Δy = colnorm!!(scratch.b2, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
     return broadcast!!(ω, Δx, Δy, ω) do Δx, Δy, w
-        if Δx > zero_tol && Δy > zero_tol
-            exp(θ * log(Δy / Δx) + (1 - θ) * log(w))
-        else
+        ifelse(
+            (Δx > zero_tol) & (Δy > zero_tol),
+            exp(θ * log(Δy / Δx) + (1 - θ) * log(w)),
             w
-        end
+        )
     end
+end
+
+function primal_weight_update!!(
+        scratch::Scratch,
+        step_sizes::StepSizes{<:Number},
+        sol_cand::PrimalDualSolution,
+        sol_restart::PrimalDualSolution,
+        params::StepSizeParameters
+    )
+    (; ω) = step_sizes
+    (; primal_weight_damping, zero_tol) = params
+    Δx = norm(@. scratch.x = sol_cand.x - sol_restart.x)
+    Δy = norm(@. scratch.y = sol_cand.y - sol_restart.y)
+    θ = primal_weight_damping
+    return ifelse(
+        (Δx > zero_tol) & (Δy > zero_tol),
+        exp(θ * log(Δy / Δx) + (1 - θ) * log(ω)),
+        ω
+    )
 end

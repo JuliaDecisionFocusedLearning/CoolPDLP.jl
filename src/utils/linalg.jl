@@ -58,7 +58,8 @@ coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = vec(sum(a .* b; dims = 1))
 
 Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
 """
-colsum!!(::Number, v::AbstractVector) = sum(v)
+# `@unstable`: Reactant infers `sum(::TracedRArray{T, 1})` as `Union{TracedRArray, TracedRNumber}`
+@unstable colsum!!(::Number, v::AbstractVector) = sum(v)
 function colsum!!(dest::AbstractVector, m::AbstractMatrix)
     sum!(transpose(dest), m)
     return dest
@@ -122,8 +123,8 @@ end
 Return the largest finite absolute value between the two bounds, or zero if neither is finite.
 """
 function combine(l::Number, u::Number)
-    ls = isfinite(l) ? abs(l) : zero(l)
-    us = isfinite(u) ? abs(u) : zero(u)
+    ls = ifelse(isfinite(l), abs(l), zero(l))
+    us = ifelse(isfinite(u), abs(u), zero(u))
     return max(zero(l), ls, us)
 end
 

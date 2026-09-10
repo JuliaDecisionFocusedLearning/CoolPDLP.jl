@@ -131,11 +131,11 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct PreconditioningParameters{T}
+@kwdef struct PreconditioningParameters{T <: Number, I <: Number}
     "norm parameter in the Chambolle-pock preconditioner"
     chambolle_pock_alpha::T
     "iteration parameter in the Ruiz preconditioner"
-    ruiz_iter::Int
+    ruiz_iter::I
 end
 
 function Base.show(io::IO, params::PreconditioningParameters)
