@@ -1,0 +1,245 @@
+"""
+    AbstractPresolver
+
+Supertype for pluggable presolve backends. To plug a custom presolver into [`Algorithm`](@ref)
+(`presolver = MyPresolver(...)`), define a subtype and implement [`presolve`](@ref) and
+[`postsolve`](@ref) for it. [`PaPILOPresolver`](@ref) is the presolver built into CoolPDLP.
+"""
+abstract type AbstractPresolver end
+
+"""
+    presolve(presolver::AbstractPresolver, milp::MILP) -> (milp_reduced, presolve_info)
+
+Reduce `milp` using `presolver`. Return the (typically smaller) reduced [`MILP`](@ref) to hand
+over to the algorithm, together with an opaque `presolve_info` object to later pass to
+[`postsolve`](@ref) along with a solution of the reduced problem.
+
+`milp_reduced` needs no particular element or array type: `solve` feeds it back through
+`preprocess`, which preconditions on the host and then calls [`perform_conversion`](@ref)
+anyway. A CPU-`Float64` problem — what an external presolver naturally produces — is fine.
+
+`presolve_info` is produced by `presolve` and consumed by `postsolve` for the *same* presolver
+type, so it can be any Julia object convenient for that backend: index maps, substitution
+coefficients, a path to some intermediate file, ... there is no file-based or otherwise
+constrained contract here, unlike [`PaPILOPresolver`](@ref)'s own info object which happens to
+hold a file path because that particular backend is file-based.
+
+Note that `presolve_info` must allow returning a postsolved `PrimalDualSolution` of the correct
+type with respect to the original `MILP`. Typically, that may require storing a prototype
+solution.
+
+`solve` only ever tackles the continuous relaxation of `milp` (see [`relax`](@ref)), so a
+presolver is free to ignore integrality — and should not apply an integer-specific reduction,
+which would reduce a problem nobody is solving.
+
+!!! warning
+    Implementations are expected to be type-stable: `solve` runs `presolve` as one of its steps,
+    like `preprocess` or `initialize`, and inherits whatever `presolve` returns. A presolver
+    whose return type is not inferrable makes `solve` type-unstable too, which
+    [DispatchDoctor](https://github.com/MilesCranmer/DispatchDoctor.jl) turns into an error.
+"""
+function presolve end
+
+"""
+    presolve(::Nothing, milp::MILP) -> (milp, nothing)
+
+Reduce nothing at all: `presolver = nothing` is how [`Algorithm`](@ref) spells "no presolve", and
+this is the identity step it stands for, so that `solve` runs the same pipeline either way.
+"""
+presolve(::Nothing, milp::MILP) = (milp, nothing)
+
+"""
+    postsolve(presolver::AbstractPresolver, presolve_info, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
+
+Map `sol_reduced`, a solution of the reduced problem produced by [`presolve`](@ref), back to a
+solution of the original problem, using `presolve_info`.
+
+The result must have the shape of the original problem, which `presolve_info` memorized, and the
+element and array types of `sol_reduced`, which the algorithm produced: `solve` hands it straight
+back to the caller without converting it any further.
+
+Both halves of the solution must be mapped back: `solve` recomputes the KKT errors of the result
+on the original problem, so a dual that is not postsolved shows up as a solution that misses the
+requested tolerance. Implementations that genuinely cannot reconstruct the dual (because the
+underlying tool's interface is primal-only) should fill it with `NaN` rather than `0.0`: `NaN`
+propagates loudly through any arithmetic that touches it, rather than being mistaken for a real
+(zero) dual value.
+
+!!! warning
+    Like [`presolve`](@ref), implementations are expected to be type-stable.
+"""
+function postsolve end
+
+"""
+    postsolve(::Nothing, ::Nothing, sol_reduced::PrimalDualSolution) -> sol_reduced
+
+Map nothing back: the counterpart of [`presolve`](@ref) on a `nothing` presolver, where the
+"reduced" problem was the original one all along.
+"""
+postsolve(::Nothing, ::Nothing, sol_reduced::PrimalDualSolution) = sol_reduced
+
+"""
+    milp_to_mps(milp::MILP, file::AbstractString)
+
+Write `milp` to an MPS file at `file`, using a [JuMP](https://github.com/jump-dev/JuMP.jl)
+model as an intermediate representation.
+
+Variables and constraints are written under the MILP's own `var_names` and `con_names`, which
+is what lets a solution file produced by an external tool be matched back to the columns and
+rows of the problem.
+"""
+function milp_to_mps(milp::MILP, file::AbstractString)
+    isbatched(milp) && throw(ArgumentError("Cannot write a batched MILP to an MPS file"))
+    # MPS is a plain-text, `Float64` format, and JuMP only understands host arrays, so the
+    # problem is brought back to the CPU whatever backend and matrix type it lived on
+    milp_cpu = adapt(CPU(), milp)
+    (; c, lv, uv, lc, uc, int_var, var_names, con_names) = milp_cpu
+    A = SparseMatrixCSC(milp_cpu.A)  # JuMP needs a host CSC matrix to build `A * x`
+    n = nbvar(milp_cpu)
+
+    model = JuMP.Model()
+    x = JuMP.@variable(model, x[1:n])
+    JuMP.set_name.(x, var_names)
+    finite_lv, finite_uv = isfinite.(lv), isfinite.(uv)
+    JuMP.set_lower_bound.(x[finite_lv], lv[finite_lv])
+    JuMP.set_upper_bound.(x[finite_uv], uv[finite_uv])
+    JuMP.set_integer.(x[int_var])
+
+    JuMP.@objective(model, Min, dot(c, x))
+
+    cons = JuMP.@constraint(model, lc .<= A * x .<= uc)
+    JuMP.set_name.(cons, con_names)
+
+    JuMP.write_to_file(model, file; format = MOI.FileFormats.FORMAT_MPS)
+    return file
+end
+
+_setbounds(s::MOI.EqualTo) = (s.value, s.value)
+_setbounds(s::MOI.LessThan) = (-Inf, s.upper)
+_setbounds(s::MOI.GreaterThan) = (s.lower, Inf)
+_setbounds(s::MOI.Interval) = (s.lower, s.upper)
+
+"""
+    mps_to_milp(file::AbstractString; dataset = "", name = "", path = "")
+
+Read the MPS file at `file` into a [`MILP`](@ref), using a
+[JuMP](https://github.com/jump-dev/JuMP.jl) model as an intermediate representation.
+
+MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`](@ref) built on
+`SparseMatrixCSC`. `solve` runs [`perform_conversion`](@ref) on whatever [`presolve`](@ref)
+hands back, so a file-based presolver has nothing else to do.
+
+`dataset`, `name` and `path` are the provenance metadata of the [`MILP`](@ref) to build, and
+describe the problem the caller cares about rather than `file` — a presolver reading its reduced
+problem out of a temporary file passes the original problem's own. They are spelled out instead
+of forwarded from a `kwargs...`, because inference gives up on this function's `MILP` call when
+its keywords arrive through a splat, which costs the return type of every caller.
+
+!!! note
+    Constraints are grouped by JuMP constraint type, so the row order of the result need not
+    match the row order of the file. The row *set* is preserved, and `con_names` keeps track of
+    which row of the result is which row of the file.
+"""
+function mps_to_milp(
+        file::AbstractString;
+        dataset::AbstractString = "", name::AbstractString = "", path::AbstractString = "",
+    )
+    model = JuMP.read_from_file(file; format = MOI.FileFormats.FORMAT_MPS)
+    vars = JuMP.all_variables(model)
+    n = length(vars)
+    col = Dict(v => j for (j, v) in enumerate(vars))
+    var_names = JuMP.name.(vars)
+
+    lv = fill(-Inf, n)
+    uv = fill(Inf, n)
+    int_var = zeros(Bool, n)
+    for (j, v) in enumerate(vars)
+        if JuMP.is_fixed(v)
+            lv[j] = uv[j] = JuMP.fix_value(v)
+        else
+            JuMP.has_lower_bound(v) && (lv[j] = JuMP.lower_bound(v))
+            JuMP.has_upper_bound(v) && (uv[j] = JuMP.upper_bound(v))
+        end
+        (JuMP.is_binary(v) || JuMP.is_integer(v)) && (int_var[j] = true)
+        if JuMP.is_binary(v)
+            lv[j] = max(lv[j], 0.0)
+            uv[j] = min(uv[j], 1.0)
+        end
+    end
+
+    c = zeros(n)
+    obj = JuMP.objective_function(model, JuMP.AffExpr)
+    for (v, coeff) in obj.terms
+        c[col[v]] += coeff
+    end
+    JuMP.objective_sense(model) == MOI.MAX_SENSE && (c .*= -1)
+
+    rows_i, rows_j, rows_v = Int[], Int[], Float64[]
+    lc, uc = Float64[], Float64[]
+    con_names = String[]
+    row = 0
+    for (F, S) in JuMP.list_of_constraint_types(model)
+        # variable bounds and integrality restrictions were already read above
+        F <: JuMP.VariableRef && continue
+        F <: JuMP.AffExpr || throw(
+            ArgumentError(
+                "MILP only supports linear constraints, but $file contains a constraint of " *
+                    "type $F-in-$S"
+            )
+        )
+        for cref in JuMP.all_constraints(model, F, S)
+            row += 1
+            cobj = JuMP.constraint_object(cref)
+            for (v, coeff) in cobj.func.terms
+                push!(rows_i, row)
+                push!(rows_j, col[v])
+                push!(rows_v, coeff)
+            end
+            li, ui = _setbounds(cobj.set)
+            push!(lc, li)
+            push!(uc, ui)
+            push!(con_names, JuMP.name(cref))
+        end
+    end
+    m = row
+    A = sparse(rows_i, rows_j, rows_v, m, n)
+    At = sparse(rows_j, rows_i, rows_v, n, m)
+
+    return MILP(; c, lv, uv, A, At, lc, uc, int_var, var_names, con_names, dataset, name, path)
+end
+
+"""
+    PaPILOPresolver(; verbose = false, dual_postsolve = true)
+
+The [`AbstractPresolver`](@ref) built into CoolPDLP: round-trips `milp` through MPS files and
+calls [PaPILO.jl](https://github.com/scipopt/PaPILO.jl)'s `presolve`/`postsolve` commands.
+
+# Fields
+
+$(TYPEDFIELDS)
+
+!!! note
+    PaPILO is licensed under Apache-2.0 (unlike the MIT-licensed `CoolPDLP`), so it is only a
+    weak dependency: [`presolve`](@ref)/[`postsolve`](@ref) for a `PaPILOPresolver` are defined
+    by the `CoolPDLPPaPILOExt` package extension, and calling them before running
+    `using PaPILO` throws a `MethodError` (with a hint pointing at the missing `using`).
+"""
+struct PaPILOPresolver <: AbstractPresolver
+    "whether to let PaPILO print its own progress to `stdout`"
+    verbose::Bool
+    """
+    whether to recover the dual solution as well as the primal one. PaPILO only records the
+    information needed for that when presolving is restricted to the reductions that support
+    it, which leaves a larger reduced problem
+    """
+    dual_postsolve::Bool
+
+    function PaPILOPresolver(; verbose::Bool = false, dual_postsolve::Bool = true)
+        return new(verbose, dual_postsolve)
+    end
+end
+
+function Base.show(io::IO, presolver::PaPILOPresolver)
+    (; verbose, dual_postsolve) = presolver
+    return print(io, "PaPILOPresolver(verbose=$verbose, dual_postsolve=$dual_postsolve)")
+end

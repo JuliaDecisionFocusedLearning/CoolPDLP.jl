@@ -12,6 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
+        P <: Union{Nothing, AbstractPresolver},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -19,6 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolver::P
 end
 
 """
@@ -50,9 +52,13 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver = nothing,
     )
 
-Constructor for algorithm configs.
+Constructor for algorithm configs. `presolver` is `nothing` (presolve disabled) or an
+[`AbstractPresolver`](@ref) instance, e.g. `presolver = PaPILOPresolver()` (`using PaPILO`
+first).
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +88,8 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver::Union{Nothing, AbstractPresolver} = nothing,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -114,19 +122,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolver)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +143,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - presolver=$presolver"""
     )
 end
 
@@ -239,8 +248,146 @@ function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
-    sol_init_cpu = PrimalDualSolution(milp_init_cpu)
-    return solve(milp_init_cpu, sol_init_cpu, algo)
+    if !isnothing(algo.presolver) && isbatched(milp_init_cpu)
+        # `presolve` maps one problem to one problem, so a batch has no contract to rely on.
+        # `algo.presolver`'s type is a type parameter of `algo`, so this test costs nothing.
+        throw(ArgumentError("Presolve does not support batched MILPs"))
+    end
+    starting_time = time()
+    # the reduced problem lives wherever the presolver put it (for a file-based backend like
+    # `PaPILOPresolver`, a host `Float64` problem), and the inner `solve` preconditions and
+    # converts it just like it would the original one. Without a presolver this is `milp_init_cpu`
+    # itself, and every step below is likewise an identity
+    milp_reduced, presolve_info = presolve(algo.presolver, milp_init_cpu)
+    sol_init_reduced = PrimalDualSolution(milp_reduced)
+    # every phase is charged to the budget of the call as a whole, presolve included
+    algo_reduced = with_budget(
+        algo, algo.termination.max_kkt_passes, algo.termination.time_limit - (time() - starting_time)
+    )
+    # `sol_reduced` solves the *reduced* problem, in the element and array types of
+    # `algo.conversion` (the inner `solve` unpreconditions it on the way out, so its values are
+    # in the reduced problem's own scale, not the preconditioned one)
+    sol_reduced, stats_reduced = solve(milp_reduced, sol_init_reduced, algo_reduced)
+    # `sol_postsolved` solves the *original* problem, in those same types: that is the contract
+    # `postsolve` implementations must respect
+    sol_postsolved = postsolve(algo.presolver, presolve_info, sol_reduced)
+    # `sol` is that same solution, graded — and if need be improved — on the original problem
+    sol, stats = polish(
+        algo.presolver, sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time
+    )
+    stats.starting_time = starting_time
+    stats.time_elapsed = time() - starting_time
+    return sol, stats
+end
+
+"""
+    polish(::Nothing, sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
+
+Skip the polish. Without a presolver there was no reduction, so `sol_postsolved` already solves
+`milp_init_cpu` and `stats_reduced` already grades it there: the pair is returned untouched.
+"""
+function polish(
+        ::Nothing,
+        sol_postsolved::PrimalDualSolution,
+        stats_reduced::ConvergenceStats,
+        ::MILP,
+        ::Algorithm,
+        ::Float64,
+    )
+    return sol_postsolved, stats_reduced
+end
+
+"""
+    polish(presolver, sol_postsolved, stats_reduced, milp_init_cpu, algo, starting_time)
+
+Turn a solution of the reduced problem, mapped back by [`postsolve`](@ref), into a solution of
+the problem the caller actually asked about, and return it with its own stats.
+
+Solving the reduced problem to `termination_reltol` does not guarantee that much on the original
+problem: postsolve reintroduces the eliminated rows and columns, and a presolver's dual
+reconstruction can be far off when it is handed an inexact solution to begin with. So the KKT
+errors are recomputed on `milp_init_cpu`, and if they miss the tolerance, `sol_postsolved`
+warm-starts an ordinary solve of the original problem — usually a short one, since it starts
+near the answer — which reports on the right problem by construction.
+
+That polish shares the budget of the whole call: it gets whatever KKT passes and time the solve
+of the reduced problem left over, and its `kkt_passes` count includes them. When there is no
+budget left to polish with, the postsolved solution is returned as is and an `OPTIMAL` status
+that the recomputed errors do not back up is demoted to `ALMOST_OPTIMAL`.
+"""
+function polish(
+        ::AbstractPresolver,
+        sol_postsolved::PrimalDualSolution,
+        stats_reduced::ConvergenceStats,
+        milp_init_cpu::MILP,
+        algo::Algorithm{A, T, Ti, M, B, R},
+        starting_time::Float64,
+    ) where {A, T, Ti, M, B, R}
+    (; termination_reltol, max_kkt_passes, time_limit) = algo.termination
+    # `sol_postsolved` has the shape of the original problem and the element and array types of
+    # `algo.conversion`, which is what `postsolve` promises, so the original problem is converted
+    # to match — but not preconditioned, since the solution is not in a preconditioned scale
+    milp = perform_conversion(milp_init_cpu, algo.conversion)
+    kkt_errors!(stats_reduced.err, Scratch(sol_postsolved), sol_postsolved, milp)
+    solved = batched_all(<=(termination_reltol), relative(stats_reduced.err))
+    passes_left = max_kkt_passes - stats_reduced.kkt_passes
+    time_left = time_limit - (time() - starting_time)
+    if solved || passes_left <= 0 || time_left <= 0
+        if !solved && stats_reduced.termination_status === MOI.OPTIMAL
+            stats_reduced.termination_status = MOI.ALMOST_OPTIMAL
+        end
+        return sol_postsolved, stats_reduced
+    end
+
+    # the warm start goes back to the host, since `solve` preprocesses a host problem and a host
+    # starting point, and comes back converted again
+    algo_polish = with_budget(algo, passes_left, time_left)
+    sol, stats = solve(milp_init_cpu, warm_start(sol_postsolved), algo_polish)
+    stats.kkt_passes += stats_reduced.kkt_passes
+    return sol, stats
+end
+
+"""
+    with_budget(algo, max_kkt_passes, time_limit)
+
+Copy `algo` with a new KKT-pass and time budget.
+
+A presolved solve runs the algorithm more than once, on the reduced problem and then possibly on
+the original one, so each phase gets what the previous ones left of the budget the caller set for
+the call as a whole. The presolver is carried over untouched: the three-argument `solve` that
+these phases go through never presolves in the first place.
+"""
+function with_budget(
+        algo::Algorithm{A, T, Ti, M, B, R, P}, max_kkt_passes::Integer, time_limit::Real
+    ) where {A, T, Ti, M, B, R, P}
+    termination = TerminationParameters(;
+        algo.termination.termination_reltol, max_kkt_passes, time_limit
+    )
+    return Algorithm{A, T, Ti, M, B, R, P}(
+        algo.conversion,
+        algo.preconditioning,
+        algo.step_size,
+        algo.restart,
+        algo.generic,
+        termination,
+        algo.presolver,
+    )
+end
+
+"""
+    warm_start(sol_postsolved)
+
+Turn a postsolved solution into a starting point for a host solve of the original problem.
+
+A presolver that cannot reconstruct the dual fills it with `NaN` (see [`postsolve`](@ref)), and
+a `NaN` start would poison every iterate that follows, so the non-finite entries are replaced by
+zeros rather than carried over. The finite ones, primal included, are kept: they are the whole
+point of starting from here.
+"""
+function warm_start(sol_postsolved::PrimalDualSolution)
+    sol_cpu = adapt(CPU(), sol_postsolved)
+    finite_or_zero(v) = ifelse(isfinite(v), v, zero(v))
+    return PrimalDualSolution(map(finite_or_zero, sol_cpu.x), map(finite_or_zero, sol_cpu.y))
 end
 
 """
