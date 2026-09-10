@@ -7,7 +7,10 @@ $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCOO{
         T <: Number,
-        Ti <: Integer,
+        # no `<: Integer` bound: under `Reactant` a traced index array has element type
+        # `TracedRNumber{Int32}`, a `Number` that is not an `Integer`, and bounding `Ti`
+        # would make the whole matrix untraceable
+        Ti,
         V <: DenseVector{T},
         Vi <: DenseVector{Ti},
     } <: AbstractSparseMatrix{T, Ti}
@@ -80,6 +83,16 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
+    return spmul!(c, A, b, α, β)
+end
+
+function spmul!(
+        c::V,
+        A::GPUSparseMatrixCOO{T, Ti, V},
+        b::V,
+        α::Number,
+        β::Number
+    ) where {T <: Number, Ti, V <: DenseVector{T}}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -110,6 +123,16 @@ end
 end
 
 function LinearAlgebra.mul!(
+        c::DenseMatrix{T},
+        A::GPUSparseMatrixCOO{T},
+        b::DenseMatrix{T},
+        α::Number,
+        β::Number
+    ) where {T <: Number}
+    return spmul!(c, A, b, α, β)
+end
+
+function spmul!(
         c::DenseMatrix{T},
         A::GPUSparseMatrixCOO{T},
         b::DenseMatrix{T},

@@ -143,7 +143,12 @@ function kkt_errors!(
     (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
 
     A_x = mul!(scratch.y, A, x)
-    c_At_y = mul!(scratch.x, At, y, -one(T), zero(T))
+    # plain `-1` and `false` rather than `-one(T)`/`zero(T)`: under `Reactant`, `T` is a traced
+    # number type, and a `mul!` that picks between kernel variants on `isone(α)`/`iszero(β)`
+    # cannot branch on the traced boolean those return. Literals keep the choice a
+    # compile-time one, and `false` keeps `β` a strong zero, so no kernel reads the scratch it
+    # is about to overwrite
+    c_At_y = mul!(scratch.x, At, y, -1, false)
     c_At_y .+= c
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 

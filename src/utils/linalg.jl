@@ -1,4 +1,32 @@
 """
+    GPUSparseMatrix
+
+Union of the sparse matrix formats CoolPDLP implements itself, each with its own
+`KernelAbstractions` kernels: [`GPUSparseMatrixCSR`](@ref), [`GPUSparseMatrixELL`](@ref) and
+[`GPUSparseMatrixCOO`](@ref).
+"""
+const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
+
+"""
+    spmul!(c, A, b, α, β)
+
+Compute `c = α * A * b + β * c` for one of CoolPDLP's own sparse formats by launching its
+kernel, and return `c`.
+
+This is where those kernels live, and `LinearAlgebra.mul!` forwards here. The indirection is
+what makes these formats usable under `Reactant`, which overlays `mul!` for every
+`AbstractMatrix` and lowers the product to a dense `stablehlo.dot_general`. An overlay takes
+precedence over any ordinary method, so the kernels have to be reachable under a name Reactant
+does not overlay; its extension redirects the overlaid `mul!` back here.
+
+Each format keeps a `LinearAlgebra.mul!` method with the same signature as its `spmul!` one,
+whose whole body is the forward. A single loose forward for all three formats would be shorter,
+but ambiguous with `MutableArithmetics.mul!(::AbstractVector{<:AbstractMutable}, ...)`, which
+`MathOptInterface` brings in.
+"""
+function spmul! end
+
+"""
     sametype_transpose(A::AbstractMatrix)
 
 Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).
