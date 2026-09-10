@@ -4,7 +4,9 @@ using GPUArraysCore
 using JLArrays
 using KernelAbstractions
 using LinearAlgebra
+using Random: shuffle
 using SparseArrays
+using StableRNGs: StableRNG
 using Test
 
 A_candidates = [
@@ -77,4 +79,44 @@ end
     A_ell = GPUSparseMatrixELL(A)
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
+end
+
+# `spmv_coo!` sums a run of same-row nonzeros before touching `c`, so the constructor stores
+# them row by row. Correctness must not depend on that ordering, only speed.
+@testset "COO groups nonzeros by row" begin
+    rng = StableRNG(0)
+    @testset "$label" for (label, A) in (
+            "short rows" => sprand(rng, 401, 260, 0.02),
+            "long rows" => sprand(rng, 120, 300, 0.4),
+            "one dense row among sparse ones" =>
+                sparse(vcat(fill(7, 300), 1:120), vcat(1:300, fill(2, 120)), 1.0, 120, 300),
+            "empty trailing rows" => sparse([1, 2], [1, 3], [2.0, 3.0], 40, 40),
+            "no nonzeros at all" => spzeros(30, 20),
+        )
+        A_coo = GPUSparseMatrixCOO(A)
+        @test issorted(A_coo.rowval)
+        @test SparseMatrixCSC(A_coo) == A
+        At = CoolPDLP.sametype_transpose(A_coo)
+        @test issorted(At.rowval)
+        @test SparseMatrixCSC(At) == SparseMatrixCSC(transpose(A))
+
+        A_jl = adapt(JLBackend(), A_coo)
+        b, c = rand(rng, size(A, 2)), rand(rng, size(A, 1))
+        @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        # a zero β is a strong zero, so a destination full of NaNs is never read
+        @test mul!(jl(fill(NaN, size(A, 1))), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        B, C = rand(rng, size(A, 2), 3), rand(rng, size(A, 1), 3)
+        @test mul!(jl(copy(C)), A_jl, jl(B), α, β) ≈ α * (A * B) + β * C
+        @test mul!(jl(fill(NaN, size(A, 1), 3)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+
+        @testset "an unsorted matrix still multiplies correctly" begin
+            I, J, V = findnz(A)
+            perm = shuffle(rng, collect(eachindex(V)))
+            shuffled = adapt(
+                JLBackend(),
+                GPUSparseMatrixCOO(size(A, 1), size(A, 2), I[perm], J[perm], V[perm])
+            )
+            @test mul!(jl(fill(NaN, size(A, 1))), shuffled, jl(b), 1.0, 0.0) ≈ A * b
+        end
+    end
 end
