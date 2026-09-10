@@ -42,56 +42,47 @@ unwrap(x::Number) = Float64(x)
 unwrap(x::AbstractArray) = Array(x)
 
 """
-    solve_plain_and_compiled(algo)
+    solve_plain_and_compiled(algo, milp_init=milp0, sol_init=sol0)
 
 Solve the same problem twice with `algo`, from the same starting point: once with the plain
 Julia loop, once with a Reactant-compiled one.
 
 Return the two final states, whose contents should agree up to numerical precision.
 """
-function solve_plain_and_compiled(algo::CoolPDLP.Algorithm)
-    milp, sol = preprocess(milp0, sol0, algo)
+function solve_plain_and_compiled(
+        algo::CoolPDLP.Algorithm, milp_init::MILP = milp0, sol_init = sol0
+    )
+    milp, sol = preprocess(milp_init, sol_init, algo)
     state = initialize(milp, sol, algo; starting_time = time())
     solve!(state, milp, algo)
 
     # `solve!` mutates both the state and the scratch space it shares with the problem, so
     # the compiled run starts from its own copy of everything
-    milp_copy, sol_copy = preprocess(milp0, sol0, algo)
+    milp_copy, sol_copy = preprocess(milp_init, sol_init, algo)
     state_copy = initialize(milp_copy, sol_copy, algo; starting_time = time())
     milp_r = to_rarray(milp_copy; track_numbers = true)
     state_r = to_rarray(state_copy; track_numbers = true)
     algo_r = to_rarray(algo; track_numbers = true)
-    compiled_solve! = @compile solve!(state_r, milp_r, algo_r)
+    # `PrecisionConfig.HIGHEST` stops XLA from lowering the matrix products to TF32 tensor
+    # cores on an NVIDIA GPU. That default costs about three digits, which a `Float32` batch
+    # feeds back into its own trajectory until it no longer resembles the plain run at all --
+    # a difference in how a product is evaluated, not in what the compiled loop does.
+    compiled_solve! = Reactant.with_config(;
+        dot_general_precision = Reactant.PrecisionConfig.HIGHEST
+    ) do
+        @compile solve!(state_r, milp_r, algo_r)
+    end
     compiled_solve!(state_r, milp_r, algo_r)
 
     return state, state_r
 end
 
-# `time_limit` is deliberately left out. The compiled loop does read the clock at each check
-# now, so a binding time limit would stop the two runs after different numbers of iterations
-# and make them incomparable. The KKT pass budget bounds the runtime instead.
-configs = [
-    (:PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
-    (:PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
-    (:PDHG, Float64, 1.0e-4, 2000, 1.0e-8),
-    (:PDLP, Float64, 1.0e-4, 2000, 1.0e-8),
-]
+"""
+    test_agreement(state, state_r; rtol)
 
-@testset verbose = true "$A in $T" for (A, T, termination_reltol, max_kkt_passes, rtol) in configs
-    algo = CoolPDLP.Algorithm{A}(
-        T,
-        Int32,
-        Matrix;
-        backend = nothing,
-        termination_reltol,
-        max_kkt_passes,
-        time_limit = Inf,
-        check_every = 50,
-        record_error_history = false,
-        show_progress = false,
-    )
-    state, state_r = solve_plain_and_compiled(algo)
-
+Check that a compiled solve ended up where the plain one did.
+"""
+function test_agreement(state, state_r; rtol)
     @testset "Finite iterates" begin
         @test all(isfinite, unwrap(state_r.sol.x))
         @test all(isfinite, unwrap(state_r.sol.y))
@@ -121,6 +112,77 @@ configs = [
         @test termination_status(state_r.stats) != MOI.OPTIMIZE_NOT_CALLED
         @test termination_status(state_r.stats) == termination_status(state.stats)
     end
+    return nothing
+end
+
+# `time_limit` is deliberately left out. The compiled loop does read the clock at each check
+# now, so a binding time limit would stop the two runs after different numbers of iterations
+# and make them incomparable. The KKT pass budget bounds the runtime instead.
+configs = [
+    (:PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
+    (:PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
+    (:PDHG, Float64, 1.0e-4, 2000, 1.0e-8),
+    (:PDLP, Float64, 1.0e-4, 2000, 1.0e-8),
+]
+
+@testset verbose = true "$A in $T" for (A, T, termination_reltol, max_kkt_passes, rtol) in configs
+    algo = CoolPDLP.Algorithm{A}(
+        T,
+        Int32,
+        Matrix;
+        backend = nothing,
+        termination_reltol,
+        max_kkt_passes,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    state, state_r = solve_plain_and_compiled(algo)
+    test_agreement(state, state_r; rtol)
+end
+
+# The batch rescales the objective of the same Netlib instance, one factor per column. That
+# keeps every instance as well-conditioned as the one solved above, which is what makes the
+# plain and compiled runs comparable at all: XLA reassociates floating-point arithmetic, so a
+# batch of badly scaled random problems would drift apart between the two loops.
+const BATCH_SCALES = [1.0, 1.01, 0.99]
+const NBATCH = length(BATCH_SCALES)
+batch_column(v) = repeat(v, 1, NBATCH)
+milp_batch = MILP(;
+    c = stack(scale * milp0.c for scale in BATCH_SCALES),
+    lv = batch_column(milp0.lv),
+    uv = batch_column(milp0.uv),
+    milp0.A,
+    lc = batch_column(milp0.lc),
+    uc = batch_column(milp0.uc),
+    milp0.int_var,
+)
+sol_batch = PrimalDualSolution(milp_batch)
+
+@testset verbose = true "Batched $A in $T" for (A, T, termination_reltol, max_kkt_passes, rtol) in configs
+    algo = CoolPDLP.Algorithm{A}(
+        T,
+        Int32,
+        Matrix;
+        backend = nothing,
+        termination_reltol,
+        max_kkt_passes,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    state, state_r = solve_plain_and_compiled(algo, milp_batch, sol_batch)
+
+    @testset "One column per instance" begin
+        @test size(unwrap(state_r.sol.x)) == (nbvar(milp_batch), NBATCH)
+        @test size(unwrap(state_r.sol.y)) == (nbcons(milp_batch), NBATCH)
+        # guard against a vacuous comparison: the instances must not all be the same problem
+        @test allunique(unwrap(state_r.stats.err.primal))
+    end
+
+    test_agreement(state, state_r; rtol)
 end
 
 # Reading the host clock inside a compiled program needs a Reactant callback, which not every
