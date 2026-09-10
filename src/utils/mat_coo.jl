@@ -69,8 +69,8 @@ end
         α::Number,
     ) where {T, Ti}
     k = @index(Global, Linear)
-    i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
-    Atomix.@atomic c[i] += α * v * b[j]
+    @inbounds i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
+    @inbounds Atomix.@atomic c[i] += α * v * b[j]
 end
 
 function LinearAlgebra.mul!(
@@ -105,8 +105,8 @@ end
         α::Number,
     ) where {T, Ti}
     k, batch_idx = @index(Global, NTuple)
-    i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
-    Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
+    @inbounds i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
+    @inbounds Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
 end
 
 function LinearAlgebra.mul!(
