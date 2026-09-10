@@ -142,11 +142,6 @@ configs = [
     test_agreement(state, state_r; rtol)
 end
 
-# A batch turns every per-column quantity into a vector, and the checks that end the solve loop
-# reduce it to the single (traced) boolean the loop branches on. Reactant infers such a
-# reduction as `Union{TracedRArray, TracedRNumber}`, which used to make `termination_check!`
-# and `restart_check!` return an abstract type and abort the compilation.
-#
 # The batch rescales the objective of the same Netlib instance, one factor per column. That
 # keeps every instance as well-conditioned as the one solved above, which is what makes the
 # plain and compiled runs comparable at all: XLA reassociates floating-point arithmetic, so a

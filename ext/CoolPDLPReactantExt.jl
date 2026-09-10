@@ -12,6 +12,7 @@ Reactant types every reduction over a `TracedRArray` as `Union{TracedRArray, Tra
 accurate enough to trace but too coarse for the callers: the abstract type would escape into
 the return type of the termination and restart checks of a batched solve. The reduced value is
 in fact a traced scalar, which is what this returns.
+Once https://github.com/EnzymeAD/Reactant.jl/issues/3261 is solved upstream, this can be removed.
 """
 CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
 

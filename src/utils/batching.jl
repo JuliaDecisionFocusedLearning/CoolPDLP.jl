@@ -73,12 +73,7 @@ instance_num(val::AbstractVector, i::Int) = val[i]
 Return the type of the boolean obtained by reducing the per-instance vector `v` to a single decision.
 
 For an ordinary array this is simply `Bool`, but it is a hook for array types whose scalars
-are wrapped, and the `Reactant` extension overloads it. Reducing a batch (with `all`, `sum`,
-`maximum`, ...) yields one scalar, yet Reactant types every such reduction over a
-`TracedRArray` as `Union{TracedRArray, TracedRNumber}`. Left alone, that abstract type escapes
-through the reductions below into the return types of the termination and restart checks of a
-batched solve, which are what the solve loops branch on. Asserting the scalar type costs
-nothing at run time and keeps every caller inferrable.
+are wrapped, and the `Reactant` extension overloads it.
 """
 batched_bool_type(::AbstractVector) = Bool
 
