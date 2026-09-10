@@ -144,3 +144,31 @@ end
         @test mul!(jl(fill(NaN, 37)), A_jl, jl(rand(21)), 1.0, 0.0) ≈ zeros(37)
     end
 end
+
+@testset "CSR sub-group shrinks with the batch" begin
+    # a sub-group creates parallelism, which a batch dimension already supplies, so the
+    # choice has to come down as the batch grows -- and the results must not move with it
+    A = banded_csr(1013, 60, 20)
+    A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+    @test CoolPDLP.subgroup_size(A_jl, 1) == CoolPDLP.subgroup_size(A_jl)
+    sizes = [CoolPDLP.subgroup_size(A_jl, nb) for nb in (1, 32, 1024, 32768)]
+    @test issorted(sizes; rev = true)
+    @test sizes[end] < sizes[1]
+    @test all(>=(1), sizes)
+
+    # a wide batch may only narrow the sub-group, never widen it: the bound on how far it
+    # narrows is not a floor on the result
+    @testset "$nz_per_row nonzeros per row" for nz_per_row in (1, 2, 3, 5, 11, 20, 60, 130)
+        A_short = adapt(JLBackend(), GPUSparseMatrixCSR(banded_csr(997, 200, nz_per_row)))
+        plain = CoolPDLP.subgroup_size(A_short)
+        @test all(
+            CoolPDLP.subgroup_size(A_short, nb) <= plain for nb in (1, 10, 100, 10^4, 10^6)
+        )
+    end
+    @testset "nbatch=$nbatch" for nbatch in (1, 2, 32, 40, 1024)
+        B = rand(size(A, 2), nbatch)
+        C = rand(size(A, 1), nbatch)
+        @test mul!(jl(copy(C)), A_jl, jl(B), α, β) ≈ α * (A * B) + β * C
+        @test mul!(jl(fill(NaN, size(A, 1), nbatch)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+end
