@@ -31,8 +31,22 @@ solution.
 `solve` only ever tackles the continuous relaxation of `milp` (see [`relax`](@ref)), so a
 presolver is free to ignore integrality — and should not apply an integer-specific reduction,
 which would reduce a problem nobody is solving.
+
+!!! warning
+    Implementations are expected to be type-stable: `solve` runs `presolve` as one of its steps,
+    like `preprocess` or `initialize`, and inherits whatever `presolve` returns. A presolver
+    whose return type is not inferrable makes `solve` type-unstable too, which
+    [DispatchDoctor](https://github.com/MilesCranmer/DispatchDoctor.jl) turns into an error.
 """
 function presolve end
+
+"""
+    presolve(::Nothing, milp::MILP) -> (milp, nothing)
+
+Reduce nothing at all: `presolver = nothing` is how [`Algorithm`](@ref) spells "no presolve", and
+this is the identity step it stands for, so that `solve` runs the same pipeline either way.
+"""
+presolve(::Nothing, milp::MILP) = (milp, nothing)
 
 """
     postsolve(presolver::AbstractPresolver, presolve_info, sol_reduced::PrimalDualSolution) -> PrimalDualSolution
@@ -50,8 +64,19 @@ requested tolerance. Implementations that genuinely cannot reconstruct the dual 
 underlying tool's interface is primal-only) should fill it with `NaN` rather than `0.0`: `NaN`
 propagates loudly through any arithmetic that touches it, rather than being mistaken for a real
 (zero) dual value.
+
+!!! warning
+    Like [`presolve`](@ref), implementations are expected to be type-stable.
 """
 function postsolve end
+
+"""
+    postsolve(::Nothing, ::Nothing, sol_reduced::PrimalDualSolution) -> sol_reduced
+
+Map nothing back: the counterpart of [`presolve`](@ref) on a `nothing` presolver, where the
+"reduced" problem was the original one all along.
+"""
+postsolve(::Nothing, ::Nothing, sol_reduced::PrimalDualSolution) = sol_reduced
 
 """
     milp_to_mps(milp::MILP, file::AbstractString)

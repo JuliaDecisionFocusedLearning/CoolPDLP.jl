@@ -425,6 +425,34 @@ end
     @test stats.termination_status != MOI.OPTIMAL
 end
 
+@testset "`nothing` is the identity presolver" begin
+    # `presolver = nothing` is not a special case in `solve`, it is the identity step, so the
+    # pipeline is the same either way
+    milp = _core_padded_milp()
+    milp_reduced, presolve_info = presolve(nothing, milp)
+    @test milp_reduced === milp
+    @test isnothing(presolve_info)
+    sol = PrimalDualSolution(milp)
+    @test postsolve(nothing, presolve_info, sol) === sol
+end
+
+@testset "presolve, postsolve and solve are type-stable" begin
+    # `solve` runs `presolve`/`postsolve` as ordinary steps of its pipeline, next to `preprocess`
+    # and `initialize`, so it inherits their return types: a presolver is expected to be
+    # inferrable, and `solve` must come out just as concrete with one as without
+    presolver = CoolPDLP.PaPILOPresolver()
+    milp = _core_padded_milp()
+    milp_reduced, presolve_info = @inferred presolve(presolver, milp)
+    @inferred postsolve(presolver, presolve_info, PrimalDualSolution(milp_reduced))
+
+    common_opts = (; termination_reltol = 1.0e-8, show_progress = false)
+    algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver)
+    algo_plain = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...)
+    @inferred solve(milp, algo)
+    @test Base.infer_return_type(solve, Tuple{typeof(milp), typeof(algo)}) ===
+        Base.infer_return_type(solve, Tuple{typeof(milp), typeof(algo_plain)})
+end
+
 @testset "Presolve does not support batched MILPs" begin
     milp, _ = CoolPDLP.random_milp_and_sol(4, 6, 0.5)
     milp_batch = MILP(; c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc)

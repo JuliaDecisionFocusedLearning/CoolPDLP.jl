@@ -4,7 +4,7 @@ module CoolPDLP
 using Adapt: Adapt, adapt
 using Atomix: Atomix
 using BangBang: add!!, broadcast!!
-using DispatchDoctor: @stable, @unstable
+using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
 using JuMP: JuMP
@@ -37,7 +37,7 @@ include("public.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")
-    @unstable include("components/presolve.jl")
+    include("components/presolve.jl")
     include("components/preconditioning.jl")
     include("components/permutation.jl")
     include("components/step_size.jl")
