@@ -1,45 +1,9 @@
 """
     GPUSparseMatrix
 
-Union of the sparse matrix formats CoolPDLP implements itself, each with its own
-`KernelAbstractions` kernels: [`GPUSparseMatrixCSR`](@ref), [`GPUSparseMatrixELL`](@ref) and
-[`GPUSparseMatrixCOO`](@ref).
+Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
-
-"""
-    spmul!(c, A, b, α, β)
-
-Compute `c = α * A * b + β * c` for one of CoolPDLP's own sparse formats by launching its
-kernel, and return `c`.
-
-This is where those kernels live, and `LinearAlgebra.mul!` forwards here. The indirection is
-what makes these formats usable under `Reactant`, which overlays `mul!` for every
-`AbstractMatrix` and lowers the product to a dense `stablehlo.dot_general`. An overlay takes
-precedence over any ordinary method, so the kernels have to be reachable under a name Reactant
-does not overlay; its extension redirects the overlaid `mul!` back here.
-
-Each format keeps a `LinearAlgebra.mul!` method with the same signature as its `spmul!` one,
-whose whole body is the forward. A single loose forward for all three formats would be shorter,
-but ambiguous with `MutableArithmetics.mul!(::AbstractVector{<:AbstractMutable}, ...)`, which
-`MathOptInterface` brings in.
-"""
-function spmul! end
-
-"""
-    spmm!(c, A, b, nb, α, β)
-
-The batched product behind [`spmul!`](@ref) on **flattened** operands: `c` and `b` are the
-column-major flattenings of the `m × nb` and `n × nb` batches, and each kernel recovers column
-`batch_idx` from the offset `(batch_idx - 1) * m` (resp. `n`).
-
-The plain path passes `vec` views, so nothing is copied. The point of the flat signature is
-`Reactant`: a 2-D array handed to a kernel inside a compiled loop can be silently laid out
-row-major by XLA when a reduction follows the loop, since the kernel call pins no layout of its
-own; a 1-D array has a single layout, so the extension routes a batched product through here
-on reshaped operands.
-"""
-function spmm! end
 
 """
     sametype_transpose(A::AbstractMatrix)

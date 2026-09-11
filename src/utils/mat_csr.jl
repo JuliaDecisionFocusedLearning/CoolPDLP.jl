@@ -7,10 +7,7 @@ $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCSR{
         T <: Number,
-        # no `<: Integer` bound: under `Reactant` a traced index array has element type
-        # `TracedRNumber{Int32}`, a `Number` that is not an `Integer`, and bounding `Ti`
-        # would make the whole matrix untraceable
-        Ti,
+        Ti,  # not `<: Integer`: traced indices are `TracedRNumber`s
         V <: DenseVector{T},
         Vi <: DenseVector{Ti},
     } <: AbstractSparseMatrix{T, Ti}
@@ -101,16 +98,6 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
-    return spmul!(c, A, b, α, β)
-end
-
-function spmul!(
-        c::V,
-        A::GPUSparseMatrixCSR{T, Ti, V},
-        b::V,
-        α::Number,
-        β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)
@@ -129,26 +116,21 @@ function spmul!(
 end
 
 @kernel function spmm_csr!(
-        c::DenseVector{T},
+        c::DenseMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseVector{T},
-        m::Int,
-        n::Int,
+        b::DenseMatrix{T},
         α::Number,
         β::Number
     ) where {T, Ti}
-    # `c` and `b` are the batches flattened column-major: column `batch_idx` of an `m × nb`
-    # (resp. `n × nb`) matrix starts at offset `(batch_idx - 1) * m` (resp. `n`)
     i, batch_idx = @index(Global, NTuple)
     s = zero(T)
     for k in A_rowptr[i]:(A_rowptr[i + Ti(1)] - Ti(1))
         j = A_colval[k]
-        s += A_nzval[k] * b[j + (batch_idx - 1) * n]
+        s += A_nzval[k] * b[j, batch_idx]
     end
-    ci = i + (batch_idx - 1) * m
-    c[ci] = α * s + β * c[ci]
+    c[i, batch_idx] = α * s + β * c[i, batch_idx]
 end
 
 function LinearAlgebra.mul!(
@@ -158,43 +140,19 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number}
-    return spmul!(c, A, b, α, β)
-end
-
-function spmul!(
-        c::DenseMatrix{T},
-        A::GPUSparseMatrixCSR{T},
-        b::DenseMatrix{T},
-        α::Number,
-        β::Number
-    ) where {T <: Number}
     check_mul_dims(c, A, b)
-    spmm!(vec(c), A, vec(b), size(c, 2), α, β)
-    return c
-end
-
-function spmm!(
-        c::DenseVector{T},
-        A::GPUSparseMatrixCSR{T},
-        b::DenseVector{T},
-        nb::Int,
-        α::Number,
-        β::Number
-    ) where {T <: Number}
     backend = common_backend(c, A, b)
-    m, n = size(A)
     kernel! = spmm_csr!(backend)
     α_is_one = isone(α)
     β_is_zero = iszero(β)
-    ndrange = (m, nb)
     if α_is_one && β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, One(), Zero(); ndrange)
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
     elseif α_is_one
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, One(), β; ndrange)
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, One(), β; ndrange = size(c))
     elseif β_is_zero
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, α, Zero(); ndrange)
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
     else
-        kernel!(c, A.rowptr, A.colval, A.nzval, b, m, n, α, β; ndrange)
+        kernel!(c, A.rowptr, A.colval, A.nzval, b, α, β; ndrange = size(c))
     end
     return c
 end

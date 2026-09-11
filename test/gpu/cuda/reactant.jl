@@ -1,10 +1,4 @@
-# Reactant compilation of CoolPDLP's own sparse formats.
-#
-# This lives in the `cuda` group rather than in `test/gpu/reactant/`, because Reactant lowers a
-# `KernelAbstractions` kernel through CUDA.jl's GPU compiler *whatever the target backend*, so
-# `using CUDA` is required here even though the same code also compiles on Reactant's CPU
-# backend. The `Reactant` group deliberately does not depend on CUDA.jl, and its
-# "Custom sparse wrappers can be traced" testset covers the part of this that needs no kernel.
+# Reactant tracing needs CUDA.jl to compile the kernels, on any backend
 using CoolPDLP
 using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL, termination_status
 using LinearAlgebra
@@ -19,10 +13,6 @@ Reactant.set_default_backend("gpu")
 
 const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
 
-# `mul!` is what Reactant gets wrong on its own: it overlays the function for every
-# `AbstractMatrix` and lowers the product to a dense `stablehlo.dot_general`, which cannot work on
-# a sparse wrapper. These products must come out of the compiled program just as the kernel
-# computes them outside it.
 @testset verbose = true "Compiled products" begin
     rng = Xoshiro(0)
     A_cpu = sprandn(rng, 24, 16, 0.3)
@@ -49,14 +39,7 @@ const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO
     end
 end
 
-# A whole solve, single-instance and batched, to check that nothing else in the loop objects to a
-# sparse matrix.
-#
-# The batched case is the one to watch: without the flattened launch in the extension's
-# `spmul_batched!`, it comes out wrong from its second iteration on this backend. XLA's layout
-# assignment lets the reductions of `kkt_errors!` pick a row-major layout for the loop-carried
-# scratch that the sparse kernels write, and the kernel call pins no layout of its own. A vector
-# has a single layout, which is why the single-instance solve was never affected.
+# batched solves hit the XLA layout bug that `flat_mul!` works around
 @testset verbose = true "Compiled solve" begin
     milp0, sol0 = CoolPDLP.random_milp_and_sol(Xoshiro(0), 20, 30, 0.4)
 
@@ -87,8 +70,6 @@ end
         state = initialize(milp, sol, algo; starting_time = time())
         CoolPDLP.solve!(state, milp, algo)
 
-        # `solve!` mutates the scratch space it shares with the problem, so the compiled run
-        # starts from its own copy
         milp_copy, sol_copy = preprocess(milp_init, sol_init, algo)
         state_copy = initialize(milp_copy, sol_copy, algo; starting_time = time())
         milp_r = to_rarray(milp_copy; track_numbers = true)
@@ -98,7 +79,6 @@ end
         compiled_solve!(state_r, milp_r, algo_r)
 
         @test all(isfinite, Array(state_r.sol.x))
-        # both loops must stop at the same point for the iterates to be comparable at all
         @test Int(state_r.stats.kkt_passes) == state.stats.kkt_passes
         @test termination_status(state_r.stats) == termination_status(state.stats)
         @test Array(state_r.sol.x) ≈ Array(state.sol.x) rtol = 1.0e-6

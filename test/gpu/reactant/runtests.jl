@@ -44,17 +44,10 @@ compared with its plain counterpart without going through `Reactant` conversions
 unwrap(x::Number) = Float64(x)
 unwrap(x::AbstractArray) = Array(x)
 
-# A `GPUSparseMatrix{CSR,ELL,COO}` keeps its sparsity pattern in integer arrays, which tracing
-# turns into `TracedRArray{Int32}` -- element type `TracedRNumber{Int32}`, a `Number` that is not
-# an `Integer`. The index type parameter of these wrappers therefore carries no `<: Integer`
-# bound; with one, every one of them aborts tracing before a single operation is emitted.
-#
-# This testset compiles a function that only reads the fields, so it needs no sparse kernel and
-# runs on any backend: it isolates the tracing of the wrapper from what is done with it.
+# only reads the fields, so it needs no kernel and no CUDA.jl
 trace_fields(A) = sum(A.nzval) + sum(A.colval)
 
 @testset "Custom sparse wrappers can be traced" begin
-    # `Int32` indices, as the configs below ask for
     A_cpu = convert(SparseMatrixCSC{Float64, Int32}, sprand(StableRNG(0), 12, 8, 0.4))
     @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
         A = M(A_cpu)

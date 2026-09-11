@@ -7,10 +7,7 @@ $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCOO{
         T <: Number,
-        # no `<: Integer` bound: under `Reactant` a traced index array has element type
-        # `TracedRNumber{Int32}`, a `Number` that is not an `Integer`, and bounding `Ti`
-        # would make the whole matrix untraceable
-        Ti,
+        Ti,  # not `<: Integer`: traced indices are `TracedRNumber`s
         V <: DenseVector{T},
         Vi <: DenseVector{Ti},
     } <: AbstractSparseMatrix{T, Ti}
@@ -83,16 +80,6 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
-    return spmul!(c, A, b, α, β)
-end
-
-function spmul!(
-        c::V,
-        A::GPUSparseMatrixCOO{T, Ti, V},
-        b::V,
-        α::Number,
-        β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -110,19 +97,16 @@ function spmul!(
 end
 
 @kernel function spmm_coo!(
-        c::DenseVector{T},
+        c::DenseMatrix{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseVector{T},
-        m::Int,
-        n::Int,
+        b::DenseMatrix{T},
         α::Number,
     ) where {T, Ti}
-    # `c` and `b` are the batches flattened column-major, see `spmm_csr!`
     k, batch_idx = @index(Global, NTuple)
     i, j, v = A_rowval[k], A_colval[k], A_nzval[k]
-    Atomix.@atomic c[i + (batch_idx - 1) * m] += α * v * b[j + (batch_idx - 1) * n]
+    Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
 end
 
 function LinearAlgebra.mul!(
@@ -132,42 +116,19 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number}
-    return spmul!(c, A, b, α, β)
-end
-
-function spmul!(
-        c::DenseMatrix{T},
-        A::GPUSparseMatrixCOO{T},
-        b::DenseMatrix{T},
-        α::Number,
-        β::Number
-    ) where {T <: Number}
     check_mul_dims(c, A, b)
-    spmm!(vec(c), A, vec(b), size(c, 2), α, β)
-    return c
-end
-
-function spmm!(
-        c::DenseVector{T},
-        A::GPUSparseMatrixCOO{T},
-        b::DenseVector{T},
-        nb::Int,
-        α::Number,
-        β::Number
-    ) where {T <: Number}
     backend = common_backend(c, A, b)
-    m, n = size(A)
     kernel! = spmm_coo!(backend)
     if iszero(β)
         zero!(c)
     elseif !isone(β)
         c .*= β
     end
-    ndrange = (length(A.nzval), nb)
+    ndrange = (length(A.nzval), size(c, 2))
     if isone(α)
-        kernel!(c, A.rowval, A.colval, A.nzval, b, m, n, One(); ndrange)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, One(); ndrange)
     else
-        kernel!(c, A.rowval, A.colval, A.nzval, b, m, n, α; ndrange)
+        kernel!(c, A.rowval, A.colval, A.nzval, b, α; ndrange)
     end
     return c
 end

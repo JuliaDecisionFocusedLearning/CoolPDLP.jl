@@ -1,6 +1,8 @@
 module CoolPDLPReactantExt
 
+using Adapt: Adapt, adapt
 using CoolPDLP: CoolPDLP
+using KernelAbstractions: KernelAbstractions, get_backend
 using LinearAlgebra: LinearAlgebra
 using Reactant: Reactant, TracedRArray, TracedRNumber, @reactant_overlay
 
@@ -17,19 +19,7 @@ Once https://github.com/EnzymeAD/Reactant.jl/issues/3261 is solved upstream, thi
 """
 CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
 
-# Trace one of CoolPDLP's own sparse formats without turning its shape into a runtime input.
-#
-# `m` and `n` are plain `Int` fields, and any mode that promotes Julia numbers -- `to_rarray(…;
-# track_numbers = true)`, but also the `@trace while` loop of `solve!`, which promotes the numbers
-# of everything the loop carries -- derives `TracedRNumber{Int64}` for them. The struct declares
-# them as `Int`, so Reactant cannot express the converted type and gives up with a
-# `NoFieldMatchError`. Moving the shape into the type parameters would fix that, at the price of a
-# distinct Julia type (and so a fresh compilation of the whole solver) per matrix shape.
-#
-# The shape of a sparse matrix is structure rather than data, and so is its sparsity pattern: no
-# solve ever wants either as a runtime scalar. Both overloads below say exactly that, by tracing
-# these wrappers with number tracking switched off. Their nonzero values and index arrays are
-# arrays, so they are still traced as usual.
+# A sparse matrix's shape and pattern are structure, so trace it without number tracking.
 function Reactant.traced_type_inner(
         @nospecialize(T::Type{<:CoolPDLP.GPUSparseMatrix}),
         seen,
@@ -56,73 +46,100 @@ function Reactant.make_tracer(
     )
 end
 
-# Send a product by one of CoolPDLP's own sparse formats back to its kernel.
-#
-# Reactant overlays `mul!` for every `AbstractMatrix` and lowers the product to a dense
-# `stablehlo.dot_general`. An overlay takes precedence over any ordinary method, so without a
-# more specific overlay the kernel-backed `mul!` of these formats is never reached: the overlay
-# tries to materialise the matrix as a traced array instead, and since such a wrapper is an
-# `AbstractArray{<:TracedRNumber}` that is *not* a view of a `TracedRArray`, Reactant's
-# `get_ancestor_and_indices` recurses on it until the stack overflows.
-#
-# `CoolPDLP.spmul!` is the same kernel launch under a name Reactant does not overlay. The launch
-# itself still goes through Reactant's own `KernelAbstractions` overlay, which is what turns it
-# into a GPU kernel inside the compiled program.
-#
-# The two shapes mirror Reactant's own overlays, so that each of these is strictly more specific
-# than the one it has to beat.
+# Reactant's own `mul!` overlays densify the matrix, so these send the product to its kernels.
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector, α::Number, β::Number
     )
-    return CoolPDLP.spmul!(c, A, b, α, β)
+    return flat_mul!(c, A, b, α, β)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat, α::Number, β::Number
+        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix, α::Number, β::Number
     )
-    return spmul_batched!(c, A, b, α, β)
+    return flat_mul!(c, A, b, α, β)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector
     )
-    return CoolPDLP.spmul!(c, A, b, true, false)
+    return flat_mul!(c, A, b, true, false)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat
+        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix
     )
-    return spmul_batched!(c, A, b, true, false)
+    return flat_mul!(c, A, b, true, false)
 end
 
 """
-    spmul_batched!(c, A, b, α, β)
+    FlatArray
 
-A batched sparse product inside a compiled program, run on flattened operands.
+Column-major array view of a flat traced buffer.
 
-This works around a miscompilation on Reactant's CUDA backend: a 2-D array written by a
-`KernelAbstractions` kernel inside a `@trace for` loop and reduced after the loop comes back
-wrong. XLA's layout assignment lets the reduction pick a row-major layout for the loop-carried
-array, and since the `enzymexla.kernel_call` pins neither its operand nor its result layouts,
-XLA hands the kernel's column-major bytes over as if they were row-major. Nothing placed between
-the loop and the reduction helps (`copy`, a broadcast, an `optimization_barrier` -- the
-preference propagates through them all), and writing the kernel's output into a fresh 2-D array
-gets undone by XLA's copy elision in a program of this size.
-
-A 1-D array has a single layout, and `Reactant.Ops.reshape` is an op XLA has to honour, so the
-kernel here reads a reshaped copy of `b`, writes a fresh 1-D buffer, and `c` is filled from its
-reshape. The vector case has nothing to fix and keeps the direct launch. The proper fix belongs
-upstream: the lowering of `enzymexla.kernel_call` should carry `operand_layouts` *and*
-`result_layouts`, as `Reactant.Ops.julia_callback` already does for its own custom call.
+A kernel indexes it like the original array, but only ever receives 1-D operands, which XLA
+cannot reorder (a kernel call pins no memory layout, so a 2-D operand can come back transposed).
 """
-function spmul_batched!(c::AbstractMatrix, A, b::AbstractMatrix, α::Number, β::Number)
-    m, nb = size(c)
-    b_flat = Reactant.Ops.reshape(b, length(b))
-    tmp = similar(c, length(c))
-    # the kernel reads its destination whenever it accumulates into it
-    (β isa TracedRNumber || !iszero(β)) && (tmp .= Reactant.Ops.reshape(c, length(c)))
-    CoolPDLP.spmm!(tmp, A, b_flat, nb, α, β)
-    c .= Reactant.Ops.reshape(tmp, m, nb)
+struct FlatArray{T, N, V <: AbstractVector{T}} <: DenseArray{T, N}
+    data::V
+    dims::NTuple{N, Int}
+end
+
+Base.size(x::FlatArray) = x.dims
+Base.IndexStyle(::Type{<:FlatArray}) = Base.IndexLinear()
+Base.@propagate_inbounds Base.getindex(x::FlatArray, i::Int) = x.data[i]
+Base.@propagate_inbounds Base.setindex!(x::FlatArray, v, i::Int) = (x.data[i] = v)
+Base.pointer(x::FlatArray) = pointer(x.data)  # for `Atomix.@atomic`
+Base.pointer(x::FlatArray, i::Integer) = pointer(x.data, i)
+
+Adapt.adapt_structure(to, x::FlatArray) = FlatArray(adapt(to, x.data), x.dims)
+
+"""
+    Flatten
+
+Adaptor turning every traced array into a [`FlatArray`](@ref).
+"""
+struct Flatten end
+
+Adapt.adapt_structure(::Flatten, x::TracedRArray) = FlatArray(Reactant.Ops.reshape(x, length(x)), size(x))
+
+"""
+    FlatBackend
+
+Backend of a [`FlatArray`](@ref), whose kernels are launched by Reactant even from native code.
+"""
+struct FlatBackend{B <: KernelAbstractions.GPU} <: KernelAbstractions.GPU
+    backend::B
+end
+
+KernelAbstractions.get_backend(x::FlatArray) = FlatBackend(get_backend(x.data))
+
+function (kernel::KernelAbstractions.Kernel{FlatBackend{B}, W, N, F})(
+        args...; ndrange = nothing, workgroupsize = nothing
+    ) where {B, W, N, F}
+    (; backend) = kernel.backend
+    inner = KernelAbstractions.Kernel{B, W, N, F}(backend, kernel.f)
+    return Reactant.call_with_reactant(
+        Reactant.ka_with_reactant, ndrange, workgroupsize, inner, args...
+    )
+end
+
+"""
+    flat_mul!(c, A, b, α, β)
+
+Run the ordinary `mul!` of `A` on flattened operands, inside a compiled program.
+"""
+function flat_mul!(c::AbstractVecOrMat, A, b::AbstractVecOrMat, α::Number, β::Number)
+    αAb = fill!(similar(c, length(c)), zero(eltype(c)))
+    # native dispatch reaches the format's own `mul!`, which adds into the zeroed buffer
+    Reactant.call_with_native(
+        LinearAlgebra.mul!, FlatArray(αAb, size(c)), adapt(Flatten(), A), adapt(Flatten(), b), α, true
+    )
+    αAb = Reactant.Ops.reshape(αAb, size(c)...)
+    if !(β isa TracedRNumber) && iszero(β)
+        c .= αAb
+    else
+        c .= αAb .+ β .* c
+    end
     return c
 end
 
@@ -136,11 +153,7 @@ afterwards, and a `()`-shaped output arrives dereferenced, as a plain `Float64` 
 write into. The output is therefore declared with shape `(1,)` and reduced back to a scalar on
 the traced side.
 
-The write goes through `fill!` rather than `out[1] =`: on the CUDA backend the buffer handed to
-the callback lives on the device, and CUDA.jl refuses a scalar `setindex!` on a GPU array. The
-refusal is raised inside Reactant's trampoline, which turns it into
-`reactant_julia_callback: callback returned false` at run time, long after tracing. `fill!`
-writes the single element on any backend.
+Uses `fill!` because CUDA.jl refuses `out[1] = ...` on a device buffer.
 """
 write_time!(out::AbstractVector{Float64}) = (fill!(out, time()); nothing)
 
