@@ -46,11 +46,12 @@ function Reactant.make_tracer(
     )
 end
 
-# Reactant's own `mul!` overlays densify the matrix, so these send the product to its kernels.
+# Reactant's own `mul!` overlays lower the product to a dense `dot_general`, which a sparse
+# format cannot serve, so these send it back to the format's kernels.
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector, α::Number, β::Number
     )
-    return flat_mul!(c, A, b, α, β)
+    return native_mul!(c, A, b, α, β)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
@@ -62,7 +63,7 @@ end
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector
     )
-    return flat_mul!(c, A, b, true, false)
+    return native_mul!(c, A, b, true, false)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
@@ -72,48 +73,70 @@ end
 end
 
 """
-    FlatArray
+    KernelArray
 
-Column-major array view of a flat traced buffer.
+Array whose kernels Reactant keeps compiling, even when they are launched by native dispatch.
 
-A kernel indexes it like the original array, but only ever receives 1-D operands, which XLA
-cannot reorder (a kernel call pins no memory layout, so a 2-D operand can come back transposed).
+`data` holds the elements in column-major order and `dims` is the shape the kernel sees. The two
+agree except in [`flat_mul!`](@ref), where `data` is flat.
 """
-struct FlatArray{T, N, V <: AbstractVector{T}} <: DenseArray{T, N}
-    data::V
+struct KernelArray{T, N, A <: AbstractArray{T}} <: DenseArray{T, N}
+    data::A
     dims::NTuple{N, Int}
 end
 
-Base.size(x::FlatArray) = x.dims
-Base.IndexStyle(::Type{<:FlatArray}) = Base.IndexLinear()
-Base.@propagate_inbounds Base.getindex(x::FlatArray, i::Int) = x.data[i]
-Base.@propagate_inbounds Base.setindex!(x::FlatArray, v, i::Int) = (x.data[i] = v)
-Base.pointer(x::FlatArray) = pointer(x.data)  # for `Atomix.@atomic`
-Base.pointer(x::FlatArray, i::Integer) = pointer(x.data, i)
+KernelArray(x::AbstractArray) = KernelArray(x, size(x))
 
-Adapt.adapt_structure(to, x::FlatArray) = FlatArray(adapt(to, x.data), x.dims)
+Base.size(x::KernelArray) = x.dims
+Base.IndexStyle(::Type{<:KernelArray}) = Base.IndexLinear()
+Base.@propagate_inbounds Base.getindex(x::KernelArray, i::Int) = x.data[i]
+Base.@propagate_inbounds Base.setindex!(x::KernelArray, v, i::Int) = (x.data[i] = v)
+# an `Atomix.@atomic` update takes a pointer to the element
+Base.pointer(x::KernelArray) = pointer(x.data)
+Base.pointer(x::KernelArray, i::Integer) = pointer(x.data, i)
+
+Adapt.adapt_structure(to, x::KernelArray) = KernelArray(adapt(to, x.data), x.dims)
+
+"""
+    Wrap
+
+Adaptor putting every traced array in a [`KernelArray`](@ref).
+"""
+struct Wrap end
+
+Adapt.adapt_structure(::Wrap, x::TracedRArray) = KernelArray(x)
 
 """
     Flatten
 
-Adaptor turning every traced array into a [`FlatArray`](@ref).
+Adaptor viewing every traced array as a flat [`KernelArray`](@ref).
 """
 struct Flatten end
 
-Adapt.adapt_structure(::Flatten, x::TracedRArray) = FlatArray(Reactant.Ops.reshape(x, length(x)), size(x))
+function Adapt.adapt_structure(::Flatten, x::TracedRArray{T}) where {T}
+    # the annotation keeps the wrapper's type concrete, which `@stable` asks of the formats' own
+    # `adapt_structure`
+    flat = Reactant.Ops.reshape(x, length(x))::TracedRArray{T, 1}
+    return KernelArray(flat, size(x))
+end
 
 """
-    FlatBackend
+    NativeLaunch
 
-Backend of a [`FlatArray`](@ref), whose kernels are launched by Reactant even from native code.
+Backend of a [`KernelArray`](@ref), which hands its kernel launches back to Reactant.
+
+The products below reach the format's own `mul!` through `Reactant.call_with_native`, because
+Reactant resolves every call — `invoke` included — through its overlay table, and would otherwise
+catch `mul!` again. Native dispatch then sends the launch to the plain `KernelAbstractions`
+method, which nests a `Reactant.@jit` and fails on arguments that are already traced.
 """
-struct FlatBackend{B <: KernelAbstractions.GPU} <: KernelAbstractions.GPU
+struct NativeLaunch{B <: KernelAbstractions.GPU} <: KernelAbstractions.GPU
     backend::B
 end
 
-KernelAbstractions.get_backend(x::FlatArray) = FlatBackend(get_backend(x.data))
+KernelAbstractions.get_backend(x::KernelArray) = NativeLaunch(get_backend(x.data))
 
-function (kernel::KernelAbstractions.Kernel{FlatBackend{B}, W, N, F})(
+function (kernel::KernelAbstractions.Kernel{NativeLaunch{B}, W, N, F})(
         args...; ndrange = nothing, workgroupsize = nothing
     ) where {B, W, N, F}
     (; backend) = kernel.backend
@@ -124,22 +147,61 @@ function (kernel::KernelAbstractions.Kernel{FlatBackend{B}, W, N, F})(
 end
 
 """
+    scale!!(c, β)
+
+Multiply `c` by `β` in place, so that its product can be run with a static `β = true`.
+
+A format scales its destination itself, but only after branching on `iszero(β)` and `isone(β)`,
+which a traced `β` cannot answer, and through a `fill!` or a broadcast that a
+[`KernelArray`](@ref) would serve one element at a time.
+"""
+function scale!!(c::AbstractArray, β::Number)
+    if !(β isa TracedRNumber) && iszero(β)
+        fill!(c, false)
+    elseif !(β isa TracedRNumber) && isone(β)
+        c
+    else
+        c .= β .* c
+    end
+    return c
+end
+
+"""
+    native_mul!(c, A, b, α, β)
+
+Run the ordinary `mul!` of `A`, with its kernels launched by Reactant.
+"""
+function native_mul!(c::AbstractVector, A, b::AbstractVector, α::Number, β::Number)
+    scale!!(c, β)
+    Reactant.call_with_native(
+        LinearAlgebra.mul!, adapt(Wrap(), c), adapt(Wrap(), A), adapt(Wrap(), b), α, true
+    )
+    return c
+end
+
+"""
     flat_mul!(c, A, b, α, β)
 
-Run the ordinary `mul!` of `A` on flattened operands, inside a compiled program.
+Run the ordinary `mul!` of `A` on flat buffers, then write the result back into `c`.
+
+Temporary, until EnzymeAD/Reactant.jl#3269 is solved: on CUDA, XLA may reorder a 2-D array that a
+kernel writes, since a kernel call pins no memory layout, and a batched solve then comes out
+wrong. A 1-D array has a single layout. Only the batched product needs this.
+
+The kernel writes into a buffer of its own, which starts at `β * c` so that it can run with a
+static `β = true`, as in [`scale!!`](@ref).
 """
-function flat_mul!(c::AbstractVecOrMat, A, b::AbstractVecOrMat, α::Number, β::Number)
-    αAb = fill!(similar(c, length(c)), zero(eltype(c)))
-    # native dispatch reaches the format's own `mul!`, which adds into the zeroed buffer
-    Reactant.call_with_native(
-        LinearAlgebra.mul!, FlatArray(αAb, size(c)), adapt(Flatten(), A), adapt(Flatten(), b), α, true
-    )
-    αAb = Reactant.Ops.reshape(αAb, size(c)...)
-    if !(β isa TracedRNumber) && iszero(β)
-        c .= αAb
+function flat_mul!(c::AbstractMatrix, A, b::AbstractMatrix, α::Number, β::Number)
+    βc = if !(β isa TracedRNumber) && iszero(β)
+        fill!(similar(c, length(c)), false)
     else
-        c .= αAb .+ β .* c
+        Reactant.Ops.reshape(β .* c, length(c))
     end
+    Reactant.call_with_native(
+        LinearAlgebra.mul!,
+        KernelArray(βc, size(c)), adapt(Flatten(), A), adapt(Flatten(), b), α, true
+    )
+    c .= Reactant.Ops.reshape(βc, size(c)...)
     return c
 end
 
