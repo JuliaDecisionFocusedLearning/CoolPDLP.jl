@@ -57,7 +57,7 @@ end
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix, α::Number, β::Number
     )
-    return flat_mul!(c, A, b, α, β)
+    return spmm_error()
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
@@ -69,25 +69,32 @@ end
 @reactant_overlay function LinearAlgebra.mul!(
         c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix
     )
-    return flat_mul!(c, A, b, true, false)
+    return spmm_error()
+end
+
+"""
+    spmm_error()
+
+Refuse a product of a sparse format with a matrix, which Reactant can currently miscompile.
+"""
+function spmm_error()
+    return error(
+        "Reactant cannot yet compile the product of a CoolPDLP sparse format with a matrix " *
+            "(as in a batched solve): on CUDA, XLA may silently reorder the 2-D output of a " *
+            "kernel. See https://github.com/EnzymeAD/Reactant.jl/issues/3269."
+    )
 end
 
 """
     KernelArray
 
 Array whose kernels Reactant keeps compiling, even when they are launched by native dispatch.
-
-`data` holds the elements in column-major order and `dims` is the shape the kernel sees. The two
-agree except in [`flat_mul!`](@ref), where `data` is flat.
 """
-struct KernelArray{T, N, A <: AbstractArray{T}} <: DenseArray{T, N}
+struct KernelArray{T, N, A <: AbstractArray{T, N}} <: DenseArray{T, N}
     data::A
-    dims::NTuple{N, Int}
 end
 
-KernelArray(x::AbstractArray) = KernelArray(x, size(x))
-
-Base.size(x::KernelArray) = x.dims
+Base.size(x::KernelArray) = size(x.data)
 Base.IndexStyle(::Type{<:KernelArray}) = Base.IndexLinear()
 Base.@propagate_inbounds Base.getindex(x::KernelArray, i::Int) = x.data[i]
 Base.@propagate_inbounds Base.setindex!(x::KernelArray, v, i::Int) = (x.data[i] = v)
@@ -95,7 +102,7 @@ Base.@propagate_inbounds Base.setindex!(x::KernelArray, v, i::Int) = (x.data[i] 
 Base.pointer(x::KernelArray) = pointer(x.data)
 Base.pointer(x::KernelArray, i::Integer) = pointer(x.data, i)
 
-Adapt.adapt_structure(to, x::KernelArray) = KernelArray(adapt(to, x.data), x.dims)
+Adapt.adapt_structure(to, x::KernelArray) = KernelArray(adapt(to, x.data))
 
 """
     Wrap
@@ -107,25 +114,11 @@ struct Wrap end
 Adapt.adapt_structure(::Wrap, x::TracedRArray) = KernelArray(x)
 
 """
-    Flatten
-
-Adaptor viewing every traced array as a flat [`KernelArray`](@ref).
-"""
-struct Flatten end
-
-function Adapt.adapt_structure(::Flatten, x::TracedRArray{T}) where {T}
-    # the annotation keeps the wrapper's type concrete, which `@stable` asks of the formats' own
-    # `adapt_structure`
-    flat = Reactant.Ops.reshape(x, length(x))::TracedRArray{T, 1}
-    return KernelArray(flat, size(x))
-end
-
-"""
     NativeLaunch
 
 Backend of a [`KernelArray`](@ref), which hands its kernel launches back to Reactant.
 
-The products below reach the format's own `mul!` through `Reactant.call_with_native`, because
+[`native_mul!`](@ref) reaches the format's own `mul!` through `Reactant.call_with_native`, because
 Reactant resolves every call — `invoke` included — through its overlay table, and would otherwise
 catch `mul!` again. Native dispatch then sends the launch to the plain `KernelAbstractions`
 method, which nests a `Reactant.@jit` and fails on arguments that are already traced.
@@ -176,32 +169,6 @@ function native_mul!(c::AbstractVector, A, b::AbstractVector, α::Number, β::Nu
     Reactant.call_with_native(
         LinearAlgebra.mul!, adapt(Wrap(), c), adapt(Wrap(), A), adapt(Wrap(), b), α, true
     )
-    return c
-end
-
-"""
-    flat_mul!(c, A, b, α, β)
-
-Run the ordinary `mul!` of `A` on flat buffers, then write the result back into `c`.
-
-Temporary, until EnzymeAD/Reactant.jl#3269 is solved: on CUDA, XLA may reorder a 2-D array that a
-kernel writes, since a kernel call pins no memory layout, and a batched solve then comes out
-wrong. A 1-D array has a single layout. Only the batched product needs this.
-
-The kernel writes into a buffer of its own, which starts at `β * c` so that it can run with a
-static `β = true`, as in [`scale!!`](@ref).
-"""
-function flat_mul!(c::AbstractMatrix, A, b::AbstractMatrix, α::Number, β::Number)
-    βc = if !(β isa TracedRNumber) && iszero(β)
-        fill!(similar(c, length(c)), false)
-    else
-        Reactant.Ops.reshape(β .* c, length(c))
-    end
-    Reactant.call_with_native(
-        LinearAlgebra.mul!,
-        KernelArray(βc, size(c)), adapt(Flatten(), A), adapt(Flatten(), b), α, true
-    )
-    c .= Reactant.Ops.reshape(βc, size(c)...)
     return c
 end
 

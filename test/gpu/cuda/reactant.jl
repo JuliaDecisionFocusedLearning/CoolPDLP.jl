@@ -32,14 +32,12 @@ const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO
         @testset "batch of vectors" begin
             b, c0 = randn(rng, 16, 3), randn(rng, 24, 3)
             b_r, c_r = to_rarray(b), to_rarray(copy(c0))
-            compiled = @compile mul!(c_r, A_r, b_r, α, β)
-            compiled(c_r, A_r, b_r, α, β)
-            @test Array(c_r) ≈ α * (A_cpu * b) + β * c0
+            # refused until EnzymeAD/Reactant.jl#3269 is solved
+            @test_throws "Reactant.jl/issues/3269" @compile mul!(c_r, A_r, b_r, α, β)
         end
     end
 end
 
-# batched solves hit the XLA layout bug that `flat_mul!` works around
 @testset verbose = true "Compiled solve" begin
     milp0, sol0 = CoolPDLP.random_milp_and_sol(Xoshiro(0), 20, 30, 0.4)
 
@@ -51,8 +49,17 @@ end
     )
     sol_batch = PrimalDualSolution(milp_batch)
 
-    @testset "$M, $(batched ? "batched" : "single")" for M in MATRIX_TYPES, batched in (false, true)
-        milp_init, sol_init = batched ? (milp_batch, sol_batch) : (milp0, sol0)
+    function traced_problem(milp_init, sol_init, algo)
+        milp, sol = preprocess(milp_init, sol_init, algo)
+        state = initialize(milp, sol, algo; starting_time = time())
+        return (
+            to_rarray(state; track_numbers = true),
+            to_rarray(milp; track_numbers = true),
+            to_rarray(algo; track_numbers = true),
+        )
+    end
+
+    @testset "$M" for M in MATRIX_TYPES
         algo = PDLP(
             Float64,
             Int32,
@@ -66,22 +73,28 @@ end
             show_progress = false,
         )
 
-        milp, sol = preprocess(milp_init, sol_init, algo)
-        state = initialize(milp, sol, algo; starting_time = time())
-        CoolPDLP.solve!(state, milp, algo)
+        @testset "single" begin
+            milp, sol = preprocess(milp0, sol0, algo)
+            state = initialize(milp, sol, algo; starting_time = time())
+            CoolPDLP.solve!(state, milp, algo)
 
-        milp_copy, sol_copy = preprocess(milp_init, sol_init, algo)
-        state_copy = initialize(milp_copy, sol_copy, algo; starting_time = time())
-        milp_r = to_rarray(milp_copy; track_numbers = true)
-        state_r = to_rarray(state_copy; track_numbers = true)
-        algo_r = to_rarray(algo; track_numbers = true)
-        compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
-        compiled_solve!(state_r, milp_r, algo_r)
+            state_r, milp_r, algo_r = traced_problem(milp0, sol0, algo)
+            compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
+            compiled_solve!(state_r, milp_r, algo_r)
 
-        @test all(isfinite, Array(state_r.sol.x))
-        @test Int(state_r.stats.kkt_passes) == state.stats.kkt_passes
-        @test termination_status(state_r.stats) == termination_status(state.stats)
-        @test Array(state_r.sol.x) ≈ Array(state.sol.x) rtol = 1.0e-6
-        @test Array(state_r.sol.y) ≈ Array(state.sol.y) rtol = 1.0e-6
+            @test all(isfinite, Array(state_r.sol.x))
+            @test Int(state_r.stats.kkt_passes) == state.stats.kkt_passes
+            @test termination_status(state_r.stats) == termination_status(state.stats)
+            @test Array(state_r.sol.x) ≈ Array(state.sol.x) rtol = 1.0e-6
+            @test Array(state_r.sol.y) ≈ Array(state.sol.y) rtol = 1.0e-6
+        end
+
+        @testset "batched" begin
+            # refused until EnzymeAD/Reactant.jl#3269 is solved
+            state_r, milp_r, algo_r = traced_problem(milp_batch, sol_batch, algo)
+            @test_throws "Reactant.jl/issues/3269" @compile CoolPDLP.solve!(
+                state_r, milp_r, algo_r
+            )
+        end
     end
 end
