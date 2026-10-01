@@ -206,6 +206,28 @@ end
 # backend can service; the extension falls back to the frozen trace-time clock when it cannot.
 const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
 
+@testset "Static inner loop" begin
+    algo = PDLP(;
+        backend = nothing, check_every = 7, termination_reltol = 1.0e-5, max_kkt_passes = 300
+    )
+    algo_r = to_rarray(algo; track_numbers = true)
+    # a constant bound gives the inner loop a static trip count, so XLA does not read its
+    # condition back to the host after every KKT pass; changing it means recompiling
+    @test algo_r.generic.check_every === 7
+    @test algo_r.generic.record_error_history === algo.generic.record_error_history
+    # the other parameters stay traced, so they can change without recompiling
+    @test !(algo_r.termination.termination_reltol isa Float64)
+    @test unwrap(algo_r.termination.termination_reltol) == 1.0e-5
+    # so does the iteration budget, and the iteration counts of the state
+    @test !(algo_r.termination.max_kkt_passes isa Int)
+    @test unwrap(algo_r.termination.max_kkt_passes) == 300
+    milp, sol = preprocess(milp0, sol0, algo)
+    state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
+    @test !(state_r.stats.kkt_passes isa Int)
+    @test !(state_r.iteration.inner isa Int)
+    @test !(state_r.iteration.total isa Int)
+end
+
 @testset "Backend support for host callbacks" begin
     @test REACTANT_EXT.host_callbacks_supported() isa Bool
     # the fallback keeps a compiled solve working on backends that cannot run a callback: it
