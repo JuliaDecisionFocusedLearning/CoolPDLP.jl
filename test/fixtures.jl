@@ -57,7 +57,7 @@ function same_instance(m1::MILP, m2::MILP)
     as_csc(milp) = MILP(;
         milp.c, milp.lv, milp.uv,
         A = SparseMatrixCSC(milp.A), At = SparseMatrixCSC(milp.At),
-        milp.lc, milp.uc, milp.D1, milp.D2, milp.int_var, milp.var_names,
+        milp.lc, milp.uc, milp.D1, milp.D2, milp.int_var, milp.var_names, milp.con_names,
         milp.dataset, milp.name, milp.path,
     )
     return as_csc(m1) ≈ as_csc(m2)

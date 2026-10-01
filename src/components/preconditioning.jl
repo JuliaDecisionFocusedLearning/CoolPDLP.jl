@@ -61,7 +61,7 @@ end
 function precondition(milp::MILP, prec::Preconditioner)
     (;
         c, lv, uv, A, At, lc, uc,
-        int_var, var_names, dataset, name, path,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     (; D1, D2) = prec
     cons = ConstraintMatrix(A, At)
@@ -83,6 +83,7 @@ function precondition(milp::MILP, prec::Preconditioner)
         D2 = new_prec.D2,
         int_var,
         var_names,
+        con_names,
         dataset,
         name,
         path

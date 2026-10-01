@@ -16,7 +16,7 @@ number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref).
     MILP(;
         c, lv, uv, A, lc, uc,
         At=sametype_transpose(A),
-        [D1, D2, int_var, var_names, dataset, name, path]
+        [D1, D2, int_var, var_names, con_names, dataset, name, path]
     )
 
 # Fields
@@ -58,6 +58,8 @@ struct MILP{
     int_var::Vb
     "variable names"
     var_names::Vector{String}
+    "constraint names"
+    con_names::Vector{String}
     "source dataset"
     dataset::String
     "instance name (last part of the path)"
@@ -77,6 +79,7 @@ struct MILP{
             D2 = Diagonal(one!(similar(lv, size(lv, 1)))),
             int_var = zero!(similar(c, Bool, size(c, 1))),
             var_names = map(string, axes(c, 1)),
+            con_names = map(string, axes(lc, 1)),
             dataset = "",
             name = "",
             path = ""
@@ -84,7 +87,7 @@ struct MILP{
         m, n = size(A)
         if !(n == size(c, 1) == size(lv, 1) == size(uv, 1) == size(D2, 1) == length(int_var) == length(var_names))
             throw(DimensionMismatch("Variable size not consistent"))
-        elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2))
+        elseif !(m == size(lc, 1) == size(uc, 1) == size(D1, 2) == length(con_names))
             throw(DimensionMismatch("Constraint size not consistent"))
             # whatever is batched must agree on the number of instances
         elseif !allequal(Iterators.filter(!isone, batch_sizes(c, lv, uv, lc, uc)))
@@ -122,6 +125,7 @@ struct MILP{
             D2,
             int_var,
             var_names,
+            con_names,
             string(dataset),
             string(name),
             string(path)
@@ -152,6 +156,7 @@ function MILP(qps::QPSData; kwargs...)
         D2 = Diagonal(ones(length(qps.lvar))),
         int_var = convert(Vector{Bool}, (qps.vartypes .== VTYPE_Binary) .| (qps.vartypes .== VTYPE_Integer)),
         var_names = qps.varnames,
+        con_names = qps.connames,
         kwargs...
     )
 end
@@ -251,6 +256,7 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
             isapprox(m1.D2, m2.D2; kwargs...) &&
             m1.int_var == m2.int_var &&
             m1.var_names == m2.var_names &&
+            m1.con_names == m2.con_names &&
             m1.dataset == m2.dataset &&
             m1.name == m2.name &&
             m1.path == m2.path
@@ -294,6 +300,7 @@ function instance(milp::MILP, i::Int)
         D2 = milp.D2,
         int_var = milp.int_var,
         var_names = milp.var_names,
+        con_names = milp.con_names,
         dataset = milp.dataset,
         name = milp.name,
         path = milp.path
