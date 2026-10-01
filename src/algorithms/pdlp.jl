@@ -64,7 +64,7 @@ function instance(state::PDLPState, i::Int)
     )
 end
 
-function initialize(
+@annotate "initialize" function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
         algo::Algorithm{:PDLP};
@@ -93,7 +93,7 @@ function initialize(
     return state
 end
 
-function solve!(
+@annotate "solve!" function solve!(
         state::PDLPState,
         milp::MILP,
         algo::Algorithm{:PDLP}
@@ -112,7 +112,7 @@ function solve!(
     return state
 end
 
-function step!(
+@annotate "step!" function step!(
         state::PDLPState{T, V},
         milp::MILP{T},
     ) where {T, V}
@@ -128,12 +128,12 @@ function step!(
     σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
-    At_y = mul!(scratch.x, At, y)
+    At_y = annotate(() -> mul!(scratch.x, At, y), "mul!(At, y)")
     @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
-    A_xdiff = mul!(scratch.y, A, xdiff)
+    A_xdiff = annotate(() -> mul!(scratch.y, A, xdiff), "mul!(A, xdiff)")
     @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
 
     # other updates
@@ -143,6 +143,9 @@ function step!(
     return nothing
 end
 
+# `update_average!`, `restart_check!` and `restart!` are deliberately left out of `@annotate`:
+# its closure takes them past what inference and inlining see through from `solve!`, and the
+# closure is then heap-allocated on every call (caught by the tests in `test/perf.jl`).
 function update_average!(state::PDLPState)
     (; sol, sol_avg, sol_avg_last, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
@@ -154,6 +157,7 @@ function update_average!(state::PDLPState)
     return nothing
 end
 
+# not annotated, see `update_average!`
 """
     restart_check!(state, milp, algo)
 
@@ -213,6 +217,7 @@ function best_error!!(
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 
+# not annotated, see `update_average!`
 """
     restart!(state, algo, should_restart = true)
 

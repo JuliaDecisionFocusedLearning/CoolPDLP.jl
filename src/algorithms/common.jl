@@ -193,7 +193,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 
 Return a tuple `(milp, sol)`.
 """
-function preprocess(
+@annotate "preprocess" function preprocess(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
@@ -277,7 +277,7 @@ Modify `state` in-place to solve the continuous relaxation of `milp` using the a
 """
 function solve! end
 
-function termination_check!(
+@annotate "termination_check!" function termination_check!(
         state::AbstractState,
         milp::MILP,
         algo::Algorithm

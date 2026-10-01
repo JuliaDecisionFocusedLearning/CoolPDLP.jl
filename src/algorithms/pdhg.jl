@@ -49,7 +49,7 @@ function instance(state::PDHGState, i::Int)
     )
 end
 
-function initialize(
+@annotate "initialize" function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
         algo::Algorithm{:PDHG};
@@ -68,7 +68,7 @@ function initialize(
     return state
 end
 
-function solve!(
+@annotate "solve!" function solve!(
         state::PDHGState,
         milp::MILP,
         algo::Algorithm{:PDHG}
@@ -86,7 +86,7 @@ function solve!(
     return state
 end
 
-function step!(
+@annotate "step!" function step!(
         state::PDHGState{T, V},
         milp::MILP{T},
     ) where {T, V}
@@ -102,12 +102,12 @@ function step!(
     σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
-    At_y = mul!(scratch.x, At, y)
+    At_y = annotate(() -> mul!(scratch.x, At, y), "mul!(At, y)")
     @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.x = 2sol.x - x
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
-    A_xdiff = mul!(scratch.y, A, xdiff)
+    A_xdiff = annotate(() -> mul!(scratch.y, A, xdiff), "mul!(A, xdiff)")
     @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
 
     # other updates

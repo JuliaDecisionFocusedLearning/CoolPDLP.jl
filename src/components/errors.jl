@@ -133,7 +133,7 @@ end
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 """
-function kkt_errors!(
+@annotate "kkt_errors!" function kkt_errors!(
         err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
