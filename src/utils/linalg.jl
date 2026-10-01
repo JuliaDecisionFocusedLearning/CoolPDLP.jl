@@ -1,4 +1,11 @@
 """
+    GPUSparseMatrix
+
+Union of the sparse formats that CoolPDLP implements with its own kernels.
+"""
+const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
+
+"""
     sametype_transpose(A::AbstractMatrix)
 
 Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).

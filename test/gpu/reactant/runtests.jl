@@ -1,9 +1,12 @@
 using CoolPDLP
-using CoolPDLP: KKTErrors, termination_status
+using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
+    KKTErrors, termination_status
 import MathOptInterface as MOI
 using MathOptBenchmarkInstances
 using Reactant
 using Reactant: to_rarray
+using SparseArrays
+using StableRNGs
 using Test
 
 # The same test suite runs on CPU and on GPU; the Buildkite `cuda` queue sets this to "gpu".
@@ -40,6 +43,20 @@ compared with its plain counterpart without going through `Reactant` conversions
 """
 unwrap(x::Number) = Float64(x)
 unwrap(x::AbstractArray) = Array(x)
+
+# only reads the fields, so it needs no kernel and no CUDA.jl
+trace_fields(A) = sum(A.nzval) + sum(A.colval)
+
+@testset "Custom sparse wrappers can be traced" begin
+    A_cpu = convert(SparseMatrixCSC{Float64, Int32}, sprand(StableRNG(0), 12, 8, 0.4))
+    @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
+        A = M(A_cpu)
+        A_r = to_rarray(A; track_numbers = true)
+        expected = sum(A.nzval) + sum(A.colval)
+        compiled = @compile trace_fields(A_r)
+        @test unwrap(compiled(A_r)) ≈ expected
+    end
+end
 
 """
     solve_plain_and_compiled(algo, milp_init=milp0, sol_init=sol0)

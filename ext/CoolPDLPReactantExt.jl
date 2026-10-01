@@ -1,6 +1,9 @@
 module CoolPDLPReactantExt
 
+using Adapt: Adapt, adapt
 using CoolPDLP: CoolPDLP
+using KernelAbstractions: KernelAbstractions, get_backend
+using LinearAlgebra: LinearAlgebra
 using Reactant: Reactant, TracedRArray, TracedRNumber, @reactant_overlay
 
 """
@@ -16,6 +19,159 @@ Once https://github.com/EnzymeAD/Reactant.jl/issues/3261 is solved upstream, thi
 """
 CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
 
+# A sparse matrix's shape and pattern are structure, so trace it without number tracking.
+function Reactant.traced_type_inner(
+        @nospecialize(T::Type{<:CoolPDLP.GPUSparseMatrix}),
+        seen,
+        mode::Reactant.TraceMode,
+        @nospecialize(track_numbers::Type),
+        @nospecialize(ndevices),
+        @nospecialize(runtime),
+    )
+    return @invoke Reactant.traced_type_inner(
+        T::Type, seen::Any, mode::Reactant.TraceMode, Union{}::Type, ndevices::Any, runtime::Any
+    )
+end
+
+function Reactant.make_tracer(
+        seen,
+        @nospecialize(prev::CoolPDLP.GPUSparseMatrix),
+        @nospecialize(path),
+        mode;
+        @nospecialize(track_numbers::Type = Union{}),
+        kwargs...,
+    )
+    return Reactant.make_tracer_unknown(
+        seen, prev, path, mode; track_numbers = Union{}, kwargs...
+    )
+end
+
+# Reactant's own `mul!` overlays lower the product to a dense `dot_general`, which a sparse
+# format cannot serve, so these send it back to the format's kernels.
+@reactant_overlay function LinearAlgebra.mul!(
+        c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector, α::Number, β::Number
+    )
+    return native_mul!(c, A, b, α, β)
+end
+
+@reactant_overlay function LinearAlgebra.mul!(
+        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix, α::Number, β::Number
+    )
+    return spmm_error()
+end
+
+@reactant_overlay function LinearAlgebra.mul!(
+        c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector
+    )
+    return native_mul!(c, A, b, true, false)
+end
+
+@reactant_overlay function LinearAlgebra.mul!(
+        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix
+    )
+    return spmm_error()
+end
+
+"""
+    spmm_error()
+
+Refuse a product of a sparse format with a matrix, which Reactant can currently miscompile.
+"""
+function spmm_error()
+    return error(
+        "Reactant cannot yet compile the product of a CoolPDLP sparse format with a matrix " *
+            "(as in a batched solve): on CUDA, XLA may silently reorder the 2-D output of a " *
+            "kernel. See https://github.com/EnzymeAD/Reactant.jl/issues/3269."
+    )
+end
+
+"""
+    KernelArray
+
+Array whose kernels Reactant keeps compiling, even when they are launched by native dispatch.
+"""
+struct KernelArray{T, N, A <: AbstractArray{T, N}} <: DenseArray{T, N}
+    data::A
+end
+
+Base.size(x::KernelArray) = size(x.data)
+Base.IndexStyle(::Type{<:KernelArray}) = Base.IndexLinear()
+Base.@propagate_inbounds Base.getindex(x::KernelArray, i::Int) = x.data[i]
+Base.@propagate_inbounds Base.setindex!(x::KernelArray, v, i::Int) = (x.data[i] = v)
+# an `Atomix.@atomic` update takes a pointer to the element
+Base.pointer(x::KernelArray) = pointer(x.data)
+Base.pointer(x::KernelArray, i::Integer) = pointer(x.data, i)
+
+Adapt.adapt_structure(to, x::KernelArray) = KernelArray(adapt(to, x.data))
+
+"""
+    Wrap
+
+Adaptor putting every traced array in a [`KernelArray`](@ref).
+"""
+struct Wrap end
+
+Adapt.adapt_structure(::Wrap, x::TracedRArray) = KernelArray(x)
+
+"""
+    NativeLaunch
+
+Backend of a [`KernelArray`](@ref), which hands its kernel launches back to Reactant.
+
+[`native_mul!`](@ref) reaches the format's own `mul!` through `Reactant.call_with_native`, because
+Reactant resolves every call — `invoke` included — through its overlay table, and would otherwise
+catch `mul!` again. Native dispatch then sends the launch to the plain `KernelAbstractions`
+method, which nests a `Reactant.@jit` and fails on arguments that are already traced.
+"""
+struct NativeLaunch{B <: KernelAbstractions.GPU} <: KernelAbstractions.GPU
+    backend::B
+end
+
+KernelAbstractions.get_backend(x::KernelArray) = NativeLaunch(get_backend(x.data))
+
+function (kernel::KernelAbstractions.Kernel{NativeLaunch{B}, W, N, F})(
+        args...; ndrange = nothing, workgroupsize = nothing
+    ) where {B, W, N, F}
+    (; backend) = kernel.backend
+    inner = KernelAbstractions.Kernel{B, W, N, F}(backend, kernel.f)
+    return Reactant.call_with_reactant(
+        Reactant.ka_with_reactant, ndrange, workgroupsize, inner, args...
+    )
+end
+
+"""
+    scale!!(c, β)
+
+Multiply `c` by `β` in place, so that its product can be run with a static `β = true`.
+
+A format scales its destination itself, but only after branching on `iszero(β)` and `isone(β)`,
+which a traced `β` cannot answer, and through a `fill!` or a broadcast that a
+[`KernelArray`](@ref) would serve one element at a time.
+"""
+function scale!!(c::AbstractArray, β::Number)
+    if !(β isa TracedRNumber) && iszero(β)
+        fill!(c, false)
+    elseif !(β isa TracedRNumber) && isone(β)
+        c
+    else
+        c .= β .* c
+    end
+    return c
+end
+
+"""
+    native_mul!(c, A, b, α, β)
+
+Run the ordinary `mul!` of `A`, with its kernels launched by Reactant.
+"""
+function native_mul!(c::AbstractVector, A, b::AbstractVector, α::Number, β::Number)
+    scale!!(c, β)
+    Reactant.call_with_native(
+        LinearAlgebra.mul!, adapt(Wrap(), c), adapt(Wrap(), A), adapt(Wrap(), b), α, true
+    )
+    return c
+end
+
 """
     write_time!(out)
 
@@ -25,8 +181,10 @@ Write the current host time into the single-element output buffer of a Reactant 
 afterwards, and a `()`-shaped output arrives dereferenced, as a plain `Float64` with nothing to
 write into. The output is therefore declared with shape `(1,)` and reduced back to a scalar on
 the traced side.
+
+Uses `fill!` because CUDA.jl refuses `out[1] = ...` on a device buffer.
 """
-write_time!(out::AbstractVector{Float64}) = (out[1] = time(); nothing)
+write_time!(out::AbstractVector{Float64}) = (fill!(out, time()); nothing)
 
 """
     host_callbacks_supported()
