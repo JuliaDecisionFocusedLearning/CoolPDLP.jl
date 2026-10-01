@@ -11,11 +11,12 @@ end
 
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = set_eltype(T, c),
+        c0 = T(c0),
         lv = set_eltype(T, lv),
         uv = set_eltype(T, uv),
         A = set_eltype(T, A),
@@ -52,11 +53,12 @@ end
 
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c,
+        c0,
         lv,
         uv,
         A = set_indtype(Ti, A),
@@ -81,7 +83,7 @@ Convert the sparse matrices inside `milp` using constructor `M`.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     A_M = M(A)
@@ -90,6 +92,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
 
     return MILP(;
         c = adapt(backend, c),
+        c0,
         lv = adapt(backend, lv),
         uv = adapt(backend, uv),
         A = A_M,
@@ -113,11 +116,12 @@ end
 
 function Adapt.adapt_structure(to, milp::MILP)
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = adapt(to, c),
+        c0,
         lv = adapt(to, lv),
         uv = adapt(to, uv),
         A = adapt(to, A),
@@ -147,11 +151,12 @@ integer-specific transformations — a presolver, say — must be handed the rel
 """
 function relax(milp::MILP)
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c,
+        c0,
         lv,
         uv,
         A,

@@ -69,6 +69,14 @@ using Test
     )
 end
 
+@testset "Objective constant" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(3, 5, 0.5)
+    (; c, lv, uv, A, lc, uc) = milp
+    @test MILP(; c, lv, uv, A, lc, uc).c0 === 0.0
+    @test MILP(; c, c0 = 2, lv, uv, A, lc, uc).c0 === 2.0  # converted to the element type
+    @test !isapprox(MILP(; c, c0 = 2, lv, uv, A, lc, uc), MILP(; c, c0 = 3, lv, uv, A, lc, uc))
+end
+
 @testset "Names" begin
     milp, _ = CoolPDLP.random_milp_and_sol(3, 5, 0.5)
     # by default, variables and constraints are named after their index
@@ -90,6 +98,7 @@ end
     )
     x = randn(nbvar(milp), nbatch)
 
+    @test instance(milp_batch, 2).c0 == milp_batch.c0 == 0
     obj = objective_value(x, milp_batch)
     @test obj isa Vector{Float64}
     @test length(obj) == nbatch
@@ -177,13 +186,17 @@ end
 @testset "Objsense" begin
     netlib = list_instances(Netlib)
     qps, path = read_instance(Netlib, netlib[1])
+    qps.c0 = 3.0
     qps.objsense = :min
     milp_min = MILP(qps)
     @test milp_min.c == +qps.c
+    @test milp_min.c0 == +qps.c0
     qps.objsense = :max
     milp_max = MILP(qps)
     @test milp_max.c == -qps.c
+    @test milp_max.c0 == -qps.c0
     qps.objsense = :notset
     milp_notset = MILP(qps)
     @test milp_notset.c == +qps.c  # arbitrary
+    @test milp_notset.c0 == +qps.c0
 end

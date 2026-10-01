@@ -11,7 +11,7 @@ function p(y, l, u)
 end
 
 milp, sol = CoolPDLP.random_milp_and_sol(100, 200, 0.4)
-(; c, lv, uv, A, At, lc, uc, D1, D2) = milp
+(; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
 (; x, y) = sol
 r = CoolPDLP.proj_multiplier.(c - At * y, lv, uv)
 scratch = CoolPDLP.Scratch(sol)
@@ -30,7 +30,9 @@ err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
     @test err.gap ≈ abs(dot(c, x) - (p(y, lc, uc) + p(r, lv, uv)))
     @test err.primal_scale ≈ 1 + norm(CoolPDLP.combine.(lc, uc))
     @test err.dual_scale ≈ 1 + norm(c)
-    @test err.gap_scale ≈ 1 + abs(dot(c, x)) + abs(p(y, lc, uc) + p(r, lv, uv))
+    # the objective constant shifts both objectives: it cancels in the gap but not in its scale
+    @test !iszero(c0)
+    @test err.gap_scale ≈ 1 + abs(dot(c, x) + c0) + abs(p(y, lc, uc) + p(r, lv, uv) + c0)
 end
 
 @testset "Invariance by preconditioning" begin

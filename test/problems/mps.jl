@@ -25,7 +25,7 @@ using Test
     int_var = [false, false, true, false]
     var_names = ["alpha", "beta", "gamma", "delta"]
     con_names = ["ranged", "upper", "lower", "equal"]
-    milp = MILP(; c, lv, uv, A, lc, uc, int_var, var_names, con_names)
+    milp = MILP(; c, c0 = 2.5, lv, uv, A, lc, uc, int_var, var_names, con_names)
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
@@ -35,6 +35,7 @@ using Test
     @test milp2.var_names == milp.var_names
     @test milp2.con_names == milp.con_names
     @test milp2.c == milp.c
+    @test milp2.c0 == milp.c0
     @test milp2.lv == milp.lv
     @test milp2.uv == milp.uv
     @test milp2.int_var == milp.int_var

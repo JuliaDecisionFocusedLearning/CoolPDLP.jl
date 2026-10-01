@@ -3,20 +3,21 @@
 
 Represent a Mixed Integer Linear Program in "cuPDLPx form":
 
-    min cᵀx   s.t.   lv ≤ x ≤ uv
-                     lc ≤ A * x ≤ uc
+    min cᵀx + c0   s.t.   lv ≤ x ≤ uv
+                          lc ≤ A * x ≤ uc
 
 A `MILP` can also hold a whole batch of such programs sharing the constraint matrix `A`: any
 of `c`, `lv`, `uv`, `lc` and `uc` may then be a matrix with one column per instance, while
 the others stay vectors shared by the whole batch. All batched fields must agree on the
-number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref).
+number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref). The objective constant
+`c0` is always a single number, shared by the whole batch.
 
 # Constructor
 
     MILP(;
         c, lv, uv, A, lc, uc,
         At=sametype_transpose(A),
-        [D1, D2, int_var, var_names, con_names, dataset, name, path]
+        [c0, D1, D2, int_var, var_names, con_names, dataset, name, path]
     )
 
 # Fields
@@ -38,6 +39,8 @@ struct MILP{
     }
     "objective vector"
     c::Vo
+    "objective constant"
+    c0::T
     "variable lower bound"
     lv::Vlv
     "variable upper bound"
@@ -69,6 +72,7 @@ struct MILP{
 
     function MILP(;
             c,
+            c0 = 0,
             lv,
             uv,
             A,
@@ -115,6 +119,7 @@ struct MILP{
             typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var),
         }(
             c,
+            convert(T, c0),
             lv,
             uv,
             A,
@@ -142,13 +147,14 @@ A [`MILP`](@ref) is always a minimization problem, so a maximization problem `ma
 stored as the equivalent `min -cᵀx`, whose optimal value is the opposite of the original one.
 """
 function MILP(qps::QPSData; kwargs...)
-    c = if qps.objsense == :max
-        -qps.c  # switch objective for minimization
+    c, c0 = if qps.objsense == :max
+        -qps.c, -qps.c0  # switch objective for minimization
     else  # qps.objsense in (:min, :notset)
-        qps.c  # keep objective for minimization
+        qps.c, qps.c0  # keep objective for minimization
     end
     return MILP(;
         c = c,
+        c0 = c0,
         lv = qps.lvar,
         uv = qps.uvar,
         A = sparse(qps.arows, qps.acols, qps.avals, length(qps.lcon), length(qps.lvar)),
@@ -249,6 +255,7 @@ nbcons_ineq(milp::MILP) = nbcons(milp) - nbcons_eq(milp)
 function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
     return (
         isapprox(m1.c, m2.c; kwargs...) &&
+            isapprox(m1.c0, m2.c0; kwargs...) &&
             isapprox(m1.lv, m2.lv; kwargs...) &&
             isapprox(m1.uv, m2.uv; kwargs...) &&
             isapprox(m1.A, m2.A; kwargs...) &&
@@ -293,6 +300,7 @@ end
 function instance(milp::MILP, i::Int)
     return MILP(;
         c = instance_vec(milp.c, i),
+        c0 = milp.c0,
         lv = instance_vec(milp.lv, i),
         uv = instance_vec(milp.uv, i),
         A = milp.A,
