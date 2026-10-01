@@ -172,3 +172,20 @@ end
         @test mul!(jl(fill(NaN, size(A, 1), nbatch)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
     end
 end
+
+@testset "Longest CSR row" begin
+    A = banded_csr(401, 260, 6)
+    A[7, :] = 1:260
+    A[9, :] .= 0
+    A = sparse(A)
+    longest = maximum(i -> nnz(A[i, :]), axes(A, 1))
+    A_csr = GPUSparseMatrixCSR(A)
+    @test A_csr.maxrow == longest == 260
+    A_jl = adapt(JLBackend(), A_csr)
+    @test A_jl.maxrow == longest
+    # rebuilt from its arrays alone, here on the device
+    @test GPUSparseMatrixCSR(A_jl.m, A_jl.n, A_jl.rowptr, A_jl.colval, A_jl.nzval).maxrow == longest
+    @test CoolPDLP.sametype_transpose(A_jl).maxrow == maximum(j -> nnz(A[:, j]), axes(A, 2))
+    @test GPUSparseMatrixCSR(spzeros(0, 3)).maxrow == 0
+    @test GPUSparseMatrixCSR(spzeros(4, 3)).maxrow == 0
+end

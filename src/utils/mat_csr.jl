@@ -16,6 +16,29 @@ struct GPUSparseMatrixCSR{
     rowptr::Vi
     colval::Vi
     nzval::V
+    "number of nonzeros in the longest row"
+    maxrow::Int
+end
+
+"""
+    GPUSparseMatrixCSR(m, n, rowptr, colval, nzval)
+
+Build the matrix from its CSR arrays, reading the length of its longest row from `rowptr`.
+"""
+function GPUSparseMatrixCSR(
+        m::Integer, n::Integer, rowptr::AbstractVector, colval::AbstractVector, nzval::AbstractVector
+    )
+    return GPUSparseMatrixCSR(m, n, rowptr, colval, nzval, longest_row(rowptr))
+end
+
+"""
+    longest_row(rowptr)
+
+Number of nonzeros in the longest row of a CSR matrix with row pointers `rowptr`.
+"""
+function longest_row(rowptr::AbstractVector)
+    length(rowptr) <= 1 && return 0
+    return Int(maximum(view(rowptr, 2:length(rowptr)) .- view(rowptr, 1:(length(rowptr) - 1))))
 end
 
 Base.size(A::GPUSparseMatrixCSR) = (A.m, A.n)
@@ -51,7 +74,8 @@ function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
         A.n,
         adapt(to, A.rowptr),
         adapt(to, A.colval),
-        adapt(to, A.nzval)
+        adapt(to, A.nzval),
+        A.maxrow
     )
 end
 
@@ -452,3 +476,4 @@ function LinearAlgebra.mul!(
     end
     return c
 end
+
