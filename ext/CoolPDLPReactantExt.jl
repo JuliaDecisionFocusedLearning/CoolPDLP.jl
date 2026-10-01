@@ -19,9 +19,13 @@ Once https://github.com/EnzymeAD/Reactant.jl/issues/3261 is solved upstream, thi
 """
 CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
 
-# A sparse matrix's shape and pattern are structure, so trace it without number tracking.
+# A sparse matrix's shape and pattern are structure, and so are the conversion parameters,
+# whose backend (e.g. a `CUDABackend` with `Bool` fields) has no traced counterpart: trace
+# them without number tracking.
+const Structural = Union{CoolPDLP.GPUSparseMatrix, CoolPDLP.ConversionParameters}
+
 function Reactant.traced_type_inner(
-        @nospecialize(T::Type{<:CoolPDLP.GPUSparseMatrix}),
+        @nospecialize(T::Type{<:Structural}),
         seen,
         mode::Reactant.TraceMode,
         @nospecialize(track_numbers::Type),
@@ -35,7 +39,7 @@ end
 
 function Reactant.make_tracer(
         seen,
-        @nospecialize(prev::CoolPDLP.GPUSparseMatrix),
+        @nospecialize(prev::Structural),
         @nospecialize(path),
         mode;
         @nospecialize(track_numbers::Type = Union{}),

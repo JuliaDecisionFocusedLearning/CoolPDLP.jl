@@ -34,6 +34,7 @@ cuSPARSE = "b26da814-b3bc-49ef-b0ee-c816305aa060"
 CoolPDLPCUDAExt = ["CUDA", "cuSPARSE"]
 CoolPDLPGPUArraysExt = "GPUArrays"
 CoolPDLPReactantExt = "Reactant"
+CoolPDLPReactantcuSPARSEExt = ["Reactant", "cuSPARSE"]
 
 [compat]
 Adapt = "4.4.0"

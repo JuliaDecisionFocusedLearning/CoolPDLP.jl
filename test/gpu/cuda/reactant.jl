@@ -7,11 +7,22 @@ using Reactant
 using Reactant: to_rarray
 using SparseArrays
 using Test
+using cuSPARSE: CuSparseMatrixCSC, CuSparseMatrixCSR
 
 Reactant.set_default_backend("gpu")
 @test lowercase(Reactant.XLA.platform_name(Reactant.XLA.default_backend())) != "cpu"
 
 const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
+
+function traced_problem(milp_init, sol_init, algo)
+    milp, sol = preprocess(milp_init, sol_init, algo)
+    state = initialize(milp, sol, algo; starting_time = time())
+    return (
+        to_rarray(state; track_numbers = true),
+        to_rarray(milp; track_numbers = true),
+        to_rarray(algo; track_numbers = true),
+    )
+end
 
 @testset verbose = true "Compiled products" begin
     rng = Xoshiro(0)
@@ -48,16 +59,6 @@ end
         lc = repeat(milp0.lc, 1, 3), uc = repeat(milp0.uc, 1, 3), milp0.int_var,
     )
     sol_batch = PrimalDualSolution(milp_batch)
-
-    function traced_problem(milp_init, sol_init, algo)
-        milp, sol = preprocess(milp_init, sol_init, algo)
-        state = initialize(milp, sol, algo; starting_time = time())
-        return (
-            to_rarray(state; track_numbers = true),
-            to_rarray(milp; track_numbers = true),
-            to_rarray(algo; track_numbers = true),
-        )
-    end
 
     @testset "$M" for M in MATRIX_TYPES
         algo = PDLP(
@@ -96,5 +97,47 @@ end
                 state_r, milp_r, algo_r
             )
         end
+    end
+end
+
+@testset verbose = true "Compiled solve from cuSPARSE formats" begin
+    milp0, sol0 = CoolPDLP.random_milp_and_sol(Xoshiro(0), 20, 30, 0.4)
+
+    @testset "$M" for M in (CuSparseMatrixCSR, CuSparseMatrixCSC)
+        algo = PDLP(
+            Float64,
+            Int32,
+            M;
+            backend = CUDABackend(),
+            termination_reltol = 1.0e-6,
+            max_kkt_passes = 200,
+            time_limit = Inf,
+            check_every = 50,
+            record_error_history = false,
+            show_progress = false,
+        )
+        milp, sol = preprocess(milp0, sol0, algo)
+        @test milp.A isa M
+        state = initialize(milp, sol, algo; starting_time = time())
+        CoolPDLP.solve!(state, milp, algo)
+
+        # `solve!` above moved `sol` in place, so the compiled solve needs its own start
+        state_r, milp_r, algo_r = traced_problem(milp0, sol0, algo)
+        # the device buffers are rewrapped in the CoolPDLP format, whose kernels compile
+        @test milp_r.A isa GPUSparseMatrixCSR
+        @test milp_r.At isa GPUSparseMatrixCSR
+        for (B_r, B) in ((milp_r.A, milp.A), (milp_r.At, milp.At))
+            B_cpu = GPUSparseMatrixCSR(
+                size(B)..., Array(B_r.rowptr), Array(B_r.colval), Array(B_r.nzval)
+            )
+            @test SparseMatrixCSC(B_cpu) == SparseMatrixCSC(B)
+        end
+        compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
+        compiled_solve!(state_r, milp_r, algo_r)
+
+        @test Int(state_r.stats.kkt_passes) == state.stats.kkt_passes
+        @test termination_status(state_r.stats) == termination_status(state.stats)
+        @test Array(state_r.sol.x) ≈ Array(state.sol.x) rtol = 1.0e-6
+        @test Array(state_r.sol.y) ≈ Array(state.sol.y) rtol = 1.0e-6
     end
 end
