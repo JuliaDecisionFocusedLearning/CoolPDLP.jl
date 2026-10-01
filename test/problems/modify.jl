@@ -19,6 +19,12 @@ milp, sol = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
     @test milp_dense isa MILP{Float64}
     @test milp_dense.A isa Matrix{Float64}
 
+    # names are metadata, carried over untouched
+    for milp_modified in (milp_f32, milp_i32, milp_dense)
+        @test milp_modified.var_names == milp.var_names
+        @test milp_modified.con_names == milp.con_names
+    end
+
     sol_f32 = CoolPDLP.set_eltype(Float32, sol)
     @test sol_f32 isa PrimalDualSolution{Float32, Vector{Float32}}
 end

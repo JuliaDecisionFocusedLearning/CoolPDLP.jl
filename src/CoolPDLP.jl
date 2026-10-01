@@ -7,18 +7,18 @@ using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
-using JuMP: JuMP
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
-using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
+using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using Logging: NullLogger, with_logger
 using Printf: @sprintf
 using Random: Random, randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
 include("public.jl")
 
@@ -34,6 +34,7 @@ include("public.jl")
     include("problems/milp.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
+    include("problems/mps.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")
