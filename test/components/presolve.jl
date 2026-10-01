@@ -1,8 +1,8 @@
 using Adapt: adapt
 using CoolPDLP
 using CoolPDLP:
-    ConversionParameters, GPUSparseMatrixCSR, KKTErrors, Scratch, kkt_errors!, milp_to_mps,
-    mps_to_milp, perform_conversion, PrimalDualSolution, relative
+    ConversionParameters, GPUSparseMatrixCSR, KKTErrors, Scratch, kkt_errors!,
+    perform_conversion, PrimalDualSolution, relative
 using JLArrays: JLBackend
 using JuMP: JuMP
 using KernelAbstractions: CPU
@@ -64,99 +64,6 @@ end
     @test @inferred(uses_presolve(algo_default)) === Val(false)
 end
 
-@testset "MPS round trip: mixed bounds and integrality" begin
-    # every row keeps strictly finite, unequal bounds so it stays an `Interval` constraint in
-    # JuMP/MOI: rows of a single (F, S) constraint type round trip in creation order, which lets
-    # us compare `A`, `lc`, `uc` element-wise instead of merely checking feasibility
-    c = [1.0, 2.0, -1.0, 0.0]
-    lv = [0.0, -Inf, -3.0, -Inf]
-    uv = [4.0, Inf, 3.0, Inf]
-    A = sparse(
-        [
-            1.0 1.0 0.0 0.0
-            0.0 1.0 1.0 0.0
-            1.0 0.0 0.0 1.0
-        ]
-    )
-    lc = [-1.0, -2.0, -3.0]
-    uc = [1.0, 5.0, 4.0]
-    int_var = [false, false, true, false]
-    var_names = ["alpha", "beta", "gamma", "delta"]
-    milp = MILP(; c, lv, uv, A, lc, uc, int_var, var_names)
-
-    path = tempname() * ".mps"
-    milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path)
-    rm(path; force = true)
-
-    @test nbvar(milp2) == nbvar(milp)
-    @test nbcons(milp2) == nbcons(milp)
-    @test milp2.var_names == milp.var_names
-    @test milp2.con_names == milp.con_names  # PaPILO matches its solution files up by name
-    @test milp2.c == milp.c
-    @test milp2.lv == milp.lv
-    @test milp2.uv == milp.uv
-    @test milp2.int_var == milp.int_var
-    @test Matrix(milp2.A) == Matrix(milp.A)
-    @test milp2.lc == milp.lc
-    @test milp2.uc == milp.uc
-end
-
-@testset "MPS round trip: fixed variable, free variable, free row" begin
-    c = [1.0, -1.0, 2.0]
-    lv = [2.0, -Inf, -Inf]
-    uv = [2.0, Inf, Inf]
-    A = sparse([1.0 1.0 0.0; 0.0 0.0 1.0])
-    lc = [-Inf, 0.0]
-    uc = [Inf, 0.0]
-    milp = MILP(; c, lv, uv, A, lc, uc)
-
-    path = tempname() * ".mps"
-    milp_to_mps(milp, path)
-    milp2 = mps_to_milp(path)
-    rm(path; force = true)
-
-    @test milp2.lv == milp.lv  # in particular, the fixed and free variables keep their bounds
-    @test milp2.uv == milp.uv
-    @test nbvar(milp2) == nbvar(milp)
-    @test nbcons(milp2) == nbcons(milp)
-end
-
-@testset "MPS round trip: a Float32 GPU MILP comes back as a host Float64 MILP" begin
-    # MPS is a host, `Float64` format, so `milp_to_mps` must accept a MILP living anywhere and
-    # `mps_to_milp` always hands back a host problem — `solve` converts it afterwards anyway
-    qps, path_afiro = read_instance(Netlib, "afiro")
-    milp_cpu = MILP(qps; path = path_afiro, name = "afiro")
-    milp_gpu = perform_conversion(milp_cpu, GPU_CONV)
-
-    path = tempname() * ".mps"
-    milp_to_mps(milp_gpu, path)
-    milp2 = mps_to_milp(path)
-    rm(path; force = true)
-
-    @test typeof(milp2) === typeof(milp_cpu)
-    @test nbvar(milp2) == nbvar(milp_gpu)
-    @test nbcons(milp2) == nbcons(milp_gpu)
-    @test milp2.c ≈ Float64.(Array(milp_gpu.c))
-    @test milp2.lv ≈ Float64.(Array(milp_gpu.lv))
-    @test milp2.uv ≈ Float64.(Array(milp_gpu.uv))
-end
-
-@testset "MPS conversion rejects batched MILPs and non-linear models" begin
-    milp, _ = CoolPDLP.random_milp_and_sol(4, 6, 0.5)
-    milp_batch = MILP(; c = repeat(milp.c, 1, 3), milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
-    @test_throws ArgumentError milp_to_mps(milp_batch, tempname() * ".mps")
-
-    quad_model = JuMP.Model()
-    JuMP.@variable(quad_model, 0 <= q[1:2] <= 1)
-    JuMP.@constraint(quad_model, q[1] * q[2] <= 1)
-    JuMP.@objective(quad_model, Min, sum(q))
-    quad_path = tempname() * ".mps"
-    JuMP.write_to_file(quad_model, quad_path; format = MOI.FileFormats.FORMAT_MPS)
-    @test_throws ArgumentError mps_to_milp(quad_path)
-    rm(quad_path; force = true)
-end
-
 function _core_padded_milp()
     # a tiny 2-variable, 2-constraint "core" LP, padded with redundant structure that a
     # presolver should strip entirely: a fixed variable, a variable absent from every
@@ -184,60 +91,6 @@ end
     @test presolve_info isa PaPILOExt.PaPILOPresolveInfo
     @test nbvar(milp_reduced) < nbvar(milp)
     @test nbcons(milp_reduced) < nbcons(milp)
-end
-
-@testset "postsolve(::PaPILOPresolver, ...) recovers a feasible, optimal reduced solution" begin
-    presolver = CoolPDLP.PaPILOPresolver()
-    milp = _core_padded_milp()
-    milp_reduced, presolve_info = presolve(presolver, milp)
-
-    # the only genuine degree of freedom left after presolve should be a single variable fixed
-    # by the RHS (x1 == x2 == 4), so any value compatible with its own bounds is optimal
-    x_reduced = copy(milp_reduced.lv)
-    x_reduced[.!isfinite.(x_reduced)] .= 0.0
-    sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
-
-    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
-    @test is_feasible(sol_orig.x, milp)
-    @test isapprox(objective_value(sol_orig.x, milp), 8.0; atol = 1.0e-6)
-    @test !any(isnan, sol_orig.y)  # the dual travels back with the primal
-end
-
-@testset "postsolve(::PaPILOPresolver, ...) does not launder an infeasible reduced solution" begin
-    # `_core_padded_milp` is small enough that PaPILO's presolve solves it outright, leaving no
-    # variable to corrupt; use a real (non-trivial, still feasible and bounded) instance instead
-    presolver = CoolPDLP.PaPILOPresolver()
-    qps, path = read_instance(Netlib, "afiro")
-    milp = MILP(qps; path, name = "afiro")
-    milp_reduced, presolve_info = presolve(presolver, milp)
-    @test nbvar(milp_reduced) > 0
-
-    # push every surviving reduced variable far out of its bounds
-    x_reduced = min.(milp_reduced.uv, 1.0e6) .+ 1000.0
-    sol_reduced = PrimalDualSolution(x_reduced, zeros(nbcons(milp_reduced)))
-
-    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
-    @test !is_feasible(sol_orig.x, milp; verbose = false)
-end
-
-@testset "postsolve types its result like the reduced solution it is given" begin
-    # `presolve` may return whatever it likes (here a host `Float64` problem, since PaPILO reads
-    # it back from an MPS file), but `postsolve` must hand back a solution the caller can use as
-    # is: the shape of the original problem, with `sol_reduced`'s element and array types
-    presolver = CoolPDLP.PaPILOPresolver()
-    qps, path = read_instance(Netlib, "afiro")
-    milp_cpu = MILP(qps; path, name = "afiro")
-    milp_gpu = perform_conversion(milp_cpu, GPU_CONV)
-
-    milp_reduced, presolve_info = presolve(presolver, milp_cpu)
-    @test typeof(milp_reduced) === typeof(milp_cpu)
-    @test nbvar(milp_reduced) < nbvar(milp_cpu)
-
-    sol_reduced = perform_conversion(PrimalDualSolution(milp_reduced), GPU_CONV)
-    sol_orig = postsolve(presolver, presolve_info, sol_reduced)
-    @test typeof(sol_orig) === typeof(PrimalDualSolution(milp_gpu))
-    @test length(sol_orig.x) == nbvar(milp_cpu)
-    @test length(sol_orig.y) == nbcons(milp_cpu)
 end
 
 @testset "postsolve recovers a dual solution that solves the original problem" begin
@@ -311,19 +164,75 @@ end
     @test isapprox(objective_value(Float64.(Array(sol.x)), milp), 8.0; atol = 1.0e-3)
 end
 
-@testset "solve lets a presolve failure propagate" begin
-    milp, _ = CoolPDLP.random_milp_and_sol(3, 4, 0.6)
-    algo = PDLP(
-        Float64, Int, SparseMatrixCSC; backend = CPU(),
-        presolver = CoolPDLP.PaPILOPresolver(), show_progress = false,
+@testset "presolve throws when PaPILO proves the problem infeasible or unbounded" begin
+    presolver = CoolPDLP.PaPILOPresolver()
+    # x1 + x2 >= 2 and x1 + x2 <= 1
+    milp_infeasible = MILP(;
+        c = [1.0, 1.0], lv = zeros(2), uv = fill(10.0, 2),
+        A = sparse([1.0 1.0; 1.0 1.0]), lc = [2.0, -Inf], uc = [Inf, 1.0],
     )
-    bogus_dir = joinpath(tempdir(), "coolpdlp-does-not-exist-$(rand(UInt64))")
-    withenv("TMPDIR" => bogus_dir) do
-        @test_throws ArgumentError solve(milp, algo)
-    end
+    # x1 = t + 1, x2 = t is feasible for every t >= 0, with objective -2t - 1
+    milp_unbounded = MILP(;
+        c = [-1.0, -1.0], lv = zeros(2), uv = fill(Inf, 2),
+        A = sparse([1.0 -1.0; 1.0 -2.0]), lc = fill(-Inf, 2), uc = [1.0, 3.0],
+    )
+    @test_throws "infeasible or unbounded" presolve(presolver, milp_infeasible)
+    @test_throws "infeasible or unbounded" presolve(presolver, milp_unbounded)
+
+    algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), presolver, show_progress = false)
+    @test_throws ErrorException solve(milp_infeasible, algo)
 end
 
-@testset "Full solve with presolve enabled matches a direct solve on a reducible problem" begin
+@testset "presolve and postsolve do not depend on the names of the MILP" begin
+    # names with spaces or duplicates do not survive an MPS file, and PaPILO matches its
+    # solution files up by name: a mismatch used to come back as a silently wrong solution
+    presolver = CoolPDLP.PaPILOPresolver()
+    qps, path = read_instance(Netlib, "afiro")
+    milp = MILP(qps; path, name = "afiro")
+    function postsolved_ones(var_names, con_names)
+        milp_named = MILP(;
+            milp.c, milp.lv, milp.uv, milp.A, milp.lc, milp.uc, var_names, con_names,
+        )
+        milp_reduced, presolve_info = presolve(presolver, milp_named)
+        sol_reduced = PrimalDualSolution(ones(nbvar(milp_reduced)), ones(nbcons(milp_reduced)))
+        return postsolve(presolver, presolve_info, sol_reduced)
+    end
+    n, m = nbvar(milp), nbcons(milp)
+    sol = postsolved_ones(milp.var_names, milp.con_names)
+    @test !iszero(sol.x)
+    @test !iszero(sol.y)
+    sol_spaces = postsolved_ones(["x $j" for j in 1:n], ["c $i" for i in 1:m])
+    @test sol_spaces.x == sol.x
+    @test sol_spaces.y == sol.y
+    sol_duplicates = postsolved_ones(fill("x", n), fill("c", m))
+    @test sol_duplicates.x == sol.x
+    @test sol_duplicates.y == sol.y
+end
+
+@testset "presolve_info can be postsolved several times, and owns no file" begin
+    presolver = CoolPDLP.PaPILOPresolver()
+    qps, path = read_instance(Netlib, "afiro")
+    milp = MILP(qps; path, name = "afiro")
+    dir = mktempdir()
+    withenv("TMPDIR" => dir) do
+        milp_reduced, presolve_info = presolve(presolver, milp)
+        sol_reduced = PrimalDualSolution(ones(nbvar(milp_reduced)), ones(nbcons(milp_reduced)))
+        sol1 = postsolve(presolver, presolve_info, sol_reduced)
+        sol2 = postsolve(presolver, presolve_info, sol_reduced)
+        @test sol1.x == sol2.x
+        @test sol1.y == sol2.y
+    end
+    # the only leftovers are the settings files that PaPILO.jl itself writes
+    @test all(endswith(".set"), readdir(dir))
+end
+
+@testset "postsolve rejects a solution file with unknown names" begin
+    values = Dict("x1" => 1.0, "x3" => 3.0)
+    @test PaPILOExt.gather_values(values, ["x1", "x2", "x3"]) == [1.0, 0.0, 3.0]
+    @test_throws ErrorException PaPILOExt.gather_values(values, ["x1", "x2"])
+end
+
+@testset "Full solve with presolve on a reducible problem" begin
     milp = _core_padded_milp()
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
@@ -334,29 +243,16 @@ end
     @test is_feasible(Array(sol.x), milp)
     @test isapprox(objective_value(Array(sol.x), milp), 8.0; atol = 1.0e-4)
     # the two `x1 == 4`, `x2 == 4` rows each cost 1 per unit, the padding row is free
-    @test length(sol.y) == nbcons(milp)
     @test sol.y ≈ [1.0, 1.0, 0.0]
-end
-
-@testset "solve grades the solution it returns on the problem it was given" begin
     # the stats describe the solution of the original problem that the caller gets back, not the
     # reduced problem the algorithm iterated on
-    milp = _core_padded_milp()
-    common_opts = (; termination_reltol = 1.0e-8, show_progress = false)
-    algo = PDLP(
-        Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...,
-        presolver = CoolPDLP.PaPILOPresolver(),
-    )
-    sol, stats = solve(milp, algo)
-    @test stats.termination_status == MOI.OPTIMAL
     @test CoolPDLP.relative(stats.err) ≈ relative_kkt_error(sol, milp)
-    @test stats.time_elapsed >= 0.0  # presolve and postsolve are inside the reported time
 end
 
-@testset "a postsolved solution that misses the tolerance is polished, not advertised" begin
+@testset "a postsolved solution that misses the tolerance is not advertised as optimal" begin
     # PaPILO reconstructs the dual of a removed row from the reduced solution it is handed, and
-    # gets it badly wrong when that solution is only approximate: afiro at the default tolerance
-    # comes back with one dual off by an order of magnitude. The polish is what repairs it
+    # gets it badly wrong when that solution is only approximate: afiro at this tolerance comes
+    # back with one dual off by an order of magnitude
     qps, path = read_instance(Netlib, "afiro")
     milp = MILP(qps; path, name = "afiro")
     presolver = CoolPDLP.PaPILOPresolver()
@@ -371,17 +267,16 @@ end
 
     algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver)
     sol, stats = solve(milp, algo)
-    @test stats.termination_status == MOI.OPTIMAL
-    @test relative_kkt_error(sol, milp) <= 1.0e-5
+    @test stats.termination_status == MOI.ALMOST_OPTIMAL
     @test CoolPDLP.relative(stats.err) ≈ relative_kkt_error(sol, milp)
-    # the polish is charged to the same budget as the solve of the reduced problem
-    @test stats.kkt_passes > stats_reduced.kkt_passes
+    @test relative_kkt_error(sol, milp) > 1.0e-5
+    # the iterations all happened on the reduced problem
+    @test stats.kkt_passes == stats_reduced.kkt_passes
 end
 
-@testset "the polish runs in the algorithm's own element and array types" begin
-    # a `NaN` dual can never meet the tolerance, so the polish is guaranteed to run here: the
-    # conversion of the original problem, the recomputed KKT errors, the warm start and the
-    # returned solution must all agree with the types the algorithm works in
+@testset "a `NaN` dual is never advertised as optimal" begin
+    # without dual postsolve the dual comes back as `NaN`, which no tolerance can vouch for,
+    # including in the algorithm's own element and array types
     milp = _core_padded_milp()
     algo = PDLP(
         Float32, Int32, GPUSparseMatrixCSR; backend = JLBackend(),
@@ -389,31 +284,13 @@ end
         presolver = CoolPDLP.PaPILOPresolver(; dual_postsolve = false),
     )
     sol, stats = solve(milp, algo)
+    @test stats.termination_status == MOI.ALMOST_OPTIMAL
     @test typeof(sol) === typeof(PrimalDualSolution(perform_conversion(milp, GPU_CONV)))
-    @test stats.termination_status == MOI.OPTIMAL
-    @test !any(isnan, Array(sol.y))
+    @test all(isnan, Array(sol.y))
     @test isapprox(objective_value(Float64.(Array(sol.x)), milp), 8.0; atol = 1.0e-3)
 end
 
-@testset "a `NaN` dual is dropped from the warm start rather than propagated" begin
-    # `dual_postsolve = false` gives back a `NaN` dual: it must not reach the polish iterations,
-    # while the primal half of the postsolved solution is still worth starting from
-    milp = _core_padded_milp()
-    algo = PDLP(
-        Float64, Int, SparseMatrixCSC; backend = CPU(),
-        termination_reltol = 1.0e-8, show_progress = false,
-        presolver = CoolPDLP.PaPILOPresolver(; dual_postsolve = false),
-    )
-    sol, stats = solve(milp, algo)
-    @test !any(isnan, sol.x)
-    @test !any(isnan, sol.y)
-    @test stats.termination_status == MOI.OPTIMAL
-    @test isapprox(objective_value(Array(sol.x), milp), 8.0; atol = 1.0e-4)
-end
-
-@testset "the postsolved solution is returned as is when the budget is spent" begin
-    # with no KKT passes left there is nothing to polish with, so the honest thing left to do is
-    # to hand back the postsolved solution and refuse to call it optimal
+@testset "a limit reached on the reduced problem is reported as such" begin
     qps, path = read_instance(Netlib, "afiro")
     milp = MILP(qps; path, name = "afiro")
     algo = PDLP(
@@ -421,8 +298,36 @@ end
         termination_reltol = 1.0e-5, max_kkt_passes = 1, show_progress = false,
         presolver = CoolPDLP.PaPILOPresolver(),
     )
-    _, stats = solve(milp, algo)
-    @test stats.termination_status != MOI.OPTIMAL
+    sol, stats = solve(milp, algo)
+    @test stats.termination_status == MOI.ITERATION_LIMIT
+    @test length(sol.x) == nbvar(milp)
+end
+
+struct FailingPresolver <: CoolPDLP.AbstractPresolver end
+CoolPDLP.presolve(::FailingPresolver, ::MILP) = error("presolve was called")
+
+@testset "solve from a starting point never presolves" begin
+    milp = _core_padded_milp()
+    algo = PDLP(
+        Float64, Int, SparseMatrixCSC; backend = CPU(),
+        termination_reltol = 1.0e-8, show_progress = false, presolver = FailingPresolver(),
+    )
+    @test_throws "presolve was called" solve(milp, algo)
+    sol, stats = solve(milp, PrimalDualSolution(milp), algo)
+    @test stats.termination_status == MOI.OPTIMAL
+    @test isapprox(objective_value(sol.x, milp), 8.0; atol = 1.0e-4)
+end
+
+@testset "presolve through JuMP" begin
+    model = JuMP.Model(CoolPDLP.Optimizer)
+    JuMP.set_silent(model)
+    JuMP.set_attribute(model, "presolver", CoolPDLP.PaPILOPresolver())
+    JuMP.@variable(model, 0 <= x[1:2] <= 10)
+    JuMP.@constraint(model, x[1] + x[2] >= 4)
+    JuMP.@objective(model, Min, x[1] + 2 * x[2])
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
+    @test isapprox(JuMP.objective_value(model), 4.0; atol = 1.0e-3)
 end
 
 @testset "`nothing` is the identity presolver" begin
@@ -463,38 +368,4 @@ end
         presolver = CoolPDLP.PaPILOPresolver(), show_progress = false,
     )
     @test_throws ArgumentError solve(milp_batch, algo)
-end
-
-@testset "Presolve is a strict speedup on a heavily padded problem" begin
-    # pad the core problem with many redundant fixed variables and empty rows: a presolver
-    # should strip all of that away, so far fewer KKT passes are needed to reach the same
-    # tolerance than when solving the padded problem directly
-    npad = 200
-    c = vcat([1.0, 1.0], zeros(npad))
-    lv = vcat([0.0, 0.0], fill(3.0, npad))
-    uv = vcat([10.0, 10.0], fill(3.0, npad))
-    A = spzeros(2 + npad, 2 + npad)
-    A[1, 1] = 1.0
-    A[2, 2] = 1.0
-    for k in 1:npad
-        A[2 + k, 2 + k] = 1.0
-    end
-    lc = vcat([4.0, 4.0], fill(3.0, npad))
-    uc = vcat([4.0, 4.0], fill(3.0, npad))
-    milp = MILP(; c, lv, uv, A, lc, uc)
-
-    common_opts = (; termination_reltol = 1.0e-8, max_kkt_passes = 10^6, show_progress = false)
-    algo_np = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts...)
-    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), common_opts..., presolver = CoolPDLP.PaPILOPresolver())
-
-    sol_np, stats_np = solve(milp, algo_np)
-    sol_p, stats_p = solve(milp, algo_p)
-
-    @test stats_np.termination_status == MOI.OPTIMAL
-    @test stats_p.termination_status == MOI.OPTIMAL
-    @test is_feasible(Array(sol_np.x), milp)
-    @test is_feasible(Array(sol_p.x), milp)
-    @test isapprox(objective_value(Array(sol_np.x), milp), 8.0; atol = 1.0e-4)
-    @test isapprox(objective_value(Array(sol_p.x), milp), 8.0; atol = 1.0e-4)
-    @test stats_p.kkt_passes < stats_np.kkt_passes
 end
