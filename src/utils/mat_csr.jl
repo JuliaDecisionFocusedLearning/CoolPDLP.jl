@@ -18,6 +18,8 @@ struct GPUSparseMatrixCSR{
     nzval::V
     "number of nonzeros in the longest row"
     maxrow::Int
+    "scratch space of [`spmv_csr_blocks!`](@ref), a single entry unless the rows are skewed"
+    blocks::V
 end
 
 """
@@ -28,7 +30,12 @@ Build the matrix from its CSR arrays, reading the length of its longest row from
 function GPUSparseMatrixCSR(
         m::Integer, n::Integer, rowptr::AbstractVector, colval::AbstractVector, nzval::AbstractVector
     )
-    return GPUSparseMatrixCSR(m, n, rowptr, colval, nzval, longest_row(rowptr))
+    maxrow = longest_row(rowptr)
+    nz = length(nzval)
+    nblocks = is_row_skewed(m, nz, maxrow) ? block_scratch_length(nz, maxrow) : 0
+    # never empty: Reactant turns an empty array into a `tensor.empty`, which XLA rejects
+    blocks = similar(nzval, max(nblocks, 1))
+    return GPUSparseMatrixCSR(m, n, rowptr, colval, nzval, maxrow, blocks)
 end
 
 """
@@ -75,7 +82,8 @@ function Adapt.adapt_structure(to, A::GPUSparseMatrixCSR)
         adapt(to, A.rowptr),
         adapt(to, A.colval),
         adapt(to, A.nzval),
-        A.maxrow
+        A.maxrow,
+        adapt(to, A.blocks)
     )
 end
 
@@ -323,6 +331,7 @@ function LinearAlgebra.mul!(
         α::Number,
         β::Number
     ) where {T <: Number, Ti, V <: DenseVector{T}}
+    is_row_skewed(size(A, 1), nnz(A), A.maxrow) && return spmv_csr_blocks!(c, A, b, α, β)
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     α_is_one = isone(α)
@@ -477,3 +486,230 @@ function LinearAlgebra.mul!(
     return c
 end
 
+## Rows much longer than the others: a pyramid of block sums
+
+"""
+    SKEWED_ROWS
+
+How many times longer than the average row the longest row of a `GPUSparseMatrixCSR` has to
+be for `mul!` to sum rows with [`spmv_csr_blocks!`](@ref) instead of the sub-groups of
+[`spmv_csr_vector!`](@ref).
+
+On the 1022 instances of MIPLIB 2017 that QPSReader can read, products with `A` and with its
+transpose, the pyramid was faster on 88 of the 91 products past 256 and up to 1000, and on
+90 of the 94 past 1000, by a factor of 10 in geometric mean there; it was slower below. This
+threshold cut the summed time of the 2044 products from 785ms to 114ms on an L40S, against
+105ms for the best of both kernels on each, and lost at most 1.6x on any one product.
+"""
+const SKEWED_ROWS = 256
+
+"""
+    is_row_skewed(m, nz, maxrow)
+
+Whether a CSR matrix with `m` rows, `nz` nonzeros and `maxrow` nonzeros in its longest row
+has a row at least [`SKEWED_ROWS`](@ref) times longer than the average one.
+
+The sub-groups of [`spmv_csr_vector!`](@ref) are sized from the average row, so a single row
+much longer than that is left to a handful of work items, and the whole product waits for it.
+"""
+is_row_skewed(m::Integer, nz::Integer, maxrow::Integer) = m > 0 && maxrow >= SKEWED_ROWS * nz / m
+
+"""
+    BLOCK_FANOUT
+
+Number of entries that each block of [`spmv_csr_blocks!`](@ref) sums, i.e. the factor by which
+each level of its pyramid is shorter than the level below.
+"""
+const BLOCK_FANOUT = 8
+
+"""
+    block_levels(len, C)
+
+Number of levels in a pyramid of block sums with fan-out `C`, counting its base, that
+[`peel_blocks`](@ref) needs to consume any range of at most `len` entries.
+"""
+function block_levels(len::Integer, C::Integer)
+    L, width = 1, C
+    while width <= len
+        L += 1
+        width *= C
+    end
+    return L
+end
+
+"""
+    block_scratch_length(nz, maxrow)
+
+Number of entries of the levels above the base of the pyramid of [`spmv_csr_blocks!`](@ref),
+for a matrix with `nz` nonzeros and `maxrow` nonzeros in its longest row.
+"""
+function block_scratch_length(nz::Integer, maxrow::Integer)
+    total, n = 0, nz
+    for _ in 2:block_levels(maxrow, BLOCK_FANOUT)
+        n = cld(n, BLOCK_FANOUT)
+        total += n
+    end
+    return total
+end
+
+"""
+    CSRProducts(A_colval, A_nzval, b)
+
+The products `A_nzval[k] * b[A_colval[k]]`, which index like a vector but are never stored:
+they are the base of the pyramid of [`spmv_csr_blocks!`](@ref), of which a row reads at most
+`2 * (BLOCK_FANOUT - 1)` entries.
+"""
+struct CSRProducts{Vi, V, Vb}
+    A_colval::Vi
+    A_nzval::V
+    b::Vb
+end
+
+Base.@propagate_inbounds function Base.getindex(p::CSRProducts, k::Integer)
+    return p.A_nzval[k] * p.b[p.A_colval[k]]
+end
+
+"""
+    csr_block_products!(P, A_colval, A_nzval, b, Val(C))
+
+Sum the products `A_nzval[k] * b[A_colval[k]]` over consecutive blocks of `C` nonzeros into the
+first entries of `P`, with one work item per block.
+"""
+@kernel function csr_block_products!(
+        P::DenseVector{T},
+        A_colval::DenseVector{Ti},
+        A_nzval::DenseVector{T},
+        b::DenseVector{T},
+        ::Val{C}
+    ) where {T, Ti, C}
+    q = @index(Global, Linear)
+    nz = length(A_nzval)
+    s = zero(T)
+    @inbounds for k in ((q - 1) * C + 1):min(q * C, nz)
+        s += A_nzval[k] * b[A_colval[k]]
+    end
+    @inbounds P[q] = s
+end
+
+"""
+    block_sums!(P, off_in, n_in, off_out, Val(C))
+
+Sum the `n_in` entries of `P` after `off_in` over consecutive blocks of `C`, into the entries of
+`P` after `off_out`: one work item per block.
+"""
+@kernel function block_sums!(P::DenseVector{T}, off_in::Int, n_in::Int, off_out::Int, ::Val{C}) where {T, C}
+    q = @index(Global, Linear)
+    s = zero(T)
+    @inbounds for x in ((q - 1) * C + 1):min(q * C, n_in)
+        s += P[off_in + x]
+    end
+    @inbounds P[off_out + q] = s
+end
+
+"""
+    peel_blocks(P, off, lo, hi, s, Val(C))
+
+Add to `s` the entries `P[off + x]` for `x` in `lo:hi` that do not fill a whole block of `C`:
+at most `C - 1` from `lo` up to the first block boundary, and as many from `hi` down to the
+last one. Return the whole blocks that remain, as a range of indices one level up the pyramid,
+and the new sum.
+"""
+@inline function peel_blocks(P, off::Int, lo::Int, hi::Int, s, ::Val{C}) where {C}
+    nleft = max(min(hi - lo + 1, mod(1 - lo, C)), 0)
+    @inbounds for x in lo:(lo + nleft - 1)
+        s += P[off + x]
+    end
+    lo += nleft
+    nright = max(min(hi - lo + 1, mod(hi, C)), 0)
+    @inbounds for x in (hi - nright + 1):hi
+        s += P[off + x]
+    end
+    hi -= nright
+    return fld(lo - 1, C) + 1, fld(hi, C), s
+end
+
+"""
+    csr_block_rows!(c, A_rowptr, A_colval, A_nzval, b, P, nz, α, β, Val(C))
+
+Set `c[i] = α * s + β * c[i]`, where `s` sums the products of row `i` over the pyramid whose
+base is [`CSRProducts`](@ref) and whose upper levels are stored one after the other in `P`:
+one work item per row, climbing until its range is consumed.
+"""
+@kernel function csr_block_rows!(
+        c::DenseVector{T},
+        A_rowptr::DenseVector{Ti},
+        A_colval::DenseVector{Ti},
+        A_nzval::DenseVector{T},
+        b::DenseVector{T},
+        P::DenseVector{T},
+        α::Number,
+        β::Number,
+        ::Val{C}
+    ) where {T, Ti, C}
+    i = @index(Global, Linear)
+    @inbounds lo, hi = Int(A_rowptr[i]), Int(A_rowptr[i + Ti(1)]) - 1
+    lo, hi, s = peel_blocks(CSRProducts(A_colval, A_nzval, b), 0, lo, hi, zero(T), Val(C))
+    off, n = 0, cld(length(A_nzval), C)
+    while lo <= hi
+        lo, hi, s = peel_blocks(P, off, lo, hi, s, Val(C))
+        off += n
+        n = cld(n, C)
+    end
+    @inbounds c[i] = α * s + β * c[i]
+end
+
+"""
+    spmv_csr_blocks!(c, A::GPUSparseMatrixCSR, b, α, β)
+
+Compute `c = α * A * b + β * c`, like `mul!`, with work per row that grows with the logarithm
+of the row's length rather than with its length. `mul!` uses it for matrices whose rows are
+too uneven for [`spmv_csr_vector!`](@ref)'s sub-groups, see [`is_row_skewed`](@ref).
+
+The products are summed over a pyramid of blocks. Its base holds the products
+`A.nzval[k] * b[A.colval[k]]` in storage order, and each level above it sums consecutive
+blocks of [`BLOCK_FANOUT`](@ref) entries of the level below, across row boundaries. A row is
+a range of the base, and its sum is read from the coarsest blocks that fit inside that range:
+[`peel_blocks`](@ref) takes the entries at both ends that do not fill a whole block, and moves
+the rest of the range up one level, until nothing is left. A block that fits inside the range
+only holds products of that row, so nothing is ever subtracted and the other rows cannot
+affect the result.
+
+A row reads at most `2 * (BLOCK_FANOUT - 1)` entries per level, and the pyramid has as many
+levels as the longest row, `A.maxrow`, needs. The base is never stored: a row recomputes the
+few products it reads (see [`CSRProducts`](@ref)), so building the pyramid costs about one
+pass over the nonzeros. The levels above it live in `A.blocks`, allocated with the matrix
+when its rows are skewed, and here otherwise.
+"""
+function spmv_csr_blocks!(
+        c::AbstractVector, A::GPUSparseMatrixCSR, b::AbstractVector, α::Number, β::Number
+    )
+    check_mul_dims(c, A, b)
+    backend = common_backend(c, A, b)
+    m, nz = size(A, 1), nnz(A)
+    C = BLOCK_FANOUT
+    m == 0 && return c
+    nblocks = block_scratch_length(nz, A.maxrow)
+    P = length(A.blocks) >= nblocks ? A.blocks : similar(A.nzval, nblocks)
+    if nblocks > 0
+        n = cld(nz, C)
+        csr_block_products!(backend)(P, A.colval, A.nzval, b, Val(C); ndrange = n)
+        off = 0
+        while off + n < nblocks
+            n_up = cld(n, C)
+            block_sums!(backend)(P, off, n, off + n, Val(C); ndrange = n_up)
+            off, n = off + n, n_up
+        end
+    end
+    kernel! = csr_block_rows!(backend)
+    args = (c, A.rowptr, A.colval, A.nzval, b, P)
+    if isone(α) && iszero(β)
+        kernel!(args..., One(), Zero(), Val(C); ndrange = m)
+    elseif isone(α)
+        kernel!(args..., One(), β, Val(C); ndrange = m)
+    elseif iszero(β)
+        kernel!(args..., α, Zero(), Val(C); ndrange = m)
+    else
+        kernel!(args..., α, β, Val(C); ndrange = m)
+    end
+    return c
+end

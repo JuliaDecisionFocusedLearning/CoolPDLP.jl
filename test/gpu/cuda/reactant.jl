@@ -29,6 +29,19 @@ const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO
             @test Array(c_r) ≈ α * (A_cpu * b) + β * c0
         end
 
+        @testset "vector, row-skewed" begin
+            # a row far longer than the others sends a CSR product to `spmv_csr_blocks!`
+            m, n = 1024, 400
+            A_skew = sparse([1:m; fill(5, n)], [mod1.(1:m, n); 1:n], randn(rng, m + n), m, n)
+            M == GPUSparseMatrixCSR && @test !isempty(M(A_skew).blocks)
+            A_skew_r = to_rarray(M(A_skew); track_numbers = true)
+            b, c0 = randn(rng, n), randn(rng, m)
+            b_r, c_r = to_rarray(b), to_rarray(copy(c0))
+            compiled = @compile mul!(c_r, A_skew_r, b_r, α, β)
+            compiled(c_r, A_skew_r, b_r, α, β)
+            @test Array(c_r) ≈ α * (A_skew * b) + β * c0
+        end
+
         @testset "batch of vectors" begin
             b, c0 = randn(rng, 16, 3), randn(rng, 24, 3)
             b_r, c_r = to_rarray(b), to_rarray(copy(c0))
