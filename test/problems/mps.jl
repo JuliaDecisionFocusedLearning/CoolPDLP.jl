@@ -56,22 +56,23 @@ end
     model = JuMP.Model()
     JuMP.@variable(model, 0 <= x[1:2] <= 1)
     JuMP.@constraint(model, x[1] + x[2] <= 1.5)
-    JuMP.@objective(model, Max, x[1] + 2x[2])
+    JuMP.@objective(model, Max, x[1] + 2x[2] + 3)
     path_max = tempname() * ".mps"
     JuMP.write_to_file(model, path_max; format = MOI.FileFormats.FORMAT_MPS)
     milp = mps_to_milp(path_max)
     @test milp.c == [-1.0, -2.0]
+    @test milp.c0 == -3.0
 
     path = tempname() * ".mps"
     milp_to_mps(milp, path)
     milp2 = mps_to_milp(path)
     @test milp2 ≈ milp
 
-    # the file holds `min -cᵀx`, not the original `max cᵀx`
+    # the file holds `min -cᵀx - c0`, not the original `max cᵀx + c0`
     model2 = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
     @test JuMP.objective_sense(model2) == MOI.MIN_SENSE
     x2 = JuMP.all_variables(model2)
-    @test JuMP.objective_function(model2) == -x2[1] - 2x2[2]
+    @test JuMP.objective_function(model2) == -x2[1] - 2x2[2] - 3
     rm(path_max; force = true)
     rm(path; force = true)
 end
