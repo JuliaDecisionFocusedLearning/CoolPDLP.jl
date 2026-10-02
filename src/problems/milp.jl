@@ -36,11 +36,12 @@ struct MILP{
         M <: AbstractMatrix{T},
         Mt <: AbstractMatrix{T},
         Vb <: DenseVector,
+        Tc <: Number,
     }
     "objective vector"
     c::Vo
-    "objective constant"
-    c0::T
+    "objective constant, of its own type parameter so that Reactant can trace it as a number"
+    c0::Tc
     "variable lower bound"
     lv::Vlv
     "variable upper bound"
@@ -116,7 +117,7 @@ struct MILP{
 
         return new{
             T, typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc),
-            typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var),
+            typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var), T,
         }(
             c,
             convert(T, c0),
