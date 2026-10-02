@@ -72,7 +72,7 @@ struct MILP{
 
     function MILP(;
             c,
-            c0 = 0,
+            c0 = false,
             lv,
             uv,
             A,
