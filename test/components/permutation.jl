@@ -13,3 +13,15 @@ using Test
         @test issorted(map(row -> count(!iszero, row), eachrow(A_sorted)))
     end
 end
+
+@testset "Sort rows and columns of a MILP" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.3)
+    milp_sorted = CoolPDLP.sort_rows_columns(milp)
+    # default names are the original indices, so they tell where each row and column went
+    perm_var = parse.(Int, milp_sorted.var_names)
+    perm_cons = parse.(Int, milp_sorted.con_names)
+    @test milp_sorted.A == milp.A[perm_cons, perm_var]
+    @test milp_sorted.c == milp.c[perm_var]
+    @test milp_sorted.lc == milp.lc[perm_cons]
+    @test milp_sorted.uc == milp.uc[perm_cons]
+end
