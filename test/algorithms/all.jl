@@ -6,6 +6,7 @@ using KernelAbstractions
 using LinearAlgebra
 using MathOptBenchmarkInstances
 using JuMP: JuMP, MOI
+using PaPILO: PaPILO  # loads the `CoolPDLPPaPILOExt` extension, needed by the presolve testset below
 using SparseArrays
 using Test
 
@@ -20,6 +21,7 @@ end
 function test_optimizer(
         dataset::MathOptBenchmarkInstances.Dataset, name::String, algo::CoolPDLP.Algorithm;
         obj_rtol::Float64 = 1.0e-2, cons_tol::Float64 = 1.0e-2, int_tol::Float64 = Inf,
+        statuses = (MOI.OPTIMAL,),
     )
     qps, path = read_instance(dataset, name)
     milp = MILP(qps; dataset, path)
@@ -33,7 +35,7 @@ function test_optimizer(
     sol, stats = solve(milp, algo)
     x = sol.x
 
-    @test stats.termination_status == MOI.OPTIMAL
+    @test stats.termination_status in statuses
     @test is_feasible(Array(x), milp; cons_tol, int_tol)
     @test isapprox(objective_value(jump_x, milp), objective_value(Array(x), milp); rtol = obj_rtol)
     return nothing
@@ -58,6 +60,46 @@ end
         @testset for name in small_names
             test_optimizer(dataset, name, algo; cons_tol = 1.0e-2)
         end
+    end
+end
+
+@testset "PDLP with presolve" begin
+    algo = PDLP(
+        Float64, Int, SparseMatrixCSC; backend = CPU(),
+        termination_reltol = 1.0e-5, max_kkt_passes = 10^7, show_progress = false,
+        presolver = CoolPDLP.PaPILOPresolver(),
+    )
+    dataset = Netlib
+    # the reduced problem is solved to optimality, but the postsolved dual may miss the tolerance
+    statuses = (MOI.OPTIMAL, MOI.ALMOST_OPTIMAL)
+    @testset for name in small_names
+        test_optimizer(dataset, name, algo; cons_tol = 1.0e-2, statuses)
+    end
+end
+
+@testset "PDLP with presolve is no worse than PDLP without, given a small iteration budget" begin
+    # small Netlib instances under a tight KKT-pass budget: presolve should get at least as close
+    # to the true optimum as solving the original problem does (no closer when the reduction
+    # leaves the iterates unchanged, as on sc50a where it only removes a redundant row)
+    budget_opts = (; termination_reltol = 1.0e-9, max_kkt_passes = 50, show_progress = false)
+    algo_np = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts...)
+    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts..., presolver = CoolPDLP.PaPILOPresolver())
+    dataset = Netlib
+    @testset for name in small_names
+        qps, path = read_instance(dataset, name)
+        milp = MILP(qps; dataset, path)
+
+        jump_model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
+        JuMP.set_optimizer(jump_model, HiGHS.Optimizer)
+        JuMP.set_silent(jump_model)
+        JuMP.optimize!(jump_model)
+        true_obj = objective_value(JuMP.value.(JuMP.all_variables(jump_model)), milp)
+
+        sol_np, _ = solve(milp, algo_np)
+        sol_p, _ = solve(milp, algo_p)
+        err_np = abs(objective_value(Array(sol_np.x), milp) - true_obj) / max(1, abs(true_obj))
+        err_p = abs(objective_value(Array(sol_p.x), milp) - true_obj) / max(1, abs(true_obj))
+        @test err_p <= err_np
     end
 end
 

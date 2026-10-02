@@ -10,14 +10,15 @@ using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
-using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
+using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using Logging: NullLogger, with_logger
 using Printf: @sprintf
 using Random: Random, randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
 include("public.jl")
 
@@ -33,9 +34,11 @@ include("public.jl")
     include("problems/milp.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
+    include("problems/mps.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")
+    include("components/presolve.jl")
     include("components/preconditioning.jl")
     include("components/permutation.jl")
     include("components/step_size.jl")
@@ -54,6 +57,8 @@ include("MOI_wrapper.jl")
 
 @public sametype_transpose
 
+export AbstractPresolver, presolve, postsolve, PaPILOPresolver
+
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
@@ -67,5 +72,22 @@ export PDHG, PDLP
 export is_feasible, objective_value
 
 @public Optimizer
+
+function __init__()
+    # `presolve`/`postsolve` for a `PaPILOPresolver` live in the `CoolPDLPPaPILOExt` extension,
+    # so forgetting `using PaPILO` surfaces as a plain `MethodError`: point the user at the fix
+    Base.Experimental.register_error_hint(MethodError) do io, exc, _argtypes, _kwargs
+        if (exc.f === presolve || exc.f === postsolve) &&
+                any(a -> a isa PaPILOPresolver, exc.args)
+            print(
+                io,
+                "\nPaPILOPresolver needs PaPILO.jl to be loaded first (it is a weak dependency " *
+                    "of CoolPDLP, kept optional because of its Apache-2.0 license): run " *
+                    "`using PaPILO` and try again."
+            )
+        end
+    end
+    return nothing
+end
 
 end # module CoolPDLP

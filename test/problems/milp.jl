@@ -47,6 +47,9 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc, uc, int_var = vcat(int_var, false)
     )
+    @test_throws DimensionMismatch MILP(;
+        c, lv, uv, A, At, lc, uc, con_names = ["a single name"]
+    )
     # Batch size issues
     @test_nowarn MILP(;
         c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 3),
@@ -64,6 +67,18 @@ using Test
     @test_nowarn MILP(;
         c, lv = repeat(lv, 1, 3), uv, A, At, lc, uc = repeat(uc, 1, 3),
     )
+end
+
+@testset "Names" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(3, 5, 0.5)
+    # by default, variables and constraints are named after their index
+    @test milp.var_names == string.(1:nbvar(milp))
+    @test milp.con_names == string.(1:nbcons(milp))
+
+    qps, _ = read_instance(Netlib, "afiro")
+    milp_qps = MILP(qps)
+    @test milp_qps.var_names == qps.varnames
+    @test milp_qps.con_names == qps.connames
 end
 
 @testset "Batched objective value" begin

@@ -12,6 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
+        P <: Union{Nothing, AbstractPresolver},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -19,6 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolver::P
 end
 
 """
@@ -50,9 +52,13 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver = nothing,
     )
 
-Constructor for algorithm configs.
+Constructor for algorithm configs. `presolver` is `nothing` (presolve disabled) or an
+[`AbstractPresolver`](@ref) instance, e.g. `presolver = PaPILOPresolver()` (`using PaPILO`
+first).
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +88,8 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver::Union{Nothing, AbstractPresolver} = nothing,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -114,19 +122,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolver)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +143,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - presolver=$presolver"""
     )
 end
 
@@ -204,6 +213,14 @@ function initialize end
 Solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
 
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
+
+If `algo` has a presolver, `solve(milp, algo)` runs the algorithm on the reduced problem returned by [`presolve`](@ref), then maps its solution back to `milp` with [`postsolve`](@ref). In that case:
+
+- `stats.err` holds the KKT errors of the returned solution on `milp`, and a solution which meets the tolerance on the reduced problem but not on `milp` is reported as `ALMOST_OPTIMAL` instead of `OPTIMAL`.
+- `stats.kkt_passes` and `stats.error_history` describe the iterations on the reduced problem.
+- `stats.time_elapsed` includes presolve and postsolve, but the time limit only applies to the iterations.
+
+`solve(milp, sol, algo)` never presolves, whatever the presolver of `algo`: `sol` is a starting point for `milp`, not for a reduced problem.
 """
 function solve(
         milp_init_cpu::MILP,
@@ -239,8 +256,62 @@ function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
-    sol_init_cpu = PrimalDualSolution(milp_init_cpu)
-    return solve(milp_init_cpu, sol_init_cpu, algo)
+    if !isnothing(algo.presolver) && isbatched(milp_init_cpu)
+        # `presolve` maps one problem to one problem, so a batch has no contract to rely on.
+        # `algo.presolver`'s type is a type parameter of `algo`, so this test costs nothing.
+        throw(ArgumentError("Presolve does not support batched MILPs"))
+    end
+    starting_time = time()
+    # the reduced problem lives wherever the presolver put it (for a file-based backend like
+    # `PaPILOPresolver`, a host `Float64` problem), and the inner `solve` preconditions and
+    # converts it just like it would the original one. Without a presolver this is `milp_init_cpu`
+    # itself, and every step below is likewise an identity
+    milp_reduced, presolve_info = presolve(algo.presolver, milp_init_cpu)
+    # `sol_reduced` solves the *reduced* problem, in the element and array types of
+    # `algo.conversion` (the inner `solve` unpreconditions it on the way out, so its values are
+    # in the reduced problem's own scale, not the preconditioned one)
+    sol_reduced, stats = solve(milp_reduced, PrimalDualSolution(milp_reduced), algo)
+    # `sol` solves the *original* problem, in those same types: that is the contract
+    # `postsolve` implementations must respect
+    sol = postsolve(algo.presolver, presolve_info, sol_reduced)
+    regrade!(stats, algo.presolver, sol, milp_init_cpu, algo)
+    stats.starting_time = starting_time
+    stats.time_elapsed = time() - starting_time
+    return sol, stats
+end
+
+"""
+    regrade!(stats, presolver, sol, milp_init_cpu, algo)
+
+Make `stats` grade `sol`, a postsolved solution, on the problem `milp_init_cpu` that the caller asked about rather than on the reduced problem that the algorithm iterated on.
+
+Solving the reduced problem to `termination_reltol` does not guarantee that much on the original problem: postsolve reintroduces the eliminated rows and columns, and a presolver's dual reconstruction can be far off when it is handed an inexact solution to begin with. So the KKT errors are recomputed on `milp_init_cpu`, and an `OPTIMAL` status that they do not back up is demoted to `ALMOST_OPTIMAL`.
+
+Without a presolver (`presolver = nothing`) there was no reduction, and `stats` is left untouched.
+"""
+function regrade!(
+        stats::ConvergenceStats,
+        ::AbstractPresolver,
+        sol::PrimalDualSolution,
+        milp_init_cpu::MILP,
+        algo::Algorithm,
+    )
+    # `sol` has the shape of the original problem and the element and array types of
+    # `algo.conversion`, which is what `postsolve` promises, so the original problem is converted
+    # to match (but not preconditioned, since `sol` is not in a preconditioned scale)
+    milp = perform_conversion(milp_init_cpu, algo.conversion)
+    kkt_errors!(stats.err, Scratch(sol), sol, milp)
+    solved = batched_all(<=(algo.termination.termination_reltol), relative(stats.err))
+    if !solved && stats.termination_status === MOI.OPTIMAL
+        stats.termination_status = MOI.ALMOST_OPTIMAL
+    end
+    return stats
+end
+
+function regrade!(
+        stats::ConvergenceStats, ::Nothing, ::PrimalDualSolution, ::MILP, ::Algorithm
+    )
+    return stats
 end
 
 """
