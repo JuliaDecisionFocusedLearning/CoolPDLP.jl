@@ -55,7 +55,6 @@ end
 include("MOI_wrapper.jl")
 
 @public sametype_transpose
-@public milp_to_mps, mps_to_milp
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
