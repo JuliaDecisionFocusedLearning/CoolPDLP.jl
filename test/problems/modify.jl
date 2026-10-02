@@ -25,6 +25,11 @@ milp, sol = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
         @test milp_modified.con_names == milp.con_names
     end
 
+    # the objective constant follows the element type
+    @test milp_f32.c0 === Float32(milp.c0)
+    @test milp_i32.c0 === milp.c0
+    @test milp_dense.c0 === milp.c0
+
     sol_f32 = CoolPDLP.set_eltype(Float32, sol)
     @test sol_f32 isa PrimalDualSolution{Float32, Vector{Float32}}
 end
@@ -40,6 +45,7 @@ end
     @test typeof(milp_relaxed) === typeof(milp_int)
     @test milp_relaxed.c === milp_int.c  # everything but integrality is shared, not copied
     @test milp_relaxed.A === milp_int.A
+    @test milp_relaxed.c0 === milp_int.c0
     @test nbvar_int(milp_int) == nbvar(milp_int)  # the original is untouched
 end
 
@@ -53,6 +59,7 @@ end
     @test milp_gpu.c isa JLVector{Float64}
     @test milp_gpu.int_var isa JLVector{Bool}
     @test get_backend(milp_gpu) == JLBackend()
+    @test milp_gpu.c0 === milp.c0
 
     sol_gpu = adapt(JLBackend(), sol)
     @test sol_gpu isa PrimalDualSolution{Float64, JLVector{Float64}}

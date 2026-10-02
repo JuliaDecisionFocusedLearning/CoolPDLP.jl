@@ -23,7 +23,7 @@ function milp_to_mps(
     # MPS is a plain-text, `Float64` format, so the problem is brought back to the CPU whatever
     # backend and matrix type it lived on
     milp_cpu = adapt(CPU(), milp)
-    (; c, lv, uv, lc, uc, int_var) = milp_cpu
+    (; c, c0, lv, uv, lc, uc, int_var) = milp_cpu
     At = SparseMatrixCSC(milp_cpu.At)  # column `i` of `At` is row `i` of `A`
 
     model = MOI.FileFormats.MPS.Model()
@@ -35,7 +35,7 @@ function milp_to_mps(
         int_var[j] && MOI.add_constraint(model, x[j], MOI.Integer())
     end
 
-    objective = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(Float64.(c), x), 0.0)
+    objective = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(Float64.(c), x), Float64(c0))
     MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
     MOI.set(model, MOI.ObjectiveFunction{typeof(objective)}(), objective)
 
@@ -67,10 +67,6 @@ MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`
 `SparseMatrixCSC`.
 
 `dataset`, `name` and `path` are the provenance metadata of the [`MILP`](@ref) to build.
-
-!!! warning
-    A [`MILP`](@ref) has no objective constant, so the one in the file (if any) is dropped:
-    objective values computed on the result are off by that constant.
 """
 function mps_to_milp(
         file::AbstractString;

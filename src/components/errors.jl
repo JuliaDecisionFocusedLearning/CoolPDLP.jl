@@ -140,7 +140,7 @@ function kkt_errors!(
         milp::MILP{T},
     ) where {T}
     (; x, y) = sol
-    (; c, lv, uv, A, At, lc, uc, D1, D2) = milp
+    (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
 
     A_x = mul!(scratch.y, A, x)
     c_At_y = mul!(scratch.x, At, y, -one(T), zero(T))
@@ -161,7 +161,7 @@ function kkt_errors!(
     err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj)
     err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
-    # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+    # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ
     #    where pc = (l⋅|y|⁺ - u⋅|y|⁻) and pv = (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)
     pc = @. scratch.y = (
@@ -172,10 +172,12 @@ function kkt_errors!(
     )
     pc_sum = colsum!!(scratch.b1, pc)
     pv_sum = colsum!!(scratch.b2, pv)
-    dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum)
+    # the objective constant cancels out in the gap, but not in its scale
+    dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum, c0)
     cx = colsum!!(scratch.b2, @. scratch.x = c * x)
+    pobj = broadcast!!(+, scratch.b2, cx, c0)
 
-    err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, cx, dobj)
-    err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, cx)
+    err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, pobj, dobj)
+    err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, pobj)
     return err
 end
