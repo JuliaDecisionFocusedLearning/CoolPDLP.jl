@@ -1,7 +1,7 @@
-mutable struct IterationCounter
-    outer::Int
-    inner::Int
-    total::Int
+mutable struct IterationCounter{I <: Number}
+    outer::I
+    inner::I
+    total::I
 end
 
 function add_inner!(iteration::IterationCounter)

@@ -7,18 +7,38 @@ $(TYPEDFIELDS)
 """
 struct Algorithm{
         A,
-        T <: Number,
-        Ti <: Integer,
-        M <: AbstractMatrix,
-        B <: Backend,
-        R <: RestartParameters{T},
+        C <: ConversionParameters,
+        P <: PreconditioningParameters,
+        S <: StepSizeParameters,
+        R <: RestartParameters,
+        G <: GenericParameters,
+        T <: TerminationParameters,
     }
-    conversion::ConversionParameters{T, Ti, M, B}
-    preconditioning::PreconditioningParameters{T}
-    step_size::StepSizeParameters{T}
+    conversion::C
+    preconditioning::P
+    step_size::S
     restart::R
-    generic::GenericParameters
-    termination::TerminationParameters{T}
+    generic::G
+    termination::T
+
+    function Algorithm{A}(
+            conversion::C,
+            preconditioning::P,
+            step_size::S,
+            restart::R,
+            generic::G,
+            termination::T,
+        ) where {A, C, P, S, R, G, T}
+        return new{A, C, P, S, R, G, T}(
+            conversion,
+            preconditioning,
+            step_size,
+            restart,
+            generic,
+            termination,
+        )
+        return
+    end
 end
 
 """
@@ -115,7 +135,7 @@ function Algorithm{A}(
         time_limit
     )
 
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A}(
         conversion,
         preconditioning,
         step_size,
@@ -210,29 +230,36 @@ function solve(
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm
     )
-    starting_time = time()
+    starting_time = current_time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    (; c, lv, uv) = milp
-    if nbcons(milp) == 0
-        # with no constraint rows, the box-constrained optimum can be read off `c` and the
-        # bounds directly, as long as the box is feasible and bounded in the direction `c`
-        # pushes towards (otherwise fall through to the general loop below, same as any other
-        # infeasible/unbounded problem: this package has no dedicated status for either, so it
-        # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
-        box_feasible = all(lv .<= uv)
-        bounded_below = !any(@. (c > 0) & isinf(lv))
-        bounded_above = !any(@. (c < 0) & isinf(uv))
-        if box_feasible && bounded_below && bounded_above
-            @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-            kkt_errors!(state.stats.err, state.scratch, sol, milp)
-            state.stats.time_elapsed = time() - starting_time
-            state.stats.termination_status = MOI.OPTIMAL
-            return get_solution(state, milp), state.stats
-        end
+    trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp)
+    if !trivial_solve
+        solve!(state, milp, algo)
     end
-    solve!(state, milp, algo)
     return get_solution(state, milp), state.stats
+end
+
+function try_solve_noconstraints!(state::AbstractState, milp::MILP)
+    (; c, lv, uv) = milp
+    (; sol) = state
+    # with no constraint rows, the box-constrained optimum can be read off `c` and the
+    # bounds directly, as long as the box is feasible and bounded in the direction `c`
+    # pushes towards (otherwise fall through to the general loop below, same as any other
+    # infeasible/unbounded problem: this package has no dedicated status for either, so it
+    # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
+    box_feasible = all(lv .<= uv)
+    bounded_below = !any(@. (c > 0) & isinf(lv))
+    bounded_above = !any(@. (c < 0) & isinf(uv))
+    if box_feasible && bounded_below && bounded_above
+        @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
+        kkt_errors!(state.stats.err, state.scratch, sol, milp)
+        state.stats.time_elapsed = current_time() - state.stats.starting_time
+        state.stats.termination_status_code = status_code(MOI.OPTIMAL)
+        return true
+    else
+        return false
+    end
 end
 
 function solve(
@@ -256,13 +283,57 @@ function termination_check!(
         algo::Algorithm
     )
     (; sol, scratch, stats) = state
-    stats.time_elapsed = time() - stats.starting_time
+    stats.time_elapsed = current_time() - stats.starting_time
     kkt_errors!(stats.err, scratch, sol, milp)
-    if algo.generic.record_error_history
+    record_error_history!(stats, algo.generic.record_error_history)
+    return set_termination_status!!(stats, scratch.b1, algo.termination)
+end
+
+"""
+    record_error_history!(stats, record)
+
+Append a snapshot of the current errors to `stats.error_history` when `record` is `true`.
+
+Skipped inside a Reactant compilation context, where the history cannot be grown.
+"""
+function record_error_history!(stats::ConvergenceStats, record)
+    within_compile() && return nothing
+    if record
         push!(stats.error_history, (stats.kkt_passes, copy(stats.err)))
     end
-    stats.termination_status = termination_status!!(scratch.b1, stats, algo.termination)
-    return stats.termination_status !== MOI.OPTIMIZE_NOT_CALLED
+    return nothing
+end
+
+"""
+    init_progress(desc, show_progress)
+
+Build a progress bar, or `nothing` inside a Reactant compilation context, where it cannot be updated.
+"""
+function init_progress(desc::String, show_progress)
+    within_compile() && return nothing
+    return ProgressUnknown(; desc, enabled = show_progress)
+end
+
+"""
+    next_progress!(prog, state)
+
+Advance the progress bar built by [`init_progress`](@ref), unless it was skipped.
+"""
+function next_progress!(prog, state::AbstractState)
+    within_compile() && return nothing
+    next!(prog; showvalues = () -> prog_showvalues(state))
+    return nothing
+end
+
+"""
+    finish_progress!(prog)
+
+Close the progress bar built by [`init_progress`](@ref), unless it was skipped.
+"""
+function finish_progress!(prog)
+    within_compile() && return nothing
+    finish!(prog)
+    return nothing
 end
 
 function get_solution(state::AbstractState, milp::MILP)

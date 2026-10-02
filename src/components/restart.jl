@@ -28,7 +28,7 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct RestartStats{T <: BatchedNumber, B <: BatchedNumber{Bool}}
+mutable struct RestartStats{T <: BatchedNumber, B <: BatchedNumber}
     "whether to restart from the average solution, column by column"
     restart_from_avg::B
     "KKT errors of the current solution"
@@ -92,5 +92,5 @@ function should_restart(
     necessary = candidate <= necessary_decay * restart
     no_local_progress = candidate > candidate_last
     long_inner_loop = inner >= artificial_decay * total
-    return sufficient || (necessary && no_local_progress) || long_inner_loop
+    return sufficient | (necessary & no_local_progress) | long_inner_loop
 end

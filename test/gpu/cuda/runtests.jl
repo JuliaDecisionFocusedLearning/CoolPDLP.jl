@@ -21,3 +21,6 @@ end
     include("../moi.jl")
     test_moi(cuSPARSE.CuSparseMatrixCSR, CUDABackend())
 end
+@testset verbose = true "Reactant" begin
+    include("reactant.jl")
+end

@@ -16,13 +16,13 @@ instance_vec(v::AbstractVector, ::Int) = v
 instance_vec(m::AbstractMatrix, i::Int) = view(m, :, i)
 
 """
-    BatchedNumber{T}
+    BatchedNumber
 
-Equivalent to `Union{T, AbstractVector{T}}` for a number type `T`. Represents a quantity which is scalar without batching, and holds one value per instance otherwise.
+Equivalent to `Union{Number, AbstractVector{<:Number}}`. Represents a quantity which is scalar without batching, and holds one value per instance otherwise.
 
 Combine such quantities with `BangBang.broadcast!!(f, dest, args...)`, which writes into `dest` when batched and returns a fresh number otherwise, so the result must always be used.
 """
-const BatchedNumber{T <: Number} = Union{T, AbstractVector{T}}
+const BatchedNumber = Union{Number, AbstractVector{<:Number}}
 
 """
     batched_expand(x, val)
@@ -68,17 +68,35 @@ instance_num(val::Number, ::Int) = val
 instance_num(val::AbstractVector, i::Int) = val[i]
 
 """
+    batched_bool_type(v)
+
+Return the type of the boolean obtained by reducing the per-instance vector `v` to a single decision.
+
+For an ordinary array this is simply `Bool`, but it is a hook for array types whose scalars
+are wrapped, and the `Reactant` extension overloads it.
+"""
+batched_bool_type(::AbstractVector) = Bool
+
+"""
     batched_all(f, args...)
 
 Reduce the per-instance conditions `f(args...)` to a single decision for the whole batch.
 """
 batched_all(f::F, a::Number) where {F} = f(a)
-batched_all(f::F, a::AbstractVector) where {F} = all(f, a)
+function batched_all(f::F, a::AbstractVector) where {F}
+    return all(f, a)::batched_bool_type(a)
+end
 
 """
     batched_mean(val)
 
 Average a per-instance quantity over all the instances, yielding a single number.
+
+The average of a batch is one of its elements, and asserting that keeps the restart check
+inferrable for the same reason as in [`batched_bool_type`](@ref). This assumes a
+floating-point `eltype`, which every per-instance quantity here has.
 """
 batched_mean(val::Number) = val
-batched_mean(val::AbstractVector) = sum(val) / length(val)
+function batched_mean(val::AbstractVector)
+    return (sum(val) / length(val))::eltype(val)
+end

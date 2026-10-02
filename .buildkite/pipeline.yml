@@ -23,3 +23,25 @@ steps:
     if: build.message !~ /\[skip tests\]/
     env:
       COOLPDLP_TEST_GROUP: "{{matrix.queue}}"
+
+  # Reactant ships its own CUDA runtime, so this only needs an NVIDIA agent, not CUDA.jl.
+  # The coverage plugin is left out: this job runs the same test files as the GitHub Actions
+  # `Reactant` job, which does collect coverage, so instrumenting the GPU run too would only
+  # slow it down without reaching any new line.
+  - label: "reactant gpu tests - Julia {{matrix.version}}"
+    matrix:
+      setup:
+        version:
+          - "1.10"
+          - "1"
+    plugins:
+      - JuliaCI/julia#v1:
+          version: "{{matrix.version}}"
+      - JuliaCI/julia-test#v1: ~
+    agents:
+      queue: "cuda"
+    timeout_in_minutes: 90
+    if: build.message !~ /\[skip tests\]/
+    env:
+      COOLPDLP_TEST_GROUP: "Reactant"
+      COOLPDLP_REACTANT_BACKEND: "gpu"

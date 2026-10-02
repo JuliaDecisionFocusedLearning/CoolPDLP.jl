@@ -1,5 +1,5 @@
 using CoolPDLP
-using CoolPDLP: KKTErrors, Scratch, kkt_errors!
+using CoolPDLP: KKTErrors, Scratch, kkt_errors!, termination_status
 using Random
 using SparseArrays
 using Test
@@ -37,7 +37,7 @@ end
     _, stats = solve(milp, PDLP(; max_kkt_passes = 200))
     str = sprint(show, stats)
     @test occursin("Convergence stats", str)
-    @test occursin(string(stats.termination_status), str)
+    @test occursin(string(termination_status(stats)), str)
     @test occursin("KKT passes: $(stats.kkt_passes)", str)
     @test occursin("KKT relative errors", str)
 end
