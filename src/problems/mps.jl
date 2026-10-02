@@ -10,6 +10,10 @@ names it controls rather than rely on the MILP's own.
 
 A row without any finite bound constrains nothing: it is written as a free row, which
 [`mps_to_milp`](@ref) and other MPS readers skip.
+
+The file always holds a minimization problem, like `milp` itself. If `milp` was read from a
+maximization problem, its objective was negated on the way in (see [`MILP`](@ref)), so the file
+holds that negated objective and not the original one.
 """
 function milp_to_mps(
         milp::MILP, file::AbstractString;
@@ -56,7 +60,8 @@ end
 
 Read the MPS file at `file` into a [`MILP`](@ref), with
 [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl). Rows and columns keep
-the order and the names they have in the file.
+the order and the names they have in the file. A maximization problem is turned into a
+minimization one by negating its objective (see [`MILP`](@ref)).
 
 MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`](@ref) built on
 `SparseMatrixCSC`.
