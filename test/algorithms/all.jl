@@ -62,6 +62,24 @@ end
     end
 end
 
+@testset "Objective constant" begin
+    # shifting the objective by a constant moves the optimal value, not the optimal solution
+    milp = netlib_milps[1]
+    (; c, lv, uv, A, At, lc, uc) = milp
+    milp_shifted = MILP(; c, c0 = 1000.0, lv, uv, A, At, lc, uc)
+    @testset for algorithm in (PDHG, PDLP)
+        algo = algorithm(Float64, Int, SparseMatrixCSC; backend = CPU(), termination_reltol = 1.0e-6, max_kkt_passes = 10^7, show_progress = false)
+        sol, stats = solve(milp, algo)
+        sol_shifted, stats_shifted = solve(milp_shifted, algo)
+        @test termination_status(stats) == MOI.OPTIMAL
+        @test termination_status(stats_shifted) == MOI.OPTIMAL
+        @test objective_value(sol_shifted.x, milp_shifted) ≈ objective_value(sol.x, milp) + 1000 rtol = 1.0e-3
+        # the gap is measured relative to the objective values, constant included
+        obj_shifted = objective_value(sol_shifted.x, milp_shifted)
+        @test stats_shifted.err.gap_scale ≈ 1 + 2 * abs(obj_shifted) rtol = 1.0e-3
+    end
+end
+
 @testset "CPU-GPU coherence" begin
     milp = netlib_milps[4]
     algo = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), termination_reltol = 1.0e-3, check_every = 1, show_progress = false)

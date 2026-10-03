@@ -11,14 +11,15 @@ using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, all
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
 using ReactantCore: @trace, within_compile
-using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer
+using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
 using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using Logging: NullLogger, with_logger
 using Printf: @sprintf
 using Random: Random, randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
 include("public.jl")
 
@@ -34,6 +35,7 @@ include("public.jl")
     include("problems/milp.jl")
     include("problems/solution.jl")
     include("problems/modify.jl")
+    include("problems/mps.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")

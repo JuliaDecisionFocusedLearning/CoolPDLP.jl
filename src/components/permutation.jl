@@ -20,8 +20,8 @@ Return a new `MILP` where the constraint matrix has been permuted by order of in
 """
 function sort_rows_columns(milp::MILP)
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
 
     perm_var = increasing_column_order(A)
@@ -29,6 +29,7 @@ function sort_rows_columns(milp::MILP)
 
     return MILP(;
         c = c[perm_var],
+        c0,
         lv = lv[perm_var],
         uv = uv[perm_var],
         A = permute_rows_columns(A; perm_col = perm_var, perm_row = perm_cons),
@@ -39,6 +40,7 @@ function sort_rows_columns(milp::MILP)
         D2 = Diagonal(diag(D2)[perm_var]),
         int_var = int_var[perm_var],
         var_names = var_names[perm_var],
+        con_names = con_names[perm_cons],
         dataset,
         name,
         path

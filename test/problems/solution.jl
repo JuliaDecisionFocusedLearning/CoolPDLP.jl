@@ -36,6 +36,9 @@ end
     @test @test_warn "Constraints not satisfied" !is_feasible([0.0, 0.0], milp)
     @test @test_warn "Variable bounds not satisfied" !is_feasible([2.0, -1.0], milp)
     @test objective_value([1.0, 1.0], milp) == 3
+
+    milp_constant = MILP(; c, c0 = 5.0, lv, uv, A, lc, uc, int_var)
+    @test objective_value([1.0, 1.0], milp_constant) == 8
 end
 
 @testset "Zero solution of a batch" begin
