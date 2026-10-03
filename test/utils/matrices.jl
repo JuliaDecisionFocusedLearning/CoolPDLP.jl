@@ -78,3 +78,187 @@ end
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
 end
+
+# `mul!` on a `GPUSparseMatrixCSR` picks a kernel from the matrix's average row length, so
+# the matrices above (at most nine nonzeros per row) only reach the narrow sub-groups. These
+# build one matrix per branch instead of hoping a random density lands in it.
+"""
+    banded_csr(m, n, nz_per_row)
+
+Sparse `m x n` matrix with exactly `nz_per_row` nonzeros in every row, at columns spread
+across the row so the kernels do a real gather rather than a contiguous read.
+"""
+function banded_csr(m, n, nz_per_row)
+    stride = max(n ÷ nz_per_row, 1)
+    I = repeat(1:m, inner = nz_per_row)
+    J = [mod1(1 + ((i + k) * stride) % n, n) for i in 1:m for k in 1:nz_per_row]
+    V = [float(i + k) for i in 1:m for k in 1:nz_per_row]
+    return sparse(I, J, V, m, n, +)
+end
+
+@testset "CSR sub-group sizes" begin
+    # row counts are deliberately not multiples of the workgroup size, so the padded launch
+    # has to discard its trailing work items
+    @testset "$nz_per_row nonzeros per row" for (m, n, nz_per_row, expected) in (
+            (1013, 40, 1, 1),
+            (1013, 40, 3, 2),
+            (1013, 40, 5, 4),
+            (1013, 60, 11, 8),
+            (523, 80, 20, 16),
+            (523, 150, 41, 32),
+            (523, 150, 130, 32),
+        )
+        A = banded_csr(m, n, nz_per_row)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        @test CoolPDLP.subgroup_size(A_jl) == expected
+        b, c = rand(n), rand(m)
+        @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        @test mul!(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        B, C = rand(n, 3), rand(m, 3)
+        @test mul!(jl(copy(C)), A_jl, jl(B), α, β) ≈ α * (A * B) + β * C
+        @test mul!(jl(fill(NaN, m, 3)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+
+    # a few very long rows next to empty ones: the shape that sub-groups exist to handle,
+    # and the one where a row spans several passes of the strided inner loop
+    @testset "skewed rows" begin
+        m, n = 401, 260
+        A = banded_csr(m, n, 6)
+        A[3, :] .= 0
+        A[4, :] .= 0
+        A[7, :] = 1:n
+        A[m, :] = 1:n
+        A = sparse(A)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        b, c = rand(n), rand(m)
+        @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        @test mul!(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        B = rand(n, 2)
+        @test mul!(jl(fill(NaN, m, 2)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+
+    @testset "no nonzeros at all" begin
+        A = spzeros(37, 21)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        @test CoolPDLP.subgroup_size(A_jl) == 1
+        @test mul!(jl(fill(NaN, 37)), A_jl, jl(rand(21)), 1.0, 0.0) ≈ zeros(37)
+    end
+end
+
+@testset "CSR sub-group shrinks with the batch" begin
+    # a sub-group creates parallelism, which a batch dimension already supplies, so the
+    # choice has to come down as the batch grows -- and the results must not move with it
+    A = banded_csr(1013, 60, 20)
+    A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+    @test CoolPDLP.subgroup_size(A_jl, 1) == CoolPDLP.subgroup_size(A_jl)
+    sizes = [CoolPDLP.subgroup_size(A_jl, nb) for nb in (1, 32, 1024, 32768)]
+    @test issorted(sizes; rev = true)
+    @test sizes[end] < sizes[1]
+    @test all(>=(1), sizes)
+
+    # a wide batch may only narrow the sub-group, never widen it: the bound on how far it
+    # narrows is not a floor on the result
+    @testset "$nz_per_row nonzeros per row" for nz_per_row in (1, 2, 3, 5, 11, 20, 60, 130)
+        A_short = adapt(JLBackend(), GPUSparseMatrixCSR(banded_csr(997, 200, nz_per_row)))
+        plain = CoolPDLP.subgroup_size(A_short)
+        @test all(
+            CoolPDLP.subgroup_size(A_short, nb) <= plain for nb in (1, 10, 100, 10^4, 10^6)
+        )
+    end
+    @testset "nbatch=$nbatch" for nbatch in (1, 2, 32, 40, 1024)
+        B = rand(size(A, 2), nbatch)
+        C = rand(size(A, 1), nbatch)
+        @test mul!(jl(copy(C)), A_jl, jl(B), α, β) ≈ α * (A * B) + β * C
+        @test mul!(jl(fill(NaN, size(A, 1), nbatch)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+    end
+end
+
+@testset "CSR product through block sums" begin
+    # A row is summed from the blocks of a pyramid that fit in its range, so what matters is
+    # where rows start and end relative to block boundaries at every level, and how many
+    # levels a row climbs.
+    F = CoolPDLP.BLOCK_FANOUT
+    function test_blocks(A)
+        m, n = size(A)
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        b, c = rand(n), rand(m)
+        f = CoolPDLP.spmv_csr_blocks!
+        @test f(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+        @test f(jl(copy(c)), A_jl, jl(b), 1.0, β) ≈ A * b + β * c
+        @test f(jl(fill(NaN, m)), A_jl, jl(b), α, 0.0) ≈ α * (A * b)
+        @test f(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+        return nothing
+    end
+
+    @testset "random matrices" begin
+        foreach(test_blocks, A_candidates)
+    end
+    @testset "$nz_per_row nonzeros per row" for nz_per_row in (1, 3, F - 1, F, F + 1, 2F + 3)
+        test_blocks(banded_csr(501, 40, nz_per_row))
+    end
+    # one row holding every nonzero climbs to the top level, and the levels' last blocks are
+    # only partly filled unless the number of nonzeros is a power of the fan-out
+    @testset "a single row of $nz nonzeros" for nz in (1, F - 1, F, F + 1, F^2 - 1, F^2, F^2 + 1, F^3 + 5)
+        test_blocks(sparse(ones(1, nz)))
+    end
+    @testset "skewed rows" begin
+        A = banded_csr(401, 260, 6)
+        A[3, :] .= 0
+        A[4, :] .= 0
+        A[7, :] = 1:260
+        A[401, :] = 1:260
+        test_blocks(sparse(A))
+    end
+    @testset "no nonzeros" begin
+        test_blocks(spzeros(37, 21))
+        test_blocks(spzeros(0, 21))
+    end
+
+    @testset "no cancellation between rows" begin
+        # a block that straddles two rows is never read, so the huge entries of the first
+        # row cannot swallow the small ones of the second, whatever the fan-out
+        nz = F^2 + 1
+        A = sparse([fill(1, nz); fill(2, nz)], 1:(2nz), [fill(1.0e16, nz); fill(1.0, nz)])
+        A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+        c = CoolPDLP.spmv_csr_blocks!(jl(zeros(2)), A_jl, jl(ones(2nz)), 1.0, 0.0)
+        @test Array(c) == [nz * 1.0e16, nz]
+    end
+end
+
+@testset "Longest CSR row" begin
+    A = banded_csr(401, 260, 6)
+    A[7, :] = 1:260
+    A[9, :] .= 0
+    A = sparse(A)
+    longest = maximum(i -> nnz(A[i, :]), axes(A, 1))
+    A_csr = GPUSparseMatrixCSR(A)
+    @test A_csr.maxrow == longest == 260
+    A_jl = adapt(JLBackend(), A_csr)
+    @test A_jl.maxrow == longest
+    # rebuilt from its arrays alone, here on the device
+    @test GPUSparseMatrixCSR(A_jl.m, A_jl.n, A_jl.rowptr, A_jl.colval, A_jl.nzval).maxrow == longest
+    @test CoolPDLP.sametype_transpose(A_jl).maxrow == maximum(j -> nnz(A[:, j]), axes(A, 2))
+    @test GPUSparseMatrixCSR(spzeros(0, 3)).maxrow == 0
+    @test GPUSparseMatrixCSR(spzeros(4, 3)).maxrow == 0
+end
+
+@testset "mul! with a row-skewed CSR matrix" begin
+    # one nonzero per row next to a row as long as the matrix is wide: the longest row is far
+    # more than `SKEWED_ROWS` times the average one, so `mul!` sums rows over the pyramid
+    m, n = 2000, 3000
+    A = sparse([1:m; fill(7, n)], [mod1.(1:m, n); 1:n], rand(m + n), m, n)
+    A_jl = adapt(JLBackend(), GPUSparseMatrixCSR(A))
+    @test CoolPDLP.is_row_skewed(size(A_jl, 1), nnz(A_jl), A_jl.maxrow)
+    # the scratch space of the pyramid comes with the matrix, so products do not allocate it
+    @test length(A_jl.blocks) == CoolPDLP.block_scratch_length(nnz(A), n) > 0
+    A_regular = adapt(JLBackend(), GPUSparseMatrixCSR(banded_csr(401, 260, 6)))
+    @test !CoolPDLP.is_row_skewed(size(A_regular, 1), nnz(A_regular), A_regular.maxrow)
+    @test length(A_regular.blocks) == 1
+    @test !CoolPDLP.is_row_skewed(0, 0, 0)
+    b, c = rand(n), rand(m)
+    @test mul!(jl(copy(c)), A_jl, jl(b), α, β) ≈ α * (A * b) + β * c
+    @test mul!(jl(fill(NaN, m)), A_jl, jl(b), 1.0, 0.0) ≈ A * b
+    # the batched product keeps the sub-groups
+    B = rand(n, 3)
+    @test mul!(jl(fill(NaN, m, 3)), A_jl, jl(B), 1.0, 0.0) ≈ A * B
+end

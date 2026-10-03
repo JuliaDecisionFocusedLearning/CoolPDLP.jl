@@ -97,13 +97,13 @@ end
     ) where {T, Ti}
     i = @index(Global, Linear)
     s = zero(T)
-    for k in axes(A_colval, 2)
+    @inbounds for k in axes(A_colval, 2)
         j = A_colval[i, k]
         if j != zero(Ti)
             s += A_nzval[i, k] * b[j]
         end
     end
-    c[i] = α * s + β * c[i]
+    @inbounds c[i] = α * s + β * c[i]
 end
 
 function LinearAlgebra.mul!(
@@ -140,13 +140,13 @@ end
     ) where {T, Ti}
     i, batch_idx = @index(Global, NTuple)
     s = zero(T)
-    for k in axes(A_colval, 2)
+    @inbounds for k in axes(A_colval, 2)
         j = A_colval[i, k]
         if j != zero(Ti)
             s += A_nzval[i, k] * b[j, batch_idx]
         end
     end
-    c[i, batch_idx] = α * s + β * c[i, batch_idx]
+    @inbounds c[i, batch_idx] = α * s + β * c[i, batch_idx]
 end
 
 function LinearAlgebra.mul!(
