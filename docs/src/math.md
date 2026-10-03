@@ -7,7 +7,7 @@
 PDLP solves Linear Programs (LPs) formulated as follows:
 
 ```math
-\min_x \quad c^\top x \quad \text{s.t.} \quad \begin{cases}
+\min_x \quad c^\top x + c_0 \quad \text{s.t.} \quad \begin{cases}
 \ell_c \leq A x \leq u_c \\
 \ell_v \leq x \leq u_v
 \end{cases}
@@ -18,8 +18,8 @@ We associate non-negative multipliers $y_\ell, y_u, z_\ell, z_u \geq 0$ with all
 ```math
 \begin{align*}
 \mathcal{L}(x, y_\ell, y_u, z_\ell, z_u)
-& = c^\top x + y_\ell^\top (\ell_c - A x) + y_u^\top (A x - u_c) + z_\ell^\top (\ell_v - x) + z_u^\top (x - u_v) \\
-& = (c - A^\top y_\ell + A^\top y_u - z_\ell + z_u)^\top x + (y_\ell^\top \ell_c - y_u^\top u_c) + (z_\ell^\top \ell_v - z_u^\top u_v)
+& = c^\top x + c_0 + y_\ell^\top (\ell_c - A x) + y_u^\top (A x - u_c) + z_\ell^\top (\ell_v - x) + z_u^\top (x - u_v) \\
+& = (c - A^\top y_\ell + A^\top y_u - z_\ell + z_u)^\top x + (y_\ell^\top \ell_c - y_u^\top u_c) + (z_\ell^\top \ell_v - z_u^\top u_v) + c_0
 \end{align*}
 ```
 
@@ -50,13 +50,13 @@ p(y, \ell, u) = \ell^\top y^+ - u^\top y^-
 which leaves us with
 
 ```math
-\mathcal{L}(x, y, z) = (c - A^\top y - z)^\top x + p(y; \ell_c, u_c) + p(z; \ell_v, u_v)
+\mathcal{L}(x, y, z) = (c - A^\top y - z)^\top x + p(y; \ell_c, u_c) + p(z; \ell_v, u_v) + c_0
 ```
 
 From there, we deduce the dual problem:
 
 ```math
-\max_{y, z} \quad p(y; \ell_c, u_c) + p(z; \ell_v, u_v) \quad \text{s.t.} \quad \begin{cases}
+\max_{y, z} \quad p(y; \ell_c, u_c) + p(z; \ell_v, u_v) + c_0 \quad \text{s.t.} \quad \begin{cases}
 0 = c - A^\top y - z \\
 y \in \mathcal{Y} \\
 z \in \mathcal{Z}
@@ -68,6 +68,9 @@ The primal-dual gap (one of our stopping criteria) thus writes as
 ```math
 g = c^\top x - \left(p(y; \ell_c, u_c) + p(z; \ell_v, u_v)\right)
 ```
+
+The objective constant $c_0$ shifts the primal and dual objectives alike, so it cancels out in the gap.
+It does not cancel out in the scale $1 + |c^\top x + c_0| + |p(y; \ell_c, u_c) + p(z; \ell_v, u_v) + c_0|$ that the gap is compared to.
 
 ## Preconditioning
 

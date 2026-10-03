@@ -11,11 +11,12 @@ end
 
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = set_eltype(T, c),
+        c0 = T(c0),
         lv = set_eltype(T, lv),
         uv = set_eltype(T, uv),
         A = set_eltype(T, A),
@@ -26,6 +27,7 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
         D2 = set_eltype(T, D2),
         int_var,
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -51,11 +53,12 @@ end
 
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c,
+        c0,
         lv,
         uv,
         A = set_indtype(Ti, A),
@@ -66,6 +69,7 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
         D2,
         int_var,
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -79,8 +83,8 @@ Convert the sparse matrices inside `milp` using constructor `M`.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     A_M = M(A)
     At_M = M(At)
@@ -88,6 +92,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
 
     return MILP(;
         c = adapt(backend, c),
+        c0,
         lv = adapt(backend, lv),
         uv = adapt(backend, uv),
         A = A_M,
@@ -98,6 +103,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         D2 = adapt(backend, D2),
         int_var = adapt(backend, int_var),
         var_names,
+        con_names,
         dataset,
         name,
         path
@@ -110,11 +116,12 @@ end
 
 function Adapt.adapt_structure(to, milp::MILP)
     (;
-        c, lv, uv, A, At, lc, uc, D1, D2,
-        int_var, var_names, dataset, name, path,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
         c = adapt(to, c),
+        c0,
         lv = adapt(to, lv),
         uv = adapt(to, uv),
         A = adapt(to, A),
@@ -125,6 +132,42 @@ function Adapt.adapt_structure(to, milp::MILP)
         D2 = adapt(to, D2),
         int_var = adapt(to, int_var),
         var_names,
+        con_names,
+        dataset,
+        name,
+        path
+    )
+end
+
+"""
+    relax(milp)
+
+Return the continuous relaxation of `milp`, i.e. the same problem with its integrality
+restrictions dropped.
+
+`solve` only ever tackles that relaxation (see [`solve`](@ref)), so a tool which does apply
+integer-specific transformations — a presolver, say — must be handed the relaxation rather than
+`milp` itself, on pain of working on a problem nobody is solving.
+"""
+function relax(milp::MILP)
+    (;
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
+    ) = milp
+    return MILP(;
+        c,
+        c0,
+        lv,
+        uv,
+        A,
+        At,
+        lc,
+        uc,
+        D1,
+        D2,
+        int_var = zero!(similar(int_var)),
+        var_names,
+        con_names,
         dataset,
         name,
         path
