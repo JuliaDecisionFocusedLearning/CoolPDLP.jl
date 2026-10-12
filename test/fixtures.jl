@@ -28,12 +28,13 @@ function random_milp_batch(rng::AbstractRNG, m, n, p, nbatch; batched = BATCHABL
             uc = instances[vary(:uc, i)].uc,
         )
     end
-    int_var = instances[1].int_var
-    milps = map(f -> MILP(; f.c, f.lv, f.uv, A, f.lc, f.uc, int_var), fields)
+    (; c0, int_var) = instances[1]  # the objective constant is shared by the whole batch
+    milps = map(f -> MILP(; f.c, c0, f.lv, f.uv, A, f.lc, f.uc, int_var), fields)
 
     column(field, getter) = field in batched ? stack(getter, fields) : getter(fields[1])
     milp_batch = MILP(;
         c = column(:c, f -> f.c),
+        c0,
         lv = column(:lv, f -> f.lv),
         uv = column(:uv, f -> f.uv),
         A,
@@ -55,9 +56,9 @@ Compare two MILPs which may hold their constraint matrix in different formats.
 """
 function same_instance(m1::MILP, m2::MILP)
     as_csc(milp) = MILP(;
-        milp.c, milp.lv, milp.uv,
+        milp.c, milp.c0, milp.lv, milp.uv,
         A = SparseMatrixCSC(milp.A), At = SparseMatrixCSC(milp.At),
-        milp.lc, milp.uc, milp.D1, milp.D2, milp.int_var, milp.var_names,
+        milp.lc, milp.uc, milp.D1, milp.D2, milp.int_var, milp.var_names, milp.con_names,
         milp.dataset, milp.name, milp.path,
     )
     return as_csc(m1) ≈ as_csc(m2)

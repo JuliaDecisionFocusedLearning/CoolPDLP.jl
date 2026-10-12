@@ -47,6 +47,9 @@ using Test
     @test_throws DimensionMismatch MILP(;
         c, lv, uv, A, At, lc, uc, int_var = vcat(int_var, false)
     )
+    @test_throws DimensionMismatch MILP(;
+        c, lv, uv, A, At, lc, uc, con_names = ["a single name"]
+    )
     # Batch size issues
     @test_nowarn MILP(;
         c = repeat(c, 1, 3), lv, uv, A, At, lc = repeat(lc, 1, 3), uc = repeat(uc, 1, 3),
@@ -66,6 +69,26 @@ using Test
     )
 end
 
+@testset "Objective constant" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(3, 5, 0.5)
+    (; c, lv, uv, A, lc, uc) = milp
+    @test MILP(; c, lv, uv, A, lc, uc).c0 === 0.0
+    @test MILP(; c, c0 = 2, lv, uv, A, lc, uc).c0 === 2.0  # converted to the element type
+    @test !isapprox(MILP(; c, c0 = 2, lv, uv, A, lc, uc), MILP(; c, c0 = 3, lv, uv, A, lc, uc))
+end
+
+@testset "Names" begin
+    milp, _ = CoolPDLP.random_milp_and_sol(3, 5, 0.5)
+    # by default, variables and constraints are named after their index
+    @test milp.var_names == string.(1:nbvar(milp))
+    @test milp.con_names == string.(1:nbcons(milp))
+
+    qps, _ = read_instance(Netlib, "afiro")
+    milp_qps = MILP(qps)
+    @test milp_qps.var_names == qps.varnames
+    @test milp_qps.con_names == qps.connames
+end
+
 @testset "Batched objective value" begin
     nbatch = 3
     milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
@@ -75,6 +98,7 @@ end
     )
     x = randn(nbvar(milp), nbatch)
 
+    @test instance(milp_batch, 2).c0 == milp_batch.c0 == 0
     obj = objective_value(x, milp_batch)
     @test obj isa Vector{Float64}
     @test length(obj) == nbatch
@@ -162,13 +186,17 @@ end
 @testset "Objsense" begin
     netlib = list_instances(Netlib)
     qps, path = read_instance(Netlib, netlib[1])
+    qps.c0 = 3.0
     qps.objsense = :min
     milp_min = MILP(qps)
     @test milp_min.c == +qps.c
+    @test milp_min.c0 == +qps.c0
     qps.objsense = :max
     milp_max = MILP(qps)
     @test milp_max.c == -qps.c
+    @test milp_max.c0 == -qps.c0
     qps.objsense = :notset
     milp_notset = MILP(qps)
     @test milp_notset.c == +qps.c  # arbitrary
+    @test milp_notset.c0 == +qps.c0
 end

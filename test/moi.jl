@@ -122,6 +122,24 @@ end
     @test JuMP.value(y) ≈ 3 atol = 1.0e-2
 end
 
+@testset "Objective constant" begin
+    @testset "$sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+        model = JuMP.Model(CoolPDLP.Optimizer)
+        JuMP.set_silent(model)
+        JuMP.@variable(model, 0 <= x <= 4)
+        JuMP.@variable(model, 0 <= y <= 3)
+        JuMP.@constraint(model, 6x + 8y <= 48)
+        coeff = sense == MOI.MAX_SENSE ? 1 : -1
+        JuMP.@objective(model, sense, coeff * (12x + 20y) + 1000)
+        JuMP.optimize!(model)
+        @test JuMP.termination_status(model) == MOI.OPTIMAL
+        @test JuMP.objective_value(model) ≈ coeff * 108 + 1000 atol = 1.0e-1
+        @test JuMP.dual_objective_value(model) ≈ coeff * 108 + 1000 atol = 1.0e-1
+        @test JuMP.value(x) ≈ 4 atol = 1.0e-2
+        @test JuMP.value(y) ≈ 3 atol = 1.0e-2
+    end
+end
+
 @testset "Float32" begin
     # model/return in Float64, solve in Float32
     model = JuMP.Model(CoolPDLP.Optimizer)

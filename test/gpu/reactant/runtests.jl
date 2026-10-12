@@ -163,11 +163,13 @@ end
 # keeps every instance as well-conditioned as the one solved above, which is what makes the
 # plain and compiled runs comparable at all: XLA reassociates floating-point arithmetic, so a
 # batch of badly scaled random problems would drift apart between the two loops.
+# A nonzero objective constant checks that the compiled run traces it into the gap scale.
 const BATCH_SCALES = [1.0, 1.01, 0.99]
 const NBATCH = length(BATCH_SCALES)
 batch_column(v) = repeat(v, 1, NBATCH)
 milp_batch = MILP(;
     c = stack(scale * milp0.c for scale in BATCH_SCALES),
+    c0 = 10.0,
     lv = batch_column(milp0.lv),
     uv = batch_column(milp0.uv),
     milp0.A,
