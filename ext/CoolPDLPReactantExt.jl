@@ -6,19 +6,6 @@ using KernelAbstractions: KernelAbstractions, get_backend
 using LinearAlgebra: LinearAlgebra
 using Reactant: Reactant, TracedRArray, TracedRNumber, @reactant_overlay
 
-"""
-    CoolPDLP.batched_bool_type(v)
-
-Give the type of the boolean that reducing a traced batch yields.
-
-Reactant types every reduction over a `TracedRArray` as `Union{TracedRArray, TracedRNumber}`,
-accurate enough to trace but too coarse for the callers: the abstract type would escape into
-the return type of the termination and restart checks of a batched solve. The reduced value is
-in fact a traced scalar, which is what this returns.
-Once https://github.com/EnzymeAD/Reactant.jl/issues/3261 is solved upstream, this can be removed.
-"""
-CoolPDLP.batched_bool_type(::TracedRArray) = TracedRNumber{Bool}
-
 # A sparse matrix's shape and pattern are structure, and so are the generic parameters: with a
 # traced `check_every`, the inner loop of `solve!` has a dynamic trip count, and XLA reads its
 # condition back to the host after every KKT pass. Trace them without number tracking.

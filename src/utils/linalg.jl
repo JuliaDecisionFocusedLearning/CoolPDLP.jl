@@ -65,8 +65,7 @@ coldot(a::AbstractVecOrMat, b::AbstractVecOrMat) = vec(sum(a .* b; dims = 1))
 
 Compute the sum of `x`, or one sum per column if `x` is batched, into `dest`.
 """
-# `@unstable`: Reactant infers `sum(::TracedRArray{T, 1})` as `Union{TracedRArray, TracedRNumber}`
-@unstable colsum!!(::Number, v::AbstractVector) = sum(v)
+colsum!!(::Number, v::AbstractVector) = sum(v)
 function colsum!!(dest::AbstractVector, m::AbstractMatrix)
     sum!(transpose(dest), m)
     return dest

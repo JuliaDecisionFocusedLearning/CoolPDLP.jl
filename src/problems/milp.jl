@@ -212,14 +212,14 @@ nbvar(milp::MILP) = size(milp.c, 1)
 
 Return the number of integer variables in `milp`.
 """
-nbvar_int(milp::MILP) = sum(identity, milp.int_var)
+nbvar_int(milp::MILP) = sum(milp.int_var)
 
 """
     nbvar_cont(milp)
 
 Return the number of continuous variables in `milp`.
 """
-nbvar_cont(milp::MILP) = sum(!, milp.int_var)
+nbvar_cont(milp::MILP) = nbvar(milp) - nbvar_int(milp)
 
 """
     nbcons(milp)
