@@ -32,8 +32,9 @@ const MATRIX_TYPES = (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO
         @testset "batch of vectors" begin
             b, c0 = randn(rng, 16, 3), randn(rng, 24, 3)
             b_r, c_r = to_rarray(b), to_rarray(copy(c0))
-            # refused until EnzymeAD/Reactant.jl#3269 is solved
-            @test_throws "Reactant.jl/issues/3269" @compile mul!(c_r, A_r, b_r, α, β)
+            compiled = @compile mul!(c_r, A_r, b_r, α, β)
+            compiled(c_r, A_r, b_r, α, β)
+            @test Array(c_r) ≈ α * (A_cpu * b) + β * c0
         end
     end
 end
@@ -73,12 +74,14 @@ end
             show_progress = false,
         )
 
-        @testset "single" begin
-            milp, sol = preprocess(milp0, sol0, algo)
+        @testset "$name" for (name, milp_init, sol_init) in (
+                ("single", milp0, sol0), ("batched", milp_batch, sol_batch),
+            )
+            milp, sol = preprocess(milp_init, sol_init, algo)
             state = initialize(milp, sol, algo; starting_time = time())
             CoolPDLP.solve!(state, milp, algo)
 
-            state_r, milp_r, algo_r = traced_problem(milp0, sol0, algo)
+            state_r, milp_r, algo_r = traced_problem(milp_init, sol_init, algo)
             compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
             compiled_solve!(state_r, milp_r, algo_r)
 
@@ -87,14 +90,6 @@ end
             @test termination_status(state_r.stats) == termination_status(state.stats)
             @test Array(state_r.sol.x) ≈ Array(state.sol.x) rtol = 1.0e-6
             @test Array(state_r.sol.y) ≈ Array(state.sol.y) rtol = 1.0e-6
-        end
-
-        @testset "batched" begin
-            # refused until EnzymeAD/Reactant.jl#3269 is solved
-            state_r, milp_r, algo_r = traced_problem(milp_batch, sol_batch, algo)
-            @test_throws "Reactant.jl/issues/3269" @compile CoolPDLP.solve!(
-                state_r, milp_r, algo_r
-            )
         end
     end
 end

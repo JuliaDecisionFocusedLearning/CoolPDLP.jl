@@ -40,40 +40,15 @@ end
 # Reactant's own `mul!` overlays lower the product to a dense `dot_general`, which a sparse
 # format cannot serve, so these send it back to the format's kernels.
 @reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector, α::Number, β::Number
+        c::AbstractVecOrMat, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat, α::Number, β::Number
     )
     return native_mul!(c, A, b, α, β)
 end
 
 @reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix, α::Number, β::Number
-    )
-    return spmm_error()
-end
-
-@reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractVector, A::CoolPDLP.GPUSparseMatrix, b::AbstractVector
+        c::AbstractVecOrMat, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat
     )
     return native_mul!(c, A, b, true, false)
-end
-
-@reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractMatrix, A::CoolPDLP.GPUSparseMatrix, b::AbstractMatrix
-    )
-    return spmm_error()
-end
-
-"""
-    spmm_error()
-
-Refuse a product of a sparse format with a matrix, which Reactant can currently miscompile.
-"""
-function spmm_error()
-    return error(
-        "Reactant cannot yet compile the product of a CoolPDLP sparse format with a matrix " *
-            "(as in a batched solve): on CUDA, XLA may silently reorder the 2-D output of a " *
-            "kernel. See https://github.com/EnzymeAD/Reactant.jl/issues/3269."
-    )
 end
 
 """
@@ -155,7 +130,7 @@ end
 
 Run the ordinary `mul!` of `A`, with its kernels launched by Reactant.
 """
-function native_mul!(c::AbstractVector, A, b::AbstractVector, α::Number, β::Number)
+function native_mul!(c::AbstractVecOrMat, A, b::AbstractVecOrMat, α::Number, β::Number)
     scale!!(c, β)
     Reactant.call_with_native(
         LinearAlgebra.mul!, adapt(Wrap(), c), adapt(Wrap(), A), adapt(Wrap(), b), α, true
