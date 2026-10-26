@@ -91,7 +91,7 @@ Compute the new primal weight, column by column, into `step_sizes.ω`.
 """
 function primal_weight_update!!(
         scratch::Scratch,
-        step_sizes::StepSizes{<:AbstractVector},
+        step_sizes::StepSizes,
         sol_cand::PrimalDualSolution,
         sol_restart::PrimalDualSolution,
         params::StepSizeParameters
@@ -108,23 +108,4 @@ function primal_weight_update!!(
             w
         )
     end
-end
-
-function primal_weight_update!!(
-        scratch::Scratch,
-        step_sizes::StepSizes{<:Number},
-        sol_cand::PrimalDualSolution,
-        sol_restart::PrimalDualSolution,
-        params::StepSizeParameters
-    )
-    (; ω) = step_sizes
-    (; primal_weight_damping, zero_tol) = params
-    Δx = norm(@. scratch.x = sol_cand.x - sol_restart.x)
-    Δy = norm(@. scratch.y = sol_cand.y - sol_restart.y)
-    θ = primal_weight_damping
-    return ifelse(
-        (Δx > zero_tol) & (Δy > zero_tol),
-        exp(θ * log(Δy / Δx) + (1 - θ) * log(ω)),
-        ω
-    )
 end

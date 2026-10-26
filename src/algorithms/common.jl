@@ -37,7 +37,6 @@ struct Algorithm{
             generic,
             termination,
         )
-        return
     end
 end
 
@@ -319,22 +318,16 @@ end
 
 Advance the progress bar built by [`init_progress`](@ref), unless it was skipped.
 """
-function next_progress!(prog, state::AbstractState)
-    within_compile() && return nothing
-    next!(prog; showvalues = () -> prog_showvalues(state))
-    return nothing
-end
+next_progress!(prog, state::AbstractState) = next!(prog; showvalues = () -> prog_showvalues(state))
+next_progress!(::Nothing, ::AbstractState) = nothing
 
 """
     finish_progress!(prog)
 
 Close the progress bar built by [`init_progress`](@ref), unless it was skipped.
 """
-function finish_progress!(prog)
-    within_compile() && return nothing
-    finish!(prog)
-    return nothing
-end
+finish_progress!(prog) = finish!(prog)
+finish_progress!(::Nothing) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
     return unprecondition(state.sol, Preconditioner(milp))
