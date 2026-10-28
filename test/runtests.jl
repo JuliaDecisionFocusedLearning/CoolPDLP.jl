@@ -12,6 +12,8 @@ if GROUP == "cuda"
 elseif GROUP == "metal"
     Pkg.add("Metal")
 elseif GROUP == "OpenCL"
+    # without a bound, the resolver keeps a recent Atomix and falls back to the broken OpenCL v0.9
+    Pkg.add(name = "OpenCL", version = "0.10")
     set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
 end
 
