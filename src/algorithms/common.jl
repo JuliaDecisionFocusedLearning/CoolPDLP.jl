@@ -12,6 +12,7 @@ struct Algorithm{
         M <: AbstractMatrix,
         B <: Backend,
         R <: RestartParameters{T},
+        P <: Union{Nothing, AbstractPresolver},
     }
     conversion::ConversionParameters{T, Ti, M, B}
     preconditioning::PreconditioningParameters{T}
@@ -19,6 +20,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    presolver::P
 end
 
 """
@@ -50,9 +52,11 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver = nothing,
     )
 
-Constructor for algorithm configs.
+Constructor for algorithm configs. `presolver` is `nothing` or an [`AbstractPresolver`](@ref).
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +86,8 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # presolve
+        presolver::Union{Nothing, AbstractPresolver} = nothing,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -114,19 +120,19 @@ function Algorithm{A}(
         max_kkt_passes,
         time_limit
     )
-
-    return Algorithm{A, T, Ti, M, B, typeof(restart)}(
+    return Algorithm{A, T, Ti, M, B, typeof(restart), typeof(presolver)}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        presolver
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, presolver) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +141,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - presolver=$presolver"""
     )
 end
 
@@ -204,6 +211,11 @@ function initialize end
 Solve the continuous relaxation of `milp` starting from solution `sol` using the algorithm defined by `algo`.
 
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
+
+If `algo` has a presolver, `solve(milp, algo)` solves the reduced problem and postsolves the result.
+Then `stats.err` is computed on `milp`, and an `OPTIMAL` status becomes `ALMOST_OPTIMAL` if the postsolved solution misses the tolerance, possibly by a lot.
+The other fields of `stats` describe the iterations on the reduced problem.
+`solve(milp, sol, algo)` never presolves.
 """
 function solve(
         milp_init_cpu::MILP,
@@ -239,8 +251,25 @@ function solve(
         milp_init_cpu::MILP,
         algo::Algorithm
     )
-    sol_init_cpu = PrimalDualSolution(milp_init_cpu)
-    return solve(milp_init_cpu, sol_init_cpu, algo)
+    (; presolver) = algo
+    if isnothing(presolver)
+        return solve(milp_init_cpu, PrimalDualSolution(milp_init_cpu), algo)
+    end
+    isbatched(milp_init_cpu) && throw(ArgumentError("Presolve does not support batched MILPs"))
+    starting_time = time()
+    milp_reduced, presolve_info = presolve(presolver, milp_init_cpu)
+    sol_reduced, stats = solve(milp_reduced, PrimalDualSolution(milp_reduced), algo)
+    sol = postsolve(presolver, presolve_info, sol_reduced)
+    # grade the postsolved solution on the original problem
+    milp = perform_conversion(milp_init_cpu, algo.conversion)
+    kkt_errors!(stats.err, Scratch(sol), sol, milp)
+    solved = batched_all(<=(algo.termination.termination_reltol), relative(stats.err))
+    if !solved && stats.termination_status == MOI.OPTIMAL
+        stats.termination_status = MOI.ALMOST_OPTIMAL
+    end
+    stats.starting_time = starting_time
+    stats.time_elapsed = time() - starting_time
+    return sol, stats
 end
 
 """

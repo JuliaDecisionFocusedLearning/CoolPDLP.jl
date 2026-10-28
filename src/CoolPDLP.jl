@@ -38,6 +38,7 @@ include("public.jl")
 
     include("components/scratch.jl")
     include("components/conversion.jl")
+    include("components/presolve.jl")
     include("components/preconditioning.jl")
     include("components/permutation.jl")
     include("components/step_size.jl")
@@ -56,6 +57,8 @@ include("MOI_wrapper.jl")
 
 @public sametype_transpose
 
+export AbstractPresolver, presolve, postsolve, PaPILOPresolver
+
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL
 
 export MILP, nbvar, nbvar_int, nbvar_cont, nbcons, nbcons_eq, nbcons_ineq
@@ -69,5 +72,15 @@ export PDHG, PDLP
 export is_feasible, objective_value
 
 @public Optimizer
+
+function __init__()
+    # the methods for `PaPILOPresolver` live in an extension, so point at `using PaPILO`
+    Base.Experimental.register_error_hint(MethodError) do io, exc, _, _
+        if exc.f in (presolve, postsolve) && any(a -> a isa PaPILOPresolver, exc.args)
+            print(io, "\nPaPILOPresolver requires PaPILO.jl: run `using PaPILO` first.")
+        end
+    end
+    return nothing
+end
 
 end # module CoolPDLP

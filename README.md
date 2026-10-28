@@ -46,6 +46,17 @@ set_attribute(model, "backend", CUDABackend())
 # Build and solve model as usual
 ```
 
+## Presolve
+
+To simplify the problem with [`PaPILO.jl`](https://github.com/scipopt/PaPILO.jl) before solving it:
+
+```julia
+using CoolPDLP, JuMP, PaPILO
+
+model = Model(CoolPDLP.Optimizer)
+set_attribute(model, "presolver", PaPILOPresolver())
+```
+
 ## Why a new package?
 
 There are already several open-source implementations of primal-dual algorithms for LPs (not to mention those in commercial solvers).
