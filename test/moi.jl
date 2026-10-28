@@ -29,6 +29,7 @@ PKGEVAL = get(ENV, "PKGEVAL", "false") == "true"
                 MOI.ConstraintBasisStatus,
             ],
         );
+        # an empty `include` runs every test
         include = PKGEVAL ? Any[r"test_linear"] : Any[],
         exclude = [
             # TODO: infeasible/unbounded detection
