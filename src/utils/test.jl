@@ -46,7 +46,8 @@ function random_milp_and_sol(rng::Random.AbstractRNG, m::Int, n::Int, p::Float64
     int_var = rand(rng, Bool, length(c))
     x = clamp.(randn(rng, n), lv, uv)
     y = proj_multiplier.(randn(rng, m), lc, uc)
-    return MILP(; c, lv, uv, A, lc, uc, int_var), PrimalDualSolution(x, y)
+    c0 = randn(rng)
+    return MILP(; c, c0, lv, uv, A, lc, uc, int_var), PrimalDualSolution(x, y)
 end
 
 function random_milp_and_sol(m::Int, n::Int, p::Float64)

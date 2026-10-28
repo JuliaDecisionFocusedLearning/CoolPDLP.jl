@@ -4,6 +4,10 @@ import CoolPDLP
 import JuMP
 using JLArrays: JLBackend
 
+# PkgEval kills runs that exceed its time limit, and compiling the full MOI test suite
+# takes most of that budget (see issue #176): only run the linear tests there
+PKGEVAL = get(ENV, "PKGEVAL", "false") == "true"
+
 @testset "MOI Test Suite" begin
     model = MOI.Bridges.full_bridge_optimizer(
         MOI.Utilities.CachingOptimizer(
@@ -25,6 +29,8 @@ using JLArrays: JLBackend
                 MOI.ConstraintBasisStatus,
             ],
         );
+        # an empty `include` runs every test
+        include = PKGEVAL ? Any[r"test_linear"] : Any[],
         exclude = [
             # TODO: infeasible/unbounded detection
             r"INFEASIBILITY_CERTIFICATE", r"INFEASIBLE",  # exclude infeasible test problems
@@ -120,6 +126,24 @@ end
     @test JuMP.objective_value(model) ≈ 12 * 4 + 20 * 3 atol = 1.0e-2
     @test JuMP.value(x) ≈ 4 atol = 1.0e-2
     @test JuMP.value(y) ≈ 3 atol = 1.0e-2
+end
+
+@testset "Objective constant" begin
+    @testset "$sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+        model = JuMP.Model(CoolPDLP.Optimizer)
+        JuMP.set_silent(model)
+        JuMP.@variable(model, 0 <= x <= 4)
+        JuMP.@variable(model, 0 <= y <= 3)
+        JuMP.@constraint(model, 6x + 8y <= 48)
+        coeff = sense == MOI.MAX_SENSE ? 1 : -1
+        JuMP.@objective(model, sense, coeff * (12x + 20y) + 1000)
+        JuMP.optimize!(model)
+        @test JuMP.termination_status(model) == MOI.OPTIMAL
+        @test JuMP.objective_value(model) ≈ coeff * 108 + 1000 atol = 1.0e-1
+        @test JuMP.dual_objective_value(model) ≈ coeff * 108 + 1000 atol = 1.0e-1
+        @test JuMP.value(x) ≈ 4 atol = 1.0e-2
+        @test JuMP.value(y) ≈ 3 atol = 1.0e-2
+    end
 end
 
 @testset "Float32" begin

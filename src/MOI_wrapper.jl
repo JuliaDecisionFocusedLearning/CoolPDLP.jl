@@ -199,15 +199,16 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     A = convert(SparseMatrixCSC{T, Int}, cache.constraints.coefficients)
 
     c = zeros(T, n)
-    obj_constant = zero(T)
+    c0 = zero(T)
     if cache.objective.scalar_affine !== nothing
         for term in cache.objective.scalar_affine.terms
             c[term.variable.value] += term.coefficient
         end
-        obj_constant = cache.objective.scalar_affine.constant
+        c0 = cache.objective.scalar_affine.constant
     end
-    if max_sense
+    if max_sense  # a `MILP` is a minimization problem
         c .*= -one(T)
+        c0 = -c0
     end
 
     dest.sets = cache.constraints.sets
@@ -216,7 +217,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     lc = cache.constraints.constants.lower
     uc = cache.constraints.constants.upper
 
-    milp = MILP(; c, lv, uv, A, lc, uc)
+    milp = MILP(; c, c0, lv, uv, A, lc, uc)
 
     algorithm = get(dest.options, :algorithm, PDLP)
 
@@ -244,14 +245,15 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
 
     raw_obj = objective_value(dest.x, milp)
-    raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻
+    raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0
         sum(safeprod_left.(lc, positive_part.(dest.y)))
             - sum(safeprod_left.(uc, negative_part.(dest.y)))
             + sum(safeprod_left.(lv, positive_part.(dest.z)))
             - sum(safeprod_left.(uv, negative_part.(dest.z)))
+            + c0
     )
-    dest.obj_value = (max_sense ? -raw_obj : raw_obj) + obj_constant
-    dest.dual_obj_value = (max_sense ? -raw_dual_obj : raw_dual_obj) + obj_constant
+    dest.obj_value = max_sense ? -raw_obj : raw_obj
+    dest.dual_obj_value = max_sense ? -raw_dual_obj : raw_dual_obj
     dest.solve_time = stats.time_elapsed
 
     cts = stats.termination_status

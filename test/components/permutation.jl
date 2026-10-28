@@ -22,6 +22,7 @@ end
     perm_cons = parse.(Int, milp_sorted.con_names)
     @test milp_sorted.A == milp.A[perm_cons, perm_var]
     @test milp_sorted.c == milp.c[perm_var]
+    @test milp_sorted.c0 == milp.c0
     @test milp_sorted.lc == milp.lc[perm_cons]
     @test milp_sorted.uc == milp.uc[perm_cons]
 end

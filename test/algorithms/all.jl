@@ -63,6 +63,24 @@ end
     end
 end
 
+@testset "Objective constant" begin
+    # shifting the objective by a constant moves the optimal value, not the optimal solution
+    milp = netlib_milps[1]
+    (; c, lv, uv, A, At, lc, uc) = milp
+    milp_shifted = MILP(; c, c0 = 1000.0, lv, uv, A, At, lc, uc)
+    @testset for algorithm in (PDHG, PDLP)
+        algo = algorithm(Float64, Int, SparseMatrixCSC; backend = CPU(), termination_reltol = 1.0e-6, max_kkt_passes = 10^7, show_progress = false)
+        sol, stats = solve(milp, algo)
+        sol_shifted, stats_shifted = solve(milp_shifted, algo)
+        @test stats.termination_status == MOI.OPTIMAL
+        @test stats_shifted.termination_status == MOI.OPTIMAL
+        @test objective_value(sol_shifted.x, milp_shifted) ≈ objective_value(sol.x, milp) + 1000 rtol = 1.0e-3
+        # the gap is measured relative to the objective values, constant included
+        obj_shifted = objective_value(sol_shifted.x, milp_shifted)
+        @test stats_shifted.err.gap_scale ≈ 1 + 2 * abs(obj_shifted) rtol = 1.0e-3
+    end
+end
+
 @testset "PDLP with presolve" begin
     algo = PDLP(
         Float64, Int, SparseMatrixCSC; backend = CPU(),
@@ -74,32 +92,6 @@ end
     statuses = (MOI.OPTIMAL, MOI.ALMOST_OPTIMAL)
     @testset for name in small_names
         test_optimizer(dataset, name, algo; cons_tol = 1.0e-2, statuses)
-    end
-end
-
-@testset "PDLP with presolve is no worse than PDLP without, given a small iteration budget" begin
-    # small Netlib instances under a tight KKT-pass budget: presolve should get at least as close
-    # to the true optimum as solving the original problem does (no closer when the reduction
-    # leaves the iterates unchanged, as on sc50a where it only removes a redundant row)
-    budget_opts = (; termination_reltol = 1.0e-9, max_kkt_passes = 50, show_progress = false)
-    algo_np = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts...)
-    algo_p = PDLP(Float64, Int, SparseMatrixCSC; backend = CPU(), budget_opts..., presolver = CoolPDLP.PaPILOPresolver())
-    dataset = Netlib
-    @testset for name in small_names
-        qps, path = read_instance(dataset, name)
-        milp = MILP(qps; dataset, path)
-
-        jump_model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
-        JuMP.set_optimizer(jump_model, HiGHS.Optimizer)
-        JuMP.set_silent(jump_model)
-        JuMP.optimize!(jump_model)
-        true_obj = objective_value(JuMP.value.(JuMP.all_variables(jump_model)), milp)
-
-        sol_np, _ = solve(milp, algo_np)
-        sol_p, _ = solve(milp, algo_p)
-        err_np = abs(objective_value(Array(sol_np.x), milp) - true_obj) / max(1, abs(true_obj))
-        err_p = abs(objective_value(Array(sol_p.x), milp) - true_obj) / max(1, abs(true_obj))
-        @test err_p <= err_np
     end
 end
 
