@@ -6,7 +6,7 @@ using KernelAbstractions
 using LinearAlgebra
 using MathOptBenchmarkInstances
 using JuMP: JuMP, MOI
-using PaPILO: PaPILO  # loads the `CoolPDLPPaPILOExt` extension, needed by the presolve testset below
+using PaPILO: PaPILO
 using SparseArrays
 using Test
 

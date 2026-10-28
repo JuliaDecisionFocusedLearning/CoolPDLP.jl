@@ -48,8 +48,7 @@ set_attribute(model, "backend", CUDABackend())
 
 ## Presolve
 
-`CoolPDLP` can simplify a problem with [`PaPILO.jl`](https://github.com/scipopt/PaPILO.jl) before solving it.
-Load `PaPILO` and select the presolver:
+To simplify the problem with [`PaPILO.jl`](https://github.com/scipopt/PaPILO.jl) before solving it:
 
 ```julia
 using CoolPDLP, JuMP, PaPILO
@@ -57,9 +56,6 @@ using CoolPDLP, JuMP, PaPILO
 model = Model(CoolPDLP.Optimizer)
 set_attribute(model, "presolver", PaPILOPresolver())
 ```
-
-The solution is mapped back to the original problem and graded there.
-The dual solution reconstructed by PaPILO is often less accurate than the one of the reduced problem, in which case the termination status is `ALMOST_OPTIMAL` instead of `OPTIMAL`.
 
 ## Why a new package?
 
