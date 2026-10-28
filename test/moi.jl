@@ -4,6 +4,10 @@ import CoolPDLP
 import JuMP
 using JLArrays: JLBackend
 
+# PkgEval kills runs that exceed its time limit, and compiling the full MOI test suite
+# takes most of that budget (see issue #176): only run the linear tests there
+PKGEVAL = get(ENV, "PKGEVAL", "false") == "true"
+
 @testset "MOI Test Suite" begin
     model = MOI.Bridges.full_bridge_optimizer(
         MOI.Utilities.CachingOptimizer(
@@ -25,6 +29,8 @@ using JLArrays: JLBackend
                 MOI.ConstraintBasisStatus,
             ],
         );
+        # an empty `include` runs every test
+        include = PKGEVAL ? Any[r"test_linear"] : Any[],
         exclude = [
             # TODO: infeasible/unbounded detection
             r"INFEASIBILITY_CERTIFICATE", r"INFEASIBLE",  # exclude infeasible test problems
