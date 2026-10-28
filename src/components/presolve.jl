@@ -26,6 +26,12 @@ Presolver based on [PaPILO.jl](https://github.com/scipopt/PaPILO.jl), which requ
 
 It presolves the continuous relaxation and recovers both primal and dual solutions.
 It throws an error when PaPILO proves the problem infeasible or unbounded.
+
+!!! warning
+    The dual solution reconstructed by PaPILO can be far from optimal on the original problem, even when the reduced problem is solved accurately, in which case `solve` returns `ALMOST_OPTIMAL`.
+
+!!! warning
+    With `verbose = false`, PaPILO is muted by redirecting the `stdout` of the whole process, which is not safe when other tasks print or presolve concurrently.
 """
 struct PaPILOPresolver <: AbstractPresolver
     verbose::Bool

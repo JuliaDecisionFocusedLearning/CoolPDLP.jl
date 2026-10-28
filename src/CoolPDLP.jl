@@ -73,4 +73,14 @@ export is_feasible, objective_value
 
 @public Optimizer
 
+function __init__()
+    # the methods for `PaPILOPresolver` live in an extension, so point at `using PaPILO`
+    Base.Experimental.register_error_hint(MethodError) do io, exc, _, _
+        if exc.f in (presolve, postsolve) && any(a -> a isa PaPILOPresolver, exc.args)
+            print(io, "\nPaPILOPresolver requires PaPILO.jl: run `using PaPILO` first.")
+        end
+    end
+    return nothing
+end
+
 end # module CoolPDLP

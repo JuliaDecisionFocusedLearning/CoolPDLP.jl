@@ -213,7 +213,8 @@ Solve the continuous relaxation of `milp` starting from solution `sol` using the
 Return a couple `(sol, stats)` where `sol` is the last solution and `stats` contains convergence information.
 
 If `algo` has a presolver, `solve(milp, algo)` solves the reduced problem and postsolves the result.
-Then `stats.err` is computed on `milp`, and an `OPTIMAL` status becomes `ALMOST_OPTIMAL` if the postsolved solution misses the tolerance.
+Then `stats.err` is computed on `milp`, and an `OPTIMAL` status becomes `ALMOST_OPTIMAL` if the postsolved solution misses the tolerance, possibly by a lot.
+The other fields of `stats` describe the iterations on the reduced problem.
 `solve(milp, sol, algo)` never presolves.
 """
 function solve(

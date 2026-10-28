@@ -34,14 +34,22 @@ function CoolPDLP.presolve(presolver::PaPILOPresolver, milp::MILP)
             end
         catch e
             e isa ProcessFailedException || rethrow()
-            error("PaPILO failed, probably because the problem is infeasible or unbounded")
+            error(
+                "PaPILO failed to presolve the problem, which happens when it proves the " *
+                    "problem infeasible or unbounded. Use `PaPILOPresolver(; verbose = true)` " *
+                    "to see its diagnostic."
+            )
         end
-        milp_reduced = mps_to_milp(
+        m = mps_to_milp(
             reduced_file; milp.dataset, name = string(milp.name, " [presolved]"), milp.path
         )
+        # PaPILO writes the objective constant with the opposite sign to what QPSReader expects
+        milp_reduced = MILP(;
+            m.c, c0 = -m.c0, m.lv, m.uv, m.A, m.At, m.lc, m.uc,
+            m.var_names, m.con_names, m.dataset, m.name, m.path,
+        )
         presolve_info = PaPILOPresolveInfo(
-            read(archive_file), var_names, con_names,
-            milp_reduced.var_names, milp_reduced.con_names,
+            read(archive_file), var_names, con_names, milp_reduced.var_names, milp_reduced.con_names,
             milp_reduced.c, milp_reduced.At, PrimalDualSolution(milp),
         )
         return milp_reduced, presolve_info
@@ -87,6 +95,7 @@ function gather_values(values::Dict{String, T}, names::Vector{String}) where {T 
     index = Dict(zip(names, eachindex(names)))
     gathered = zeros(T, length(names))
     for (name, value) in values
+        haskey(index, name) || error("PaPILO returned a value for the unknown name `$name`")
         gathered[index[name]] = value
     end
     return gathered
