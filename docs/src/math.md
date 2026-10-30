@@ -136,3 +136,40 @@ We make use of a few key observations:
 
 - Projection on $\mathcal{Z}$ commutes with scaling
 - Projection on an interval commutes with scaling if scaling is also applied to the interval in question
+
+## Crossover
+
+A crossover runs on the scaled point above, and only after PDLP has stopped optimal. Any other status leaves that point unchanged. It follows Liu–Lu, Algorithm 2.
+
+Introduce a slack $s$ in the constraint bounds, and write $A$ for the scaled matrix:
+
+```math
+\min_{x,s} \; c^\top x
+\quad\text{s.t.}\quad
+Ax - s = 0, \quad
+\ell_v \le x \le u_v, \quad
+\ell_c \le s \le u_c .
+```
+
+Columns split into a basic set $B$ and a nonbasic set $N$ pinned to a bound. Reduced costs are $z = c - A^\top y$. A basic column is fixed to a bound when its slack is no larger than $\gamma$ times the reduced cost pointing that way.
+
+Each push moves along a ray of the current active set, from one least-squares solve. Weights $\eta,\omega$ and the perturbation scale $\delta$ default to $1$; $\tilde{c}$ and $\tilde{b}$ are that perturbation. $D$ is the set of columns with a near-zero reduced cost.
+
+```math
+\begin{align*}
+u &\in \arg\min \lVert A_B u - A_B \tilde{c}_B \rVert_2,
+& v_B &= -\frac{\eta}{\omega}(\tilde{c}_B - u),
+& x &\leftarrow x + \theta v, \\[4pt]
+w &\in \arg\min \lVert A_D w - \tilde{b} \rVert_2,
+& v_y &= \eta\,\omega\,(\tilde{b} - A_D w),
+& y &\leftarrow y + \theta v_y .
+\end{align*}
+```
+
+An exact primal solve puts $v_B$ in $\ker(A_B)$; an exact dual solve puts $v_y$ in $\ker(A_D^\top)$. The step $\theta$ is the ratio test: the first bound met by a basic variable, or the first nonbasic reduced cost that changes sign.
+
+Each least-squares problem is preconditioned conjugate gradients on the normal equations $(A^\top A + \mu I)\,x = A^\top b$, with $\mu = 10^{-12}$. The iteration stops when the residual is small enough, or when the time left on the algorithm `time_limit` is spent. Once $|B| = m$ and $A_B$ has full row rank, the point is replaced by the basic solution
+
+```math
+A_B x_B = -A_N x_N, \qquad A_B^\top y = c_B .
+```

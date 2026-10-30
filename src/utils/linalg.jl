@@ -194,6 +194,30 @@ end
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)
 column_norm(A::SparseMatrixCSC, j::Integer, p) = norm(view(nonzeros(A), nzrange(A, j)), p)
 
+"""
+Numerical rank of a column-pivoted QR.
+
+Threshold `max(size)·ε·max(|R₁₁|, 1)`, the same test as
+`LinearAlgebra.rank` on a `QRPivoted` (Julia 1.12) with that absolute and relative tolerance.
+"""
+function qr_numrank(F)
+    n = max(size(F)...)
+    n == 0 && return 0
+    tol = n * eps(real(float(eltype(F))))
+    # `rank(::QRPivoted)` is Julia 1.12. Same threshold: max(atol, rtol·|R₁₁|).
+    applicable(rank, F) && return rank(F; rtol = tol, atol = tol)
+    R, m = F.R, min(size(F)...)
+    cutoff = tol * max(abs(R[1, 1]), one(eltype(R)))
+    return something(findfirst(i -> abs(R[i, i]) <= cutoff, 1:m), m + 1) - 1
+end
+
+"""At most `maxn` independent columns of `A[:, cols]` (column-pivoted QR)."""
+function qr_keep(cols::AbstractVector{<:Integer}, A::AbstractMatrix, maxn::Integer)
+    F = qr(Matrix(A[:, cols]), ColumnNorm())
+    r = min(qr_numrank(F), Int(maxn))
+    return cols[F.p[1:r]], F
+end
+
 mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
 
