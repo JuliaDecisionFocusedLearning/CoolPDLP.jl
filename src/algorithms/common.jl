@@ -19,6 +19,7 @@ struct Algorithm{
     restart::R
     generic::GenericParameters
     termination::TerminationParameters{T}
+    crossover::SpiralCrossover{T}
 end
 
 """
@@ -50,6 +51,8 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # run after an OPTIMAL solve; a non-OPTIMAL status is a no-op
+        crossover::SpiralCrossover{T} = SpiralCrossover{T}(),
     )
 
 Constructor for algorithm configs.
@@ -82,6 +85,7 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        crossover::SpiralCrossover{T} = SpiralCrossover{T}(),
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -121,12 +125,13 @@ function Algorithm{A}(
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        crossover,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, crossover) = algo
     return print(
         io, """
         $A algorithm:
@@ -135,7 +140,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $crossover"""
     )
 end
 
@@ -228,10 +234,22 @@ function solve(
             kkt_errors!(state.stats.err, state.scratch, sol, milp)
             state.stats.time_elapsed = time() - starting_time
             state.stats.termination_status = MOI.OPTIMAL
+            # no constraint rows → crossover is a no-op; still unprecondition
             return get_solution(state, milp), state.stats
         end
     end
     solve!(state, milp, algo)
+    # Scaled point, before unprecondition. `solve!` stays allocation-free.
+    # `time_limit` is already the solver clock (`Float64`), same as `time_elapsed`.
+    remain = algo.termination.time_limit - state.stats.time_elapsed
+    if state.stats.termination_status == MOI.OPTIMAL && remain > 0
+        crossover!(
+            state.sol, milp, algo.crossover;
+            zero_tol = algo.step_size.zero_tol,
+            reltol = algo.termination.termination_reltol,
+            time_limit = remain,
+        )
+    end
     return get_solution(state, milp), state.stats
 end
 

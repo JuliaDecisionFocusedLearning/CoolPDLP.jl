@@ -14,11 +14,11 @@ using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
-using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using LinearAlgebra: LinearAlgebra, ColumnNorm, Diagonal, axpby!, axpy!, diag, dot, mul!, norm, qr, rank
 using Logging: NullLogger, with_logger
 using Printf: @sprintf
 using Random: Random, randn!
-using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
+using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, spdiagm, sprandn
 
 include("public.jl")
 
@@ -28,6 +28,7 @@ include("public.jl")
     include("utils/mat_csr.jl")
     include("utils/mat_ell.jl")
     include("utils/linalg.jl")
+    include("utils/ols.jl")
     include("utils/test.jl")
     include("utils/batching.jl")
 
@@ -46,10 +47,14 @@ include("public.jl")
     include("components/restart.jl")
     include("components/generic.jl")
     include("components/termination.jl")
+    include("components/crossover.jl")
 
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
+    include("algorithms/spiral_crossover_state.jl")
+    include("algorithms/spiral_crossover_push.jl")
+    include("algorithms/spiral_crossover_basis.jl")
 end
 
 include("MOI_wrapper.jl")
@@ -64,6 +69,7 @@ export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
 export PDHG, PDLP
+export SpiralCrossover, crossover!
 @public Algorithm
 @public KKTErrors, relative
 export is_feasible, objective_value
