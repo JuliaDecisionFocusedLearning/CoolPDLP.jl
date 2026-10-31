@@ -20,7 +20,6 @@ end
     # Vanilla PDHG on the raw LP: η = 0.05, ε = 1e-8, x0 = (1, 2), y0 = 2.
     # `PDHG` already skips Ruiz. `initialize` skips Chambolle–Pock, which
     # `solve` would apply and which changes the step count.
-    # This checks the PDHG iteration, not the crossover.
     milp = paper_example_6()
     algo = PDHG(;
         termination_reltol = 1.0e-8,

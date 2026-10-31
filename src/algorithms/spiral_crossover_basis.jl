@@ -1,5 +1,30 @@
 # Basis completion, cleanup, KKT (Algo 2 finalize; host LinearAlgebra).
 
+"""
+Columns to add so `basics` reaches `m` independent columns.
+
+`basics` is kept as a block. The QR runs on the orthogonal complement, the
+same role as the reference Schur step: a global pivot on `vcat(basics, extra)`
+can demote a column the pushes just left basic.
+"""
+function _extend_basics(basics::Vector{Int}, extra::Vector{Int}, A::AbstractMatrix, m::Int)
+    isempty(extra) && return Int[]
+    if isempty(basics)
+        kept, _ = qr_keep(extra, A, m)
+        return length(kept) == m ? Vector{Int}(kept) : Int[]
+    end
+    T = eltype(A)
+    AB = Matrix{T}(A[:, basics])
+    FB = qr(AB, ColumnNorm())
+    r = qr_numrank(FB)
+    (r < length(basics) || r >= m) && return Int[]
+    QAE = FB.Q' * Matrix{T}(A[:, extra])
+    k = m - r
+    Fcomp = qr(QAE[(r + 1):end, :], ColumnNorm())
+    qr_numrank(Fcomp) < k && return Int[]
+    return vcat(basics, extra[Fcomp.p[1:k]])
+end
+
 """Demote column `j` to a *finite* bound (never snap to ±Inf)."""
 function _demote!(st::_SpiralState, j::Int)
     st.basis[j] = _bound_side(st.z[j], st.lv[j], st.uv[j])
@@ -7,20 +32,22 @@ function _demote!(st::_SpiralState, j::Int)
 end
 
 """
-One column-pivoted QR, size `m`.
+Rank of the columns the pushes left basic. No column of that set is dropped.
 
-Basics first. If they are short of rank `m`, dual-active columns are added
-and the same QR is run once on that list.
+More than `m` basics, or a rank-deficient set: leave the push point. The
+replacement basis would pin an interior column, and its basic solution can
+leave the bounds. Fewer than `m`: the current basics stay, and one
+column-pivoted QR on their orthogonal complement may add dual-active columns.
 
-A free column has no finite bound, so it cannot be pinned and it stays
-basic. If the QR dropped it, a bounded column of the kept set is demoted
-in its place. Example: `x₁` free and `x₂ ≥ 0` in a rank-1 row. The QR
-keeps `x₂`. `x₁` is swapped back in, and `x₂` goes to its bound.
+A free column has no finite bound, so it cannot be pinned. If a completion
+dropped it, a bounded column of the kept set is demoted in its place.
 """
 function _linear_independence!(st::_SpiralState)
     m = size(st.A, 1)
     _update_reduced_costs!(st)
     basics = findall(==(_BASIC), st.basis)
+    # Thinning an oversized basic set is what makes `x_B` leave the box.
+    length(basics) > m && return false
 
     function _commit!(keep_idx::Vector{Int})
         keepset = Set(keep_idx)
@@ -46,17 +73,15 @@ function _linear_independence!(st::_SpiralState)
         return _recount_basics!(st).n_basis == m
     end
 
-    cand = Int[]
     try
         if !isempty(basics)
             keep, _ = qr_keep(basics, st.A, m)
-            length(keep) >= m && return _commit!(keep[1:m])
-            cand = keep
+            # Replacing a dependent basic set would pin one of its columns.
+            length(keep) < length(basics) && return false
+            length(basics) == m && return _commit!(basics)
         end
         extra = findall(j -> st.dual_active[j] && st.basis[j] != _BASIC, eachindex(st.basis))
-        append!(cand, extra)
-        length(cand) < m && return false
-        kept, _ = qr_keep(cand, st.A, m)
+        kept = _extend_basics(basics, extra, st.A, m)
         length(kept) == m || return false
         return _commit!(kept)
     catch
@@ -64,7 +89,12 @@ function _linear_independence!(st::_SpiralState)
     end
 end
 
-"""`A_B x_B = b − A_N x_N`, then `A_Bᵀ y = c_B`, by a dense `\\`."""
+"""`A_B x_B = b − A_N x_N`, then `A_Bᵀ y = c_B`, by a dense `\\`.
+
+`x_B` is written only when it already lies within the bounds, up to
+`zero_tol`. Projecting a basic solution from outside the box leaves the
+nullspace of the lift.
+"""
 function _solve_basic!(st::_SpiralState)
     m = size(st.A, 1)
     basic = findall(==(_BASIC), st.basis)
@@ -75,6 +105,12 @@ function _solve_basic!(st::_SpiralState)
         xb = AB \ Vector{T}(st.b_work)
         yb = transpose(AB) \ Vector{T}(st.c[basic])
         (any(!isfinite, xb) || any(!isfinite, yb)) && return false
+        ε = st.zero_tol
+        for (k, j) in enumerate(basic)
+            xj, l, u = xb[k], st.lv[j], st.uv[j]
+            isfinite(l) && xj < l - ε && return false
+            isfinite(u) && xj > u + ε && return false
+        end
         st.x[basic] = xb
         st.y = yb
     catch
@@ -83,7 +119,7 @@ function _solve_basic!(st::_SpiralState)
     return true
 end
 
-"""Square solve, then project basic columns onto their bounds."""
+"""Square solve. Basic columns already within `zero_tol` of a bound are snapped."""
 function _cleanup!(st::_SpiralState)
     st.n_basis == size(st.A, 1) || return false
     _solve_basic!(st) || return false
@@ -92,36 +128,6 @@ function _cleanup!(st::_SpiralState)
     end
     _update_reduced_costs!(st)
     return true
-end
-
-"""Relative primal + dual-sign residual on the lift (`b = 0` ⇒ ‖Ax‖).
-
-Same shape of scale as [`kkt_errors!`](@ref) (`1 + ‖·‖`), compared with the
-algorithm `termination_reltol`. It does not call `kkt_errors!`: the lift is
-an equality form, so the primal residual is `‖Ax‖` and the dual residual is
-the reduced-cost sign violation.
-"""
-function _kkt_ok(st::_SpiralState)
-    tol = st.reltol
-    prim = norm(st.A * st.x) / (1 + norm(st.x))
-    _update_reduced_costs!(st)
-    dual = zero(eltype(st.z))
-    for j in eachindex(st.z)
-        l, u, zj = st.lv[j], st.uv[j], st.z[j]
-        z0 = zero(zj)
-        if !isfinite(l) && !isfinite(u)
-            dual = max(dual, abs(zj))
-        elseif !isfinite(l)
-            dual = max(dual, max(zj, z0))
-        elseif !isfinite(u)
-            dual = max(dual, max(-zj, z0))
-        elseif st.basis[j] == _AT_LB
-            dual = max(dual, max(-zj, z0))
-        elseif st.basis[j] == _AT_UB
-            dual = max(dual, max(zj, z0))
-        end
-    end
-    return prim <= tol && dual / (1 + norm(st.c)) <= tol
 end
 
 """Near-bound snap on structural variables `1:n`, at the algorithm `zero_tol`."""
@@ -166,8 +172,10 @@ end
 Batched MILP: serial per [`instance`](@ref). `time_limit` is the budget left
 on the solve clock. Every ray shares it. `zero_tol` and `reltol` are the
 algorithm `zero_tol` and `termination_reltol`; the defaults match `PDLP()`.
-A finite `(x, y)` is written back even when the primal residual grew.
-A non-finite value, or an exception, keeps the PDLP point.
+The candidate is the basic solution when `x_B` lies within the bounds, and
+the point after the pushes otherwise. It is written when its primal
+violation is finite and at most `max(reltol, violation of the incoming
+point)`. A non-finite value, or an exception, keeps the PDLP point.
 """
 function crossover!(
         sol::PrimalDualSolution, milp::MILP, cx::SpiralCrossover;
@@ -186,17 +194,48 @@ function crossover!(
 
     t0, limit = time(), Float64(time_limit)
     try
+        viol0 = Float64(_scaled_violation(milp, sol.x))
         st = _push_once!(milp, sol, cx, zero_tol, reltol; t0, limit)
+        x_push, y_push = copy(st.x), copy(st.y)
+        basis_push, n_push = copy(st.basis), st.n_basis
+        # A failed cleanup must not erase the pushes.
+        function _restore_push!()
+            copyto!(st.x, x_push)
+            copyto!(st.y, y_push)
+            copyto!(st.basis, basis_push)
+            st.n_basis = n_push
+            return nothing
+        end
 
         # Skip the square cleanup when the wall budget is already gone
         # (it densifies A_B and has no per-call timeout).
-        if !_time_up(st) && _linear_independence!(st)
+        indep = false
+        if !_time_up(st)
+            indep = _linear_independence!(st)
+        end
+        if indep
             _improve_primal!(st)
-            !_kkt_ok(st) && _cleanup!(st)
+            # A relative KKT pass can leave the absolute primal violation at
+            # the PDLP level. The square solve is the step that removes it,
+            # and it is refused when `x_B` is outside the bounds.
+            _cleanup!(st) || _restore_push!()
             _snap_structural!(st, n)
         end
         if any(!isfinite, view(st.x, 1:n)) || any(!isfinite, st.y)
             @warn "SpiralCrossover produced non-finite values; keeping PDLP point"
+            return sol
+        end
+        # `v` is the absolute primal violation. The candidate may be less
+        # tight than the incoming point only up to `termination_reltol`.
+        allow = max(Float64(reltol), viol0)
+        viol1 = Float64(_scaled_violation(milp, view(st.x, 1:n)))
+        if !isfinite(viol1) || viol1 > allow
+            _restore_push!()
+            _snap_structural!(st, n)
+            viol1 = Float64(_scaled_violation(milp, view(st.x, 1:n)))
+        end
+        if !isfinite(viol1) || viol1 > allow
+            @warn "SpiralCrossover primal violation above the incoming point; keeping PDLP point"
             return sol
         end
         copyto!(sol.x, adapt(get_backend(sol.x), st.x[1:n]))

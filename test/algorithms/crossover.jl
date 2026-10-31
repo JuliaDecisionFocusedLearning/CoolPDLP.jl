@@ -1,5 +1,6 @@
 using CoolPDLP
 import MathOptInterface as MOI
+using LinearAlgebra
 using SparseArrays
 using Test
 
@@ -62,11 +63,45 @@ end
     @test all(isfinite, sol.x)
 end
 
+@testset "an infeasible basic solution is not written" begin
+    # x₁ + x₂ = 1, 0 ≤ x₂ ≤ 0.2. Basis {x₂} solves to x₂ = 1, outside the box.
+    milp = MILP(;
+        c = [0.0, 0.0],
+        lv = [0.0, 0.0],
+        uv = [10.0, 0.2],
+        A = sparse([1.0 1.0]),
+        lc = [1.0],
+        uc = [1.0],
+    )
+    st = CoolPDLP._lift_boxed(milp, [0.9, 0.1], [0.0])
+    st.zero_tol = 1.0e-8
+    st.basis .= CoolPDLP._AT_LB
+    st.basis[2] = CoolPDLP._BASIC
+    st.x[1] = 0.0
+    st.x[3] = 1.0
+    CoolPDLP._improve_primal!(st)
+    x_before = copy(st.x)
+    @test CoolPDLP._solve_basic!(st) == false
+    @test st.x == x_before
+    @test st.x[2] == 0.1
+end
+
 @testset "the same seed repeats" begin
     cx = SpiralCrossover{Float64}(; seed = 7)
     s1, _ = solve(toy_lp(), PDLP(; PDLP_XOVER..., crossover = cx))
     s2, _ = solve(toy_lp(), PDLP(; PDLP_XOVER..., crossover = cx))
     @test Array(s1.x) ≈ Array(s2.x)
+end
+
+@testset "a wide least-squares ray stays in the kernel" begin
+    # b = A c with more columns than rows. The undamped solve makes c − u a
+    # nullspace step, which is the primal ray.
+    A = sparse([1.0 1.0 0.0; 0.0 1.0 1.0])
+    c = [1.0e6, -0.25, -1.0e6]
+    b = Vector(A * c)
+    u = zeros(3)
+    CoolPDLP.ols!(u, A, b)
+    @test norm(A * (c - u)) <= 1.0e-8 * (1 + norm(b))
 end
 
 @testset "crossover keeps the eltype asked of PDLP" begin

@@ -47,12 +47,31 @@ end
 _finite_inf(::Type{T}, x::Real) where {T} = isfinite(x) ? T(x) : (x > 0 ? T(Inf) : T(-Inf))
 
 # One host copy. A matching vector is copied, a matching CSC is reused, a device array is downloaded once.
-_host_vec(::Type{T}, v::AbstractVector) where {T} = (cpu = v isa Vector{T} ? v : adapt(CPU(), v);
-    cpu isa Vector{T} && cpu !== v ? cpu : Vector{T}(cpu))
+_host_vec(::Type{T}, v::AbstractVector) where {T} = (
+    cpu = v isa Vector{T} ? v : adapt(CPU(), v);
+    cpu isa Vector{T} && cpu !== v ? cpu : Vector{T}(cpu)
+)
 _host_csc(::Type{T}, A::SparseMatrixCSC{T, Int}) where {T} = A
-_host_csc(::Type{T}, A::AbstractMatrix) where {T} = (B = A isa SparseMatrixCSC ? A : SparseMatrixCSC(A);
-    B isa SparseMatrixCSC{T, Int} ? B : SparseMatrixCSC{T, Int}(B))
+_host_csc(::Type{T}, A::AbstractMatrix) where {T} = (
+    B = A isa SparseMatrixCSC ? A : SparseMatrixCSC(A);
+    B isa SparseMatrixCSC{T, Int} ? B : SparseMatrixCSC{T, Int}(B)
+)
 _host_bounds(::Type{T}, v::AbstractVector) where {T} = _finite_inf.(T, v isa Vector ? v : adapt(CPU(), v))
+
+"""Largest bound or row violation of structural `x` on `milp`, on the host."""
+function _scaled_violation(milp::MILP, x::AbstractVector{T}) where {T <: AbstractFloat}
+    A = _host_csc(T, milp.A)
+    xv = _host_vec(T, x)
+    lv = _host_bounds(T, milp.lv)
+    uv = _host_bounds(T, milp.uv)
+    lc = _host_bounds(T, milp.lc)
+    uc = _host_bounds(T, milp.uc)
+    Ax = A * xv
+    none = typemin(T)
+    bounds_err = max(maximum(xv .- uv; init = none), maximum(lv .- xv; init = none))
+    cons_err = max(maximum(Ax .- uc; init = none), maximum(lc .- Ax; init = none))
+    return max(bounds_err, cons_err)
+end
 
 """Equality form `A_aug [x; s] = 0`, slack bounds `[lc, uc]`, in `eltype(x)`."""
 function _lift_boxed(milp::MILP, x::AbstractVector{T}, y::AbstractVector) where {T <: AbstractFloat}
@@ -67,7 +86,7 @@ function _lift_boxed(milp::MILP, x::AbstractVector{T}, y::AbstractVector) where 
     lv = [_host_bounds(T, milp.lv); _host_bounds(T, milp.lc)]
     uv = [_host_bounds(T, milp.uv); _host_bounds(T, milp.uc)]
     c = [_host_vec(T, milp.c); zeros(T, m)]
-    s = clamp.(A0 * xv, view(lv, n + 1:n + m), view(uv, n + 1:n + m))
+    s = clamp.(A0 * xv, view(lv, (n + 1):(n + m)), view(uv, (n + 1):(n + m)))
     x_aug = [xv; s]
     N = n + m
     return _SpiralState(
