@@ -12,19 +12,15 @@ function _oriented_theta(v::AbstractVector, ratio, ε::Real)
     return θ
 end
 
-"""OLS on a column subset. The slice is host CSC; a device ray replaces it and keeps [`ols!`](@ref)."""
+"""Least squares on columns `cols` of the host lift, by [`ols!`](@ref)."""
 function _spiral_ols_cols!(
         xB::AbstractVector,
         st::_SpiralState,
         cols::AbstractVector{Int},
-        b::AbstractVector;
-        x0 = nothing,
+        b::AbstractVector,
     )
     isempty(cols) && return xB
-    return ols!(
-        xB, st.A[:, cols], b; x0, tol = st.reltol, zero_tol = st.zero_tol,
-        deadline = st.deadline,
-    )
+    return ols!(xB, st.A[:, cols], b)
 end
 
 """Write soft-thresholded `scale * residual[k]` into `dest[cols[k]]`."""
@@ -45,7 +41,7 @@ function _primal_ray!(v::AbstractVector, st::_SpiralState, cx::SpiralCrossover, 
     rhs = zeros(T, size(st.A, 1))
     mul!(rhs, st.A[:, B], cB)
     ATy = zeros(T, length(B))
-    _spiral_ols_cols!(ATy, st, B, rhs; x0 = st.x[B])
+    _spiral_ols_cols!(ATy, st, B, rhs)
     ηω = T(cx.eta) / T(cx.omega)
     return _soft_fill!(v, B, cB .- ATy, -ηω, st.zero_tol)
 end
@@ -130,7 +126,7 @@ function _dual_ray!(vy::AbstractVector, st::_SpiralState, cx::SpiralCrossover)
     isempty(D) && return vy
     T = eltype(vy)
     xv = zeros(T, length(D))
-    _spiral_ols_cols!(xv, st, D, st.b_work; x0 = st.x[D])
+    _spiral_ols_cols!(xv, st, D, st.b_work)
     AxD = zeros(T, length(vy))
     mul!(AxD, st.A[:, D], xv)
     ηω = T(cx.eta) * T(cx.omega)

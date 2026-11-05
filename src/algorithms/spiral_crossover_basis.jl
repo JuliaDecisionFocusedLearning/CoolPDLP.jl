@@ -1,4 +1,4 @@
-# Basis completion, cleanup, KKT (Algo 2 finalize; host LinearAlgebra).
+# Basis completion and cleanup (Algo 2 finalize; host LinearAlgebra).
 
 """
 Columns to add so `basics` reaches `m` independent columns.
@@ -142,10 +142,9 @@ function _snap_structural!(st::_SpiralState, n::Int)
 end
 
 """Fresh lift. Every ray stops at the same absolute `deadline`."""
-function _new_spiral_state(milp, sol, zero_tol, reltol; t0, limit)
+function _new_spiral_state(milp, sol, zero_tol; t0, limit)
     st = _lift_boxed(milp, sol.x, sol.y)
     st.zero_tol = eltype(st.x)(zero_tol)
-    st.reltol = eltype(st.x)(reltol)
     st.deadline = t0 + limit
     _project_bounds!(st)
     return st
@@ -159,8 +158,8 @@ function _spiral_pushes!(st::_SpiralState, cx::SpiralCrossover, rng, m::Int)
 end
 
 """One primal/dual push."""
-function _push_once!(milp, sol, cx, zero_tol, reltol; t0, limit)
-    st = _new_spiral_state(milp, sol, zero_tol, reltol; t0, limit)
+function _push_once!(milp, sol, cx, zero_tol; t0, limit)
+    st = _new_spiral_state(milp, sol, zero_tol; t0, limit)
     rng = cx.seed >= 0 ? StableRNG(cx.seed) : Random.default_rng()
     _spiral_pushes!(st, cx, rng, size(st.A, 1))
     return st
@@ -195,7 +194,7 @@ function crossover!(
     t0, limit = time(), Float64(time_limit)
     try
         viol0 = Float64(_scaled_violation(milp, sol.x))
-        st = _push_once!(milp, sol, cx, zero_tol, reltol; t0, limit)
+        st = _push_once!(milp, sol, cx, zero_tol; t0, limit)
         x_push, y_push = copy(st.x), copy(st.y)
         basis_push, n_push = copy(st.basis), st.n_basis
         # A failed cleanup must not erase the pushes.

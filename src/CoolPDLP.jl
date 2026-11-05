@@ -6,7 +6,7 @@ using Atomix: Atomix
 using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
-using IterativeSolvers: lsmr, powm!
+using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!

@@ -22,7 +22,6 @@ mutable struct _SpiralState{T <: AbstractFloat}
     b_work::Vector{T}
     c_work::Vector{T}
     zero_tol::T                 # = Algorithm `zero_tol`
-    reltol::T                   # = Algorithm `termination_reltol`
     deadline::Float64           # absolute `time()`; `Inf` = no limit
 end
 
@@ -92,7 +91,7 @@ function _lift_boxed(milp::MILP, x::AbstractVector{T}, y::AbstractVector) where 
     return _SpiralState(
         A_aug, c, lv, uv, x_aug, yv, zeros(T, N),
         fill(_BASIC, N), fill(false, N),
-        N, 0, N, 0, zeros(T, m), zeros(T, N), zero(T), zero(T),
+        N, 0, N, 0, zeros(T, m), zeros(T, N), zero(T),
         Inf,
     )
 end
