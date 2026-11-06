@@ -102,10 +102,10 @@ function primal_weight_update!!(
     Δy = colnorm!!(scratch.b2, @. scratch.y = sol_cand.y - sol_restart.y)
     θ = primal_weight_damping
     return broadcast!!(ω, Δx, Δy, ω) do Δx, Δy, w
-        if Δx > zero_tol && Δy > zero_tol
-            exp(θ * log(Δy / Δx) + (1 - θ) * log(w))
-        else
+        ifelse(
+            (Δx > zero_tol) & (Δy > zero_tol),
+            exp(θ * log(Δy / Δx) + (1 - θ) * log(w)),
             w
-        end
+        )
     end
 end

@@ -1,5 +1,6 @@
 using Adapt
 using CoolPDLP
+using CoolPDLP: termination_status
 using HiGHS: HiGHS
 using JLArrays
 using KernelAbstractions
@@ -33,7 +34,7 @@ function test_optimizer(
     sol, stats = solve(milp, algo)
     x = sol.x
 
-    @test stats.termination_status == MOI.OPTIMAL
+    @test termination_status(stats) == MOI.OPTIMAL
     @test is_feasible(Array(x), milp; cons_tol, int_tol)
     @test isapprox(objective_value(jump_x, milp), objective_value(Array(x), milp); rtol = obj_rtol)
     return nothing
@@ -70,8 +71,8 @@ end
         algo = algorithm(Float64, Int, SparseMatrixCSC; backend = CPU(), termination_reltol = 1.0e-6, max_kkt_passes = 10^7, show_progress = false)
         sol, stats = solve(milp, algo)
         sol_shifted, stats_shifted = solve(milp_shifted, algo)
-        @test stats.termination_status == MOI.OPTIMAL
-        @test stats_shifted.termination_status == MOI.OPTIMAL
+        @test termination_status(stats) == MOI.OPTIMAL
+        @test termination_status(stats_shifted) == MOI.OPTIMAL
         @test objective_value(sol_shifted.x, milp_shifted) ≈ objective_value(sol.x, milp) + 1000 rtol = 1.0e-3
         # the gap is measured relative to the objective values, constant included
         obj_shifted = objective_value(sol_shifted.x, milp_shifted)
