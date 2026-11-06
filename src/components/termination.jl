@@ -46,11 +46,12 @@ function ConvergenceStats(
         err::KKTErrors{T};
         starting_time = time(),
         time_elapsed = 0.0,
-        kkt_passes::I = 0,
+        kkt_passes = 0,
         termination_status = MOI.OPTIMIZE_NOT_CALLED,
-        error_history = Tuple{I, KKTErrors{T}}[]
-    ) where {T, I}
+        error_history = Tuple{typeof(kkt_passes), KKTErrors{T}}[]
+    ) where {T}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
+    I = typeof(kkt_passes)
     return ConvergenceStats{T, F, I}(
         err,
         starting_time,
