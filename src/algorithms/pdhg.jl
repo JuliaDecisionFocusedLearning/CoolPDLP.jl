@@ -23,19 +23,19 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
-        Sc <: Scratch{T, V, S},
+        T <: Number, V <: AbstractVecOrMat{T},
+        SS <: StepSizes, Sc <: Scratch, CS <: ConvergenceStats,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
     "last solution"
     sol_last::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{S}
+    step_sizes::SS
     "scratch space"
     scratch::Sc
     "convergence stats"
-    stats::ConvergenceStats{S}
+    stats::CS
 end
 
 nbinstances((; sol)::PDHGState) = nbinstances(sol)
@@ -52,7 +52,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDHG, T};
+        algo::Algorithm{:PDHG};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)

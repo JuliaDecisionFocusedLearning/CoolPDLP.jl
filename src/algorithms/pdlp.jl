@@ -18,8 +18,13 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
-        B <: BatchedNumber{Bool}, Sc <: Scratch{T, V, S},
+        T <: Number,
+        V <: AbstractVecOrMat{T},
+        SS <: StepSizes,
+        Sc <: Scratch,
+        It <: IterationCounter,
+        RS <: RestartStats,
+        CS <: ConvergenceStats,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -32,15 +37,15 @@ $(TYPEDFIELDS)
     "solution from last restart"
     sol_restart::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{S}
+    step_sizes::SS
     "scratch space"
     scratch::Sc
     "iteration counter"
-    iteration::IterationCounter
+    iteration::It
     "restart stats"
-    restart_stats::RestartStats{S, B}
+    restart_stats::RS
     "convergence stats"
-    stats::ConvergenceStats{S}
+    stats::CS
 end
 
 nbinstances((; sol)::PDLPState) = nbinstances(sol)
@@ -62,7 +67,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDLP, T};
+        algo::Algorithm{:PDLP};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)

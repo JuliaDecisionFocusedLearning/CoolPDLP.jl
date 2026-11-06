@@ -5,7 +5,7 @@
 
 $(TYPEDFIELDS)
 """
-@kwdef struct StepSizeParameters{T <: Number}
+@kwdef struct StepSizeParameters{T <: Number, I <: Number}
     "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size"
     invnorm_scaling::T
     "primal weight update damping"
@@ -15,7 +15,7 @@ $(TYPEDFIELDS)
     "absolute tolerance in iterative spectral norm computation"
     spectral_norm_tol::T
     "maximum number of power method iterations in iterative spectral norm computation"
-    spectral_norm_maxiter::Int
+    spectral_norm_maxiter::I
 end
 
 function Base.show(io::IO, params::StepSizeParameters)
