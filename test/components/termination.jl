@@ -1,4 +1,5 @@
 using CoolPDLP
+using CoolPDLP: termination_status
 import MathOptInterface as MOI
 using Random
 using SparseArrays
@@ -12,7 +13,7 @@ using Test
     milp = CoolPDLP.MILP(; c, lv, uv, A, lc, uc)
     algo = CoolPDLP.PDLP()
     sol, stats = CoolPDLP.solve(milp, algo)
-    @test stats.termination_status == MOI.OPTIMAL
+    @test termination_status(stats) == MOI.OPTIMAL
 end
 
 @testset "Termination statuses" begin
@@ -21,11 +22,11 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         _, stats = solve(milp, alg(; termination_reltol = 0.0, max_kkt_passes = 200))
-        @test stats.termination_status == MOI.ITERATION_LIMIT
+        @test termination_status(stats) == MOI.ITERATION_LIMIT
         @test stats.kkt_passes >= 200
 
         _, stats = solve(milp, alg(; termination_reltol = 0.0, time_limit = 0.0))
-        @test stats.termination_status == MOI.TIME_LIMIT
+        @test termination_status(stats) == MOI.TIME_LIMIT
         @test stats.time_elapsed >= 0
     end
 end
@@ -41,7 +42,7 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         sol, stats = solve(milp, alg())
-        @test stats.termination_status == MOI.OPTIMAL
+        @test termination_status(stats) == MOI.OPTIMAL
         @test sol.x == clamp.(0.0, lv, uv)
         @test is_feasible(sol.x, milp)
         @test objective_value(sol.x, milp) == 0
@@ -59,7 +60,7 @@ end
 
     @testset "$alg" for alg in (PDHG, PDLP)
         sol, stats = solve(milp, alg())
-        @test stats.termination_status == MOI.OPTIMAL
+        @test termination_status(stats) == MOI.OPTIMAL
         @test !any(isnan, sol.x)
         @test sol.x == [0.0, 5.0, 0.0]
         @test objective_value(sol.x, milp) == -5.0
@@ -82,7 +83,7 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != MOI.OPTIMAL
+        @test termination_status(stats) != MOI.OPTIMAL
     end
 
     @testset "unbounded direction (c[1] > 0, lv[1] == -Inf)" begin
@@ -91,7 +92,7 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != MOI.OPTIMAL
+        @test termination_status(stats) != MOI.OPTIMAL
     end
 
     @testset "unbounded direction (c[1] < 0, uv[1] == Inf)" begin
@@ -100,6 +101,60 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test stats.termination_status != MOI.OPTIMAL
+        @test termination_status(stats) != MOI.OPTIMAL
+    end
+end
+
+@testset "Error history" begin
+    Random.seed!(0)
+    milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
+    check_every, max_kkt_passes = 10, 100
+
+    @testset "$alg" for alg in (PDHG, PDLP)
+        algo = alg(;
+            termination_reltol = 0.0, check_every, max_kkt_passes,
+            record_error_history = true,
+        )
+        _, stats = solve(milp, algo)
+        history = stats.error_history
+
+        # the history is actually recorded, not left at its single seed entry
+        @test length(history) > 1
+        @test length(history) == 1 + div(max_kkt_passes, check_every)
+
+        passes, errors = first.(history), last.(history)
+
+        # it is indexed by the number of KKT passes, starting at the initial point
+        @test first(passes) == 0
+        @test issorted(passes)
+        @test last(passes) == stats.kkt_passes
+
+        recorded = map(CoolPDLP.relative, errors)
+
+        # the seed is the initial point, whose errors must be filled in rather than left NaN
+        @test all(isfinite, recorded)
+        # the history must not be the same value repeated: it tracks an evolving quantity
+        @test first(recorded) != last(recorded)
+        # the last entry reflects the errors the algorithm actually terminated on
+        @test last(recorded) == CoolPDLP.relative(stats.err)
+
+        # every entry is an independent snapshot: mutating the live errors afterwards, as
+        # `kkt_errors!` does on every check, must not rewrite what was already recorded
+        @test all(err -> err !== stats.err, errors)
+        @test allunique(map(objectid, errors))
+        stats.err.primal += 1
+        @test map(CoolPDLP.relative, last.(stats.error_history)) == recorded
+    end
+
+    @testset "disabled: $alg" for alg in (PDHG, PDLP)
+        algo = alg(;
+            termination_reltol = 0.0, check_every, max_kkt_passes,
+            record_error_history = false,
+        )
+        _, stats = solve(milp, algo)
+        # only the seed entry survives, and it is still a usable snapshot
+        @test length(stats.error_history) == 1
+        @test first(first(stats.error_history)) == 0
+        @test isfinite(CoolPDLP.relative(last(first(stats.error_history))))
     end
 end

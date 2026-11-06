@@ -1,6 +1,6 @@
 using CoolPDLP
 using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
-    nbinstances, preprocess, relative, step!
+    nbinstances, preprocess, relative, step!, termination_status
 using GPUArraysCore: @allowscalar
 using Random
 using Test
@@ -91,7 +91,7 @@ function test_batching(
             algo_solve = alg(T, Int, matrix_type; backend, max_kkt_passes = 200)
             sol, stats = solve(milp_id, algo_solve)
             sol_single, stats_single = solve(milps[1], algo_solve)
-            @test stats.termination_status == stats_single.termination_status
+            @test termination_status(stats) == termination_status(stats_single)
             x, x_single = Array(sol.x), Array(sol_single.x)
             obj_single = objective_value(x_single, milps[1])
             for i in 1:nbatch

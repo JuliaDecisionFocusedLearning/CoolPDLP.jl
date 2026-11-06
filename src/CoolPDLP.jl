@@ -10,6 +10,7 @@ using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
+using ReactantCore: @trace, within_compile
 using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
@@ -66,6 +67,7 @@ export preprocess, initialize, solve, solve!
 export PDHG, PDLP
 @public Algorithm
 @public KKTErrors, relative
+@public termination_status
 export is_feasible, objective_value
 
 @public Optimizer

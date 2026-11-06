@@ -1,6 +1,7 @@
 using CoolPDLP
 using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
-    nbinstances, prog_showvalues, relative, restart!, restart_check!, step!
+    nbinstances, prog_showvalues, relative, restart!, restart_check!, step!,
+    termination_status
 using Random
 using Test
 
@@ -138,7 +139,7 @@ end
             sol, stats = solve(milp_id, sol_id, algo)
             sol_single, stats_single = solve(milps[1], sols[1], algo)
             @test stats.kkt_passes == stats_single.kkt_passes
-            @test stats.termination_status == stats_single.termination_status
+            @test termination_status(stats) == termination_status(stats_single)
             for i in 1:NBATCH
                 @test sol.x[:, i] ≈ sol_single.x
                 @test stats.err.primal[i] ≈ stats_single.err.primal
