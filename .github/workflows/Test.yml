@@ -44,11 +44,17 @@ jobs:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
+      # Only the current release reports coverage. Julia 1.10 emits a coverage slot for the
+      # simulator method `@stable` generates, which is only ever inferred and never run, so
+      # the signature line of every stabilized function comes back uncovered. Julia 1.12 no
+      # longer emits that slot, and a zero from the 1.10 upload would outvote it.
       - uses: julia-actions/julia-runtest@v1
         with:
-          coverage: ${{ matrix.group != 'Perf' }}
+          coverage: ${{ matrix.group != 'Perf' && matrix.version == '1' }}
       - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.group != 'Perf' && matrix.version == '1'
       - uses: codecov/codecov-action@v7
+        if: matrix.group != 'Perf' && matrix.version == '1'
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
