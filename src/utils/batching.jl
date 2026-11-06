@@ -16,13 +16,13 @@ instance_vec(v::AbstractVector, ::Int) = v
 instance_vec(m::AbstractMatrix, i::Int) = view(m, :, i)
 
 """
-    BatchedNumber{T}
+    BatchedNumber
 
-Equivalent to `Union{T, AbstractVector{T}}` for a number type `T`. Represents a quantity which is scalar without batching, and holds one value per instance otherwise.
+Equivalent to `Union{Number, AbstractVector{<:Number}}`. Represents a quantity which is scalar without batching, and holds one value per instance otherwise.
 
 Combine such quantities with `BangBang.broadcast!!(f, dest, args...)`, which writes into `dest` when batched and returns a fresh number otherwise, so the result must always be used.
 """
-const BatchedNumber{T <: Number} = Union{T, AbstractVector{T}}
+const BatchedNumber = Union{Number, AbstractVector{<:Number}}
 
 """
     batched_expand(x, val)
