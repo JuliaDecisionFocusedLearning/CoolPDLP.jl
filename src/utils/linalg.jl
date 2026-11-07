@@ -5,6 +5,23 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
+# The formats implement `sparse_mul!`, and `mul!` forwards to it with the formats' own narrow
+# signatures (a broader one would be ambiguous with LinearAlgebra's generic `mul!`).
+for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
+    @eval begin
+        function LinearAlgebra.mul!(
+                c::DenseVector{T}, A::$M{T}, b::DenseVector{T}, α::Number, β::Number
+            ) where {T <: Number}
+            return sparse_mul!(c, A, b, α, β)
+        end
+        function LinearAlgebra.mul!(
+                c::DenseMatrix{T}, A::$M{T}, b::DenseMatrix{T}, α::Number, β::Number
+            ) where {T <: Number}
+            return sparse_mul!(c, A, b, α, β)
+        end
+    end
+end
+
 """
     sametype_transpose(A::AbstractMatrix)
 
@@ -205,3 +222,11 @@ mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
 
 indtype(::AbstractSparseMatrix{T, Ti}) where {T, Ti} = Ti
+
+"""
+    sparse_mul!(c, A, b, α, β)
+
+Kernel-launching body of `mul!` for the formats in [`GPUSparseMatrix`](@ref). Kept separate so
+that the Reactant extension's overlay of `mul!` can reach it without calling `mul!` again.
+"""
+function sparse_mul! end

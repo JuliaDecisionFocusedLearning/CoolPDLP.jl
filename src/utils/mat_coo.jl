@@ -73,7 +73,7 @@ end
     Atomix.@atomic c[i] += α * v * b[j]
 end
 
-function LinearAlgebra.mul!(
+function sparse_mul!(
         c::V,
         A::GPUSparseMatrixCOO{T, Ti, V},
         b::V,
@@ -109,7 +109,7 @@ end
     Atomix.@atomic c[i, batch_idx] += α * v * b[j, batch_idx]
 end
 
-function LinearAlgebra.mul!(
+function sparse_mul!(
         c::DenseMatrix{T},
         A::GPUSparseMatrixCOO{T},
         b::DenseMatrix{T},
