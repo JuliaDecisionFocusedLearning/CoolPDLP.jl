@@ -1,10 +1,8 @@
 module CoolPDLPReactantExt
 
-using Adapt: Adapt, adapt
 using CoolPDLP: CoolPDLP
-using KernelAbstractions: KernelAbstractions, get_backend
 using LinearAlgebra: LinearAlgebra
-using Reactant: Reactant, TracedRArray, TracedRNumber, @reactant_overlay
+using Reactant: Reactant, @reactant_overlay
 
 # A sparse matrix's shape and pattern are structure, and so are the generic parameters: with a
 # traced `check_every`, the inner loop of `solve!` has a dynamic trip count, and XLA reads its
@@ -37,105 +35,24 @@ function Reactant.make_tracer(
     )
 end
 
-# Reactant's own `mul!` overlays lower the product to a dense `dot_general`, which a sparse
-# format cannot serve, so these send it back to the format's kernels.
-@reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractVecOrMat, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat, α::Number, β::Number
-    )
-    return native_mul!(c, A, b, α, β)
-end
-
-@reactant_overlay function LinearAlgebra.mul!(
-        c::AbstractVecOrMat, A::CoolPDLP.GPUSparseMatrix, b::AbstractVecOrMat
-    )
-    return native_mul!(c, A, b, true, false)
-end
-
-"""
-    KernelArray
-
-Array whose kernels Reactant keeps compiling, even when they are launched by native dispatch.
-"""
-struct KernelArray{T, N, A <: AbstractArray{T, N}} <: DenseArray{T, N}
-    data::A
-end
-
-Base.size(x::KernelArray) = size(x.data)
-Base.IndexStyle(::Type{<:KernelArray}) = Base.IndexLinear()
-Base.@propagate_inbounds Base.getindex(x::KernelArray, i::Int) = x.data[i]
-Base.@propagate_inbounds Base.setindex!(x::KernelArray, v, i::Int) = (x.data[i] = v)
-# an `Atomix.@atomic` update takes a pointer to the element
-Base.pointer(x::KernelArray) = pointer(x.data)
-Base.pointer(x::KernelArray, i::Integer) = pointer(x.data, i)
-
-Adapt.adapt_structure(to, x::KernelArray) = KernelArray(adapt(to, x.data))
-
-"""
-    Wrap
-
-Adaptor putting every traced array in a [`KernelArray`](@ref).
-"""
-struct Wrap end
-
-Adapt.adapt_structure(::Wrap, x::TracedRArray) = KernelArray(x)
-
-"""
-    NativeLaunch
-
-Backend of a [`KernelArray`](@ref), which hands its kernel launches back to Reactant.
-
-[`native_mul!`](@ref) reaches the format's own `mul!` through `Reactant.call_with_native`, because
-Reactant resolves every call — `invoke` included — through its overlay table, and would otherwise
-catch `mul!` again. Native dispatch then sends the launch to the plain `KernelAbstractions`
-method, which nests a `Reactant.@jit` and fails on arguments that are already traced.
-"""
-struct NativeLaunch{B <: KernelAbstractions.GPU} <: KernelAbstractions.GPU
-    backend::B
-end
-
-KernelAbstractions.get_backend(x::KernelArray) = NativeLaunch(get_backend(x.data))
-
-function (kernel::KernelAbstractions.Kernel{NativeLaunch{B}, W, N, F})(
-        args...; ndrange = nothing, workgroupsize = nothing
-    ) where {B, W, N, F}
-    (; backend) = kernel.backend
-    inner = KernelAbstractions.Kernel{B, W, N, F}(backend, kernel.f)
-    return Reactant.call_with_reactant(
-        Reactant.ka_with_reactant, ndrange, workgroupsize, inner, args...
-    )
-end
-
-"""
-    scale!!(c, β)
-
-Multiply `c` by `β` in place, so that its product can be run with a static `β = true`.
-
-A format scales its destination itself, but only after branching on `iszero(β)` and `isone(β)`,
-which a traced `β` cannot answer, and through a `fill!` or a broadcast that a
-[`KernelArray`](@ref) would serve one element at a time.
-"""
-function scale!!(c::AbstractArray, β::Number)
-    if !(β isa TracedRNumber) && iszero(β)
-        fill!(c, false)
-    elseif !(β isa TracedRNumber) && isone(β)
-        c
-    else
-        c .= β .* c
+# Reactant's generic `mul!` overlays cannot serve a sparse format: they recurse until the stack
+# overflows. These are strictly more specific than each of them (same bounds on `c` and `b`, a
+# narrower `A`), so they are the ones selected. They call `sparse_mul!` rather than `mul!`, so
+# the format's KernelAbstractions kernels are still launched under Reactant, through its
+# `ReactantBackend`, instead of natively (which would nest a `Reactant.@jit` on traced
+# arguments). This path needs CUDA.jl loaded, on every backend, because Reactant defines
+# `ka_with_reactant` in its CUDA extension.
+for (cT, bT) in ((:AbstractVector, :AbstractVector), (:AbstractMatrix, :AbstractVecOrMat))
+    @eval begin
+        @reactant_overlay function LinearAlgebra.mul!(
+                c::$cT, A::CoolPDLP.GPUSparseMatrix, b::$bT, α::Number, β::Number
+            )
+            return CoolPDLP.sparse_mul!(c, A, b, α, β)
+        end
+        @reactant_overlay function LinearAlgebra.mul!(c::$cT, A::CoolPDLP.GPUSparseMatrix, b::$bT)
+            return CoolPDLP.sparse_mul!(c, A, b, true, false)
+        end
     end
-    return c
-end
-
-"""
-    native_mul!(c, A, b, α, β)
-
-Run the ordinary `mul!` of `A`, with its kernels launched by Reactant.
-"""
-function native_mul!(c::AbstractVecOrMat, A, b::AbstractVecOrMat, α::Number, β::Number)
-    scale!!(c, β)
-    Reactant.call_with_native(
-        LinearAlgebra.mul!, adapt(Wrap(), c), adapt(Wrap(), A), adapt(Wrap(), b), α, true
-    )
-    return c
 end
 
 """
@@ -153,6 +70,18 @@ Uses `fill!` because CUDA.jl refuses `out[1] = ...` on a device buffer.
 write_time!(out::AbstractVector{Float64}) = (fill!(out, time()); nothing)
 
 """
+    closure_cfunctions_supported()
+
+Whether this Julia can build the closure `@cfunction` that `Reactant.Ops.julia_callback` uses.
+
+Mirrors the check in Julia's codegen (`src/codegen.cpp`, unchanged from 1.10 to 1.13): closure
+cfunctions need LLVM trampolines, and are refused on AArch64, 32-bit ARM and PPC64 targets,
+where tracing a callback fails with "cfunction: closures are not supported on this platform".
+"""
+closure_cfunctions_supported() =
+    !(Sys.ARCH === :aarch64 || Sys.ARCH === :powerpc64le || startswith(String(Sys.ARCH), "arm"))
+
+"""
     host_callbacks_supported()
 
 Whether `Reactant.Ops.julia_callback` can be serviced on the backend currently in use.
@@ -164,6 +93,7 @@ stopping the run, so an unusable callback surfaces as a hang rather than as an e
 not to emit one at all.
 """
 function host_callbacks_supported()
+    closure_cfunctions_supported() || return false
     platform = lowercase(Reactant.XLA.platform_name(Reactant.XLA.default_backend()))
     platform == "cpu" && return true
     platform == "cuda" && return Reactant.is_extension_loaded(Val(:CUDA))
@@ -181,9 +111,9 @@ else about a compiled solve still works, and the KKT pass budget still bounds it
 """
 function frozen_clock()
     @warn """
-    This Reactant backend cannot run a host callback, so the elapsed time inside a compiled \
-    solve stays frozen at its compilation-time value and `time_limit` will not be enforced. \
-    Loading CUDA.jl lifts this on the CUDA backend.""" maxlog = 1
+    This platform or Reactant backend cannot run a host callback, so the elapsed time inside \
+    a compiled solve stays frozen at its compilation-time value and `time_limit` will not be \
+    enforced. On an x86_64 machine, loading CUDA.jl lifts this on the CUDA backend.""" maxlog = 1
     return time()
 end
 

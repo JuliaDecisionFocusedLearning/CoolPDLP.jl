@@ -91,7 +91,7 @@ end
     c[i] = α * s + β * c[i]
 end
 
-function LinearAlgebra.mul!(
+function sparse_mul!(
         c::V,
         A::GPUSparseMatrixCSR{T, Ti, V},
         b::V,
@@ -133,7 +133,7 @@ end
     c[i, batch_idx] = α * s + β * c[i, batch_idx]
 end
 
-function LinearAlgebra.mul!(
+function sparse_mul!(
         c::DenseMatrix{T},
         A::GPUSparseMatrixCSR{T},
         b::DenseMatrix{T},
