@@ -105,6 +105,56 @@ end
     @test norm(A * (c - u)) <= 1.0e-8 * (1 + norm(b))
 end
 
+@testset "dual activity keeps the bound x sits on" begin
+    # x₁ is at its lower bound, but its reduced cost is negative, so
+    # `_bound_side` would retag it upper. The ratio test must keep the lower side.
+    milp = toy_lp()
+    st = CoolPDLP._lift_boxed(milp, [0.0, 0.4], [0.0])
+    st.zero_tol = 1.0e-8
+    st.basis[1] = CoolPDLP._AT_LB
+    CoolPDLP._update_reduced_costs!(st)
+    @test st.z[1] < 0
+    @test CoolPDLP._bound_side(st.z[1], st.lv[1], st.uv[1]) == CoolPDLP._AT_UB
+    CoolPDLP._cal_dual_active!(st)
+    @test st.basis[1] == CoolPDLP._AT_LB
+end
+
+@testset "stats describe the point after the crossover" begin
+    milp = toy_lp()
+    algo = PDLP(; PDLP_XOVER...)
+    sol, stats = solve(milp, algo)
+    milp_s, sol_s = preprocess(milp, PrimalDualSolution(Array(sol.x), Array(sol.y)), algo)
+    err = CoolPDLP.KKTErrors(sol_s)
+    CoolPDLP.kkt_errors!(err, CoolPDLP.Scratch(sol_s), sol_s, milp_s)
+    @test err ≈ stats.err
+    @test stats.time_elapsed > 0
+end
+
+@testset "a batch shares one time budget" begin
+    milp = toy_lp()
+    # Within `zero_tol` of the lower bound: entering the crossover snaps it there,
+    # even when the budget is already spent. A second instance must not be entered.
+    x = [1.0e-12, 0.3]
+    y = [0.0]
+    sol1 = PrimalDualSolution(copy(x), copy(y))
+    crossover!(sol1, milp, SpiralCrossover{Float64}(); time_limit = 0.0, zero_tol = 1.0e-8)
+    @test sol1.x[1] == 0.0
+
+    nbatch = 2
+    milp_b = MILP(;
+        c = repeat(milp.c, 1, nbatch),
+        lv = repeat(milp.lv, 1, nbatch),
+        uv = repeat(milp.uv, 1, nbatch),
+        A = milp.A,
+        lc = repeat(milp.lc, 1, nbatch),
+        uc = repeat(milp.uc, 1, nbatch),
+    )
+    sol = PrimalDualSolution(repeat(x, 1, nbatch), repeat(y, 1, nbatch))
+    crossover!(sol, milp_b, SpiralCrossover{Float64}(); time_limit = 0.0, zero_tol = 1.0e-8)
+    @test sol.x[:, 2] == x
+    @test sol.y[:, 2] == y
+end
+
 @testset "crossover keeps the eltype asked of PDLP" begin
     milp = CoolPDLP.set_eltype(Float32, toy_lp())
     st = CoolPDLP._lift_boxed(milp, fill(Float32(0.5), 2), Float32[1.5])

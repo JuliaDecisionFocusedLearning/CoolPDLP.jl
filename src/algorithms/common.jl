@@ -258,6 +258,10 @@ function solve(
                 reltol = algo.termination.termination_reltol,
                 time_limit = remain,
             )
+            # The point may have moved. The clock and the residuals follow it.
+            # The status stays the one that admitted the crossover.
+            state.stats.time_elapsed = current_time() - state.stats.starting_time
+            kkt_errors!(state.stats.err, state.scratch, state.sol, milp)
         end
     end
     return get_solution(state, milp), state.stats

@@ -6,7 +6,9 @@ algorithm eltype `T`, then a basis. Each ray is a column-pivoted QR of the
 active columns, so a consistent right-hand side stays in their kernel.
 `PDLP(Float32)` stays in `Float32`; the default `PDLP()` stays in `Float64`.
 `solve` calls it only when the status is `OPTIMAL` and
-`time_limit - time_elapsed > 0`. That remainder is one budget for every ray.
+`time_limit - time_elapsed > 0`. That remainder is one budget for every ray
+and for every instance of a batch. `solve` then refreshes the elapsed time
+and the KKT residuals; the status stays the one that admitted the crossover.
 Relative stops use `termination_reltol`. Comparisons to zero use `zero_tol`.
 The candidate is written when its primal violation is finite and at most
 `max(termination_reltol, violation of the incoming point)`. Otherwise the

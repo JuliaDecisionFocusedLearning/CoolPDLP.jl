@@ -97,7 +97,12 @@ function _primal_push!(st::_SpiralState, cx::SpiralCrossover, rng)
     return st
 end
 
-"""Mark dual-active columns (near-zero reduced cost on free / one-sided vars)."""
+"""
+Mark dual-active columns (near-zero reduced cost on free / one-sided vars).
+
+The bound side of a nonbasic column stays the one chosen from where `x` sits.
+Retagging it from the sign of the reduced cost would flip [`_dual_ratio`](@ref).
+"""
 function _cal_dual_active!(st::_SpiralState)
     ε = st.zero_tol
     st.n_dual_active_last = st.n_dual_active
@@ -113,7 +118,6 @@ function _cal_dual_active!(st::_SpiralState)
         else
             active |= abs(s) <= ε
         end
-        st.basis[j] != _BASIC && _demote!(st, j)
         st.dual_active[j] = active
     end
     st.n_dual_active = count(st.dual_active)

@@ -168,9 +168,10 @@ end
 """
     crossover!(sol, milp, cx::SpiralCrossover; zero_tol=1e-8, reltol=1e-4, time_limit=Inf)
 
-Batched MILP: serial per [`instance`](@ref). `time_limit` is the budget left
-on the solve clock. Every ray shares it. `zero_tol` and `reltol` are the
-algorithm `zero_tol` and `termination_reltol`; the defaults match `PDLP()`.
+Batched MILP: serial per [`instance`](@ref). `time_limit` is one budget for
+the whole batch: a later instance only sees what is left. `zero_tol` and
+`reltol` are the algorithm `zero_tol` and `termination_reltol`; the defaults
+match `PDLP()`.
 The candidate is the basic solution when `x_B` lies within the bounds, and
 the point after the pushes otherwise. It is written when its primal
 violation is finite and at most `max(reltol, violation of the incoming
@@ -183,8 +184,15 @@ function crossover!(
         time_limit::Real = Inf,
     )
     if isbatched(milp)
+        # One clock for the whole batch. A spent budget keeps the later PDLP points.
+        deadline = current_time() + Float64(time_limit)
         for i in 1:nbinstances(milp)
-            crossover!(instance(sol, i), instance(milp, i), cx; zero_tol, reltol, time_limit)
+            remain = deadline - current_time()
+            remain > 0 || break
+            crossover!(
+                instance(sol, i), instance(milp, i), cx;
+                zero_tol, reltol, time_limit = remain,
+            )
         end
         return sol
     end
