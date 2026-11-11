@@ -191,7 +191,7 @@ function crossover!(
     n, m = nbvar(milp), nbcons(milp)
     m == 0 && return sol
 
-    t0, limit = time(), Float64(time_limit)
+    t0, limit = current_time(), Float64(time_limit)
     try
         viol0 = Float64(_scaled_violation(milp, sol.x))
         st = _push_once!(milp, sol, cx, zero_tol; t0, limit)

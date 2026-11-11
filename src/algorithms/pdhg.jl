@@ -23,19 +23,19 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDHGState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
-        Sc <: Scratch{T, V, S},
+        T <: Number, V <: AbstractVecOrMat{T},
+        SS <: StepSizes, Sc <: Scratch, CS <: ConvergenceStats,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
     "last solution"
     sol_last::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{S}
+    step_sizes::SS
     "scratch space"
     scratch::Sc
     "convergence stats"
-    stats::ConvergenceStats{S}
+    stats::CS
 end
 
 nbinstances((; sol)::PDHGState) = nbinstances(sol)
@@ -52,7 +52,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDHG, T};
+        algo::Algorithm{:PDHG};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
@@ -60,7 +60,10 @@ function initialize(
     ω = batched_expand(sol.x, one(T))
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
-    stats = ConvergenceStats(KKTErrors(sol); starting_time)
+    # the error history is seeded with the starting point, so its errors must be filled already
+    err = KKTErrors(sol)
+    kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
+    stats = ConvergenceStats(err; starting_time)
     state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
     return state
 end
@@ -70,18 +73,16 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDHG}
     )
-    prog = ProgressUnknown(desc = "PDHG iterations:", enabled = algo.generic.show_progress)
-    while true
-        yield()
-        for _ in 1:algo.generic.check_every
+    prog = init_progress("PDHG iterations:", algo.generic.show_progress)
+    must_terminate = false
+    @trace while !must_terminate
+        @trace for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = () -> prog_showvalues(state))
+            next_progress!(prog, state)
         end
-        if termination_check!(state, milp, algo)
-            break
-        end
+        must_terminate = termination_check!(state, milp, algo)
     end
-    finish!(prog)
+    finish_progress!(prog)
     return state
 end
 

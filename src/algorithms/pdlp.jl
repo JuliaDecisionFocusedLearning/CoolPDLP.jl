@@ -18,8 +18,13 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef mutable struct PDLPState{
-        T <: Number, V <: AbstractVecOrMat{T}, S <: BatchedNumber{T},
-        B <: BatchedNumber{Bool}, Sc <: Scratch{T, V, S},
+        T <: Number,
+        V <: AbstractVecOrMat{T},
+        SS <: StepSizes,
+        Sc <: Scratch,
+        It <: IterationCounter,
+        RS <: RestartStats,
+        CS <: ConvergenceStats,
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -32,15 +37,15 @@ $(TYPEDFIELDS)
     "solution from last restart"
     sol_restart::PrimalDualSolution{T, V}
     "step sizes"
-    step_sizes::StepSizes{S}
+    step_sizes::SS
     "scratch space"
     scratch::Sc
     "iteration counter"
-    iteration::IterationCounter
+    iteration::It
     "restart stats"
-    restart_stats::RestartStats{S, B}
+    restart_stats::RS
     "convergence stats"
-    stats::ConvergenceStats{S}
+    stats::CS
 end
 
 nbinstances((; sol)::PDLPState) = nbinstances(sol)
@@ -62,7 +67,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDLP, T};
+        algo::Algorithm{:PDLP};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
@@ -75,14 +80,16 @@ function initialize(
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(sol)
-    stats = ConvergenceStats(KKTErrors(sol); starting_time)
+    # The error history is seeded with the starting point, and `restart_check!` reads the errors
+    # of the restart point without recomputing them, so both must be filled already.
+    err = KKTErrors(sol)
+    kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
+    restart_stats.err_restart = copy(err)
+    stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
         step_sizes, scratch, iteration, restart_stats, stats
     )
-    # `restart_check!` reads the errors of the restart point without recomputing them, so
-    # they must be filled for the starting point already
-    kkt_errors!(restart_stats.err_restart, scratch, sol, milp)
     return state
 end
 
@@ -91,20 +98,19 @@ function solve!(
         milp::MILP,
         algo::Algorithm{:PDLP}
     )
-    prog = ProgressUnknown(desc = "PDLP iterations:", enabled = algo.generic.show_progress)
-    while true
-        yield()
-        for _ in 1:algo.generic.check_every
+    prog = init_progress("PDLP iterations:", algo.generic.show_progress)
+    must_terminate = false
+    @trace while !must_terminate
+        @trace for _ in 1:algo.generic.check_every
             step!(state, milp)
-            next!(prog; showvalues = () -> prog_showvalues(state))
+            next_progress!(prog, state)
         end
-        if termination_check!(state, milp, algo)
-            break
-        elseif restart_check!(state, milp, algo)
+        must_terminate = termination_check!(state, milp, algo)
+        @trace if !must_terminate & restart_check!(state, milp, algo)
             restart!(state, algo)
         end
     end
-    finish!(prog)
+    finish_progress!(prog)
     return state
 end
 
@@ -150,6 +156,16 @@ function update_average!(state::PDLPState)
     return nothing
 end
 
+"""
+    restart_check!(state, milp, algo)
+
+Refresh the restart statistics of `state` and decide whether the next iteration should restart.
+
+Pick the better of the current and averaged iterates as the restart candidate, record which one
+it was (column by column) in `state.restart_stats.restart_from_avg`, and return the decision of
+[`should_restart`](@ref): a single boolean for the whole batch, which is what [`restart!`](@ref)
+is guarded by.
+"""
 function restart_check!(
         state::PDLPState,
         milp::MILP,
@@ -199,6 +215,11 @@ function best_error!!(
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 
+"""
+    restart!(state, algo)
+
+Restart the PDLP iterations from the candidate selected by [`restart_check!`](@ref).
+"""
 function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
     (;
         sol, sol_avg, sol_restart,

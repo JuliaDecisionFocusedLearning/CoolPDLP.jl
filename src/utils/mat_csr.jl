@@ -7,7 +7,7 @@ $(TYPEDFIELDS)
 """
 struct GPUSparseMatrixCSR{
         T <: Number,
-        Ti <: Integer,
+        Ti <: Number,  # not `<: Integer`: traced indices are `TracedRNumber`s
         V <: DenseVector{T},
         Vi <: DenseVector{Ti},
     } <: AbstractSparseMatrix{T, Ti}

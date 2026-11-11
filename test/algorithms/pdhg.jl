@@ -1,4 +1,5 @@
 using CoolPDLP
+using CoolPDLP: termination_status
 import MathOptInterface as MOI
 using SparseArrays
 using Test
@@ -34,7 +35,7 @@ end
     )
     state.step_sizes.η = 0.05
     solve!(state, milp, algo)
-    @test state.stats.termination_status == MOI.OPTIMAL
+    @test termination_status(state.stats) == MOI.OPTIMAL
     @test state.stats.kkt_passes == 3235
     @test Array(state.sol.x) ≈ [0.0, 0.5] atol = 1.0e-6
     @test Array(state.sol.y) ≈ [1.5] atol = 1.0e-6

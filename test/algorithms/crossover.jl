@@ -1,4 +1,5 @@
 using CoolPDLP
+using CoolPDLP: termination_status
 import MathOptInterface as MOI
 using LinearAlgebra
 using SparseArrays
@@ -33,7 +34,7 @@ end
     milp = toy_lp()
     sol, stats = solve(milp, PDLP(; PDLP_XOVER...))
     x = Array(sol.x)
-    @test stats.termination_status == MOI.OPTIMAL
+    @test termination_status(stats) == MOI.OPTIMAL
     @test n_interior(x, milp) <= nbcons(milp)
     @test isapprox(objective_value(x, milp), -1.0; atol = 1.0e-4)
     @test is_feasible(x, milp; cons_tol = 1.0e-4, verbose = false)
@@ -44,8 +45,8 @@ end
     # OPTIMAL is decided before the clock, so a spent limit can still be optimal.
     sol0, stats0 = solve(milp, PDLP(; PDLP_XOVER..., time_limit = 0.0))
     sol1, stats1 = solve(milp, PDLP(; PDLP_XOVER..., time_limit = 1.0))
-    @test stats0.termination_status == MOI.OPTIMAL
-    @test stats1.termination_status == MOI.OPTIMAL
+    @test termination_status(stats0) == MOI.OPTIMAL
+    @test termination_status(stats1) == MOI.OPTIMAL
     @test n_interior(sol0.x, milp) > n_interior(sol1.x, milp)
 end
 
@@ -59,7 +60,7 @@ end
             show_progress = false,
         ),
     )
-    @test stats.termination_status != MOI.OPTIMAL
+    @test termination_status(stats) != MOI.OPTIMAL
     @test all(isfinite, sol.x)
 end
 
@@ -110,7 +111,7 @@ end
     @test eltype(st.A) == Float32
     @test eltype(st.x) == Float32
     sol, stats = solve(milp, PDLP(Float32; PDLP_XOVER..., termination_reltol = 1.0f-4))
-    @test stats.termination_status == MOI.OPTIMAL
+    @test termination_status(stats) == MOI.OPTIMAL
     @test eltype(sol.x) == Float32
     @test eltype(sol.y) == Float32
 end

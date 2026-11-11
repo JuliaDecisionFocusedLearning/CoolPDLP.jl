@@ -22,13 +22,13 @@ mutable struct _SpiralState{T <: AbstractFloat}
     b_work::Vector{T}
     c_work::Vector{T}
     zero_tol::T                 # = Algorithm `zero_tol`
-    deadline::Float64           # absolute `time()`; `Inf` = no limit
+    deadline::Float64           # absolute `current_time()`; `Inf` = no limit
 end
 
 _recount_basics!(st::_SpiralState) = (st.n_basis = count(==(_BASIC), st.basis); st)
 
 """True when `time_limit` elapsed (soft stop between pushes / stages)."""
-_time_up(st::_SpiralState) = time() >= st.deadline
+_time_up(st::_SpiralState) = current_time() >= st.deadline
 
 """Map reduced cost / bounds → nonbasic side (`_BASIC` if free)."""
 function _bound_side(zj, l, u)
