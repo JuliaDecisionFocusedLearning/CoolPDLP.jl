@@ -1,7 +1,9 @@
+using CUDA  # Reactant compiles KernelAbstractions kernels through CUDA.jl, on any backend
 using CoolPDLP
 using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
     KKTErrors, termination_status
 import MathOptInterface as MOI
+using LinearAlgebra
 using MathOptBenchmarkInstances
 using Reactant
 using Reactant: to_rarray
@@ -55,6 +57,50 @@ trace_fields(A) = sum(A.nzval) + sum(A.colval)
         expected = sum(A.nzval) + sum(A.colval)
         compiled = @compile trace_fields(A_r)
         @test unwrap(compiled(A_r)) ≈ expected
+    end
+end
+
+const TRACED_ARGTYPES = Ref{Any}()
+
+function mul5!(c, A, b, α, β)
+    TRACED_ARGTYPES[] = (typeof(c), typeof(A), typeof(b))
+    return mul!(c, A, b, α, β)
+end
+mul3!(c, A, b) = mul!(c, A, b)
+
+"""
+    overlay_method(argtypes...)
+
+Return the `mul!` method that Reactant selects, through its overlay table, for `argtypes`.
+"""
+function overlay_method(argtypes...)
+    CC = isdefined(Base, :Compiler) ? Base.Compiler : Core.Compiler
+    table = CC.OverlayMethodTable(Base.get_world_counter(), Reactant.REACTANT_METHOD_TABLE)
+    return Base._which(Tuple{typeof(mul!), argtypes...}; method_table = table).method
+end
+
+# the kernels of the sparse formats are compiled through CUDA.jl, even on the CPU backend
+@testset verbose = true "Compiled sparse products" begin
+    A_cpu = sprandn(StableRNG(0), 24, 16, 0.3)
+    α, β = 0.7, 0.3
+    @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
+        A_r = to_rarray(M(A_cpu); track_numbers = true)
+        @testset "$(ndims(b)) dimensions" for b in (randn(16), randn(16, 3))
+            c0 = randn(24, size(b)[2:end]...)
+            b_r, c_r = to_rarray(b), to_rarray(copy(c0))
+            compiled = @compile mul5!(c_r, A_r, b_r, α, β)
+            compiled(c_r, A_r, b_r, α, β)
+            @test Array(c_r) ≈ α * (A_cpu * b) + β * c0
+            compiled = @compile mul3!(c_r, A_r, b_r)
+            compiled(c_r, A_r, b_r)
+            @test Array(c_r) ≈ A_cpu * b
+            # the extension's overlay must be the one selected: with an ambiguity, Reactant
+            # falls back to the format's own `mul!` without any error
+            argtypes = TRACED_ARGTYPES[]
+            ext = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
+            @test parentmodule(overlay_method(argtypes..., Float64, Float64)) === ext
+            @test parentmodule(overlay_method(argtypes...)) === ext
+        end
     end
 end
 
@@ -202,6 +248,30 @@ sol_batch = PrimalDualSolution(milp_batch)
     end
 
     test_agreement(state, state_r; rtol)
+end
+
+# the custom sparse formats go through the extension's `mul!` overlay rather than a dense product
+@testset verbose = true "$A with $M" for A in (:PDHG, :PDLP),
+        M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
+
+    algo = CoolPDLP.Algorithm{A}(
+        Float64,
+        Int32,
+        M;
+        backend = nothing,
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    @testset "$name" for (name, milp_init, sol_init) in (
+            ("single", milp0, sol0), ("batched", milp_batch, sol_batch),
+        )
+        state, state_r = solve_plain_and_compiled(algo, milp_init, sol_init)
+        test_agreement(state, state_r; rtol = 1.0e-8)
+    end
 end
 
 # Reading the host clock inside a compiled program needs a Reactant callback, which not every

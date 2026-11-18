@@ -11,6 +11,8 @@ if GROUP == "cuda"
     Pkg.add(["CUDA", "cuSPARSE"])
 elseif GROUP == "metal"
     Pkg.add("Metal")
+elseif GROUP == "Reactant"
+    Pkg.add("CUDA")
 elseif GROUP == "OpenCL"
     # without a bound, the resolver keeps a recent Atomix and falls back to the broken OpenCL v0.9
     Pkg.add(name = "OpenCL", version = "0.10")
