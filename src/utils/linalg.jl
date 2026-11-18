@@ -230,8 +230,12 @@ indtype(::AbstractSparseMatrix{T, Ti}) where {T, Ti} = Ti
 
 """
     sparse_mul!(c, A, b, α, β)
+    sparse_mul!(c::AbstractMatrix, A, b::AbstractMatrix, α, β; workgroupsize = nothing)
 
 Kernel-launching body of `mul!` for the formats in [`GPUSparseMatrix`](@ref). Kept separate so
 that the Reactant extension's overlay of `mul!` can reach it without calling `mul!` again.
+
+For a batch of vectors, `workgroupsize` is passed on to the kernel launch, where `nothing` lets
+KernelAbstractions choose it.
 """
 function sparse_mul! end

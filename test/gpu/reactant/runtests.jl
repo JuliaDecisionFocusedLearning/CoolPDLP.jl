@@ -81,12 +81,16 @@ end
 
 # the kernels of the sparse formats are compiled through CUDA.jl, even on the CPU backend
 @testset verbose = true "Compiled sparse products" begin
-    A_cpu = sprandn(StableRNG(0), 24, 16, 0.3)
     α, β = 0.7, 0.3
-    @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
+    # from 1024 rows on, a batched product used to be wrong in all but its first column when
+    # CUDA.jl is not functional
+    @testset "$M with $m rows" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO),
+            (m, n, p) in ((24, 16, 0.3), (1100, 40, 0.05))
+
+        A_cpu = sprandn(StableRNG(0), m, n, p)
         A_r = to_rarray(M(A_cpu); track_numbers = true)
-        @testset "$(ndims(b)) dimensions" for b in (randn(16), randn(16, 3))
-            c0 = randn(24, size(b)[2:end]...)
+        @testset "$(ndims(b)) dimensions" for b in (randn(n), randn(n, 3))
+            c0 = randn(m, size(b)[2:end]...)
             b_r, c_r = to_rarray(b), to_rarray(copy(c0))
             compiled = @compile mul5!(c_r, A_r, b_r, α, β)
             compiled(c_r, A_r, b_r, α, β)

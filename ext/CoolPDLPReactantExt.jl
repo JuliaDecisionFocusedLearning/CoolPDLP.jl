@@ -42,15 +42,25 @@ end
 # `ReactantBackend`, instead of natively (which would nest a `Reactant.@jit` on traced
 # arguments). This path needs CUDA.jl loaded, on every backend, because Reactant defines
 # `ka_with_reactant` in its CUDA extension.
-for (cT, bT) in ((:AbstractVector, :AbstractVector), (:AbstractMatrix, :AbstractVecOrMat))
+#
+# A batched product launches a kernel over a 2D range, and gets an explicit workgroup size:
+# without one, `ka_with_reactant` skips its launch configuration when CUDA.jl is not functional
+# (e.g. on a machine without a GPU) and launches a single workgroup over the whole range, which
+# leaves every column but the first one wrong from 1024 rows on.
+const BATCH_WORKGROUPSIZE = (256, 1)
+
+for (cT, bT, kw) in (
+        (:AbstractVector, :AbstractVector, :(())),
+        (:AbstractMatrix, :AbstractVecOrMat, :((; workgroupsize = BATCH_WORKGROUPSIZE))),
+    )
     @eval begin
         @reactant_overlay function LinearAlgebra.mul!(
                 c::$cT, A::CoolPDLP.GPUSparseMatrix, b::$bT, α::Number, β::Number
             )
-            return CoolPDLP.sparse_mul!(c, A, b, α, β)
+            return CoolPDLP.sparse_mul!(c, A, b, α, β; $kw...)
         end
         @reactant_overlay function LinearAlgebra.mul!(c::$cT, A::CoolPDLP.GPUSparseMatrix, b::$bT)
-            return CoolPDLP.sparse_mul!(c, A, b, true, false)
+            return CoolPDLP.sparse_mul!(c, A, b, true, false; $kw...)
         end
     end
 end

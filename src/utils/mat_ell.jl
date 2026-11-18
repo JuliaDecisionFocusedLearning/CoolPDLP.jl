@@ -154,7 +154,8 @@ function sparse_mul!(
         A::GPUSparseMatrixELL{T},
         b::DenseMatrix{T},
         α::Number,
-        β::Number
+        β::Number;
+        workgroupsize = nothing,
     ) where {T <: Number}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
@@ -162,13 +163,13 @@ function sparse_mul!(
     α_is_one = isone(α)
     β_is_zero = iszero(β)
     if α_is_one && β_is_zero
-        kernel!(c, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c))
+        kernel!(c, A.colval, A.nzval, b, One(), Zero(); ndrange = size(c), workgroupsize)
     elseif α_is_one
-        kernel!(c, A.colval, A.nzval, b, One(), β; ndrange = size(c))
+        kernel!(c, A.colval, A.nzval, b, One(), β; ndrange = size(c), workgroupsize)
     elseif β_is_zero
-        kernel!(c, A.colval, A.nzval, b, α, Zero(); ndrange = size(c))
+        kernel!(c, A.colval, A.nzval, b, α, Zero(); ndrange = size(c), workgroupsize)
     else
-        kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(c))
+        kernel!(c, A.colval, A.nzval, b, α, β; ndrange = size(c), workgroupsize)
     end
     return c
 end
