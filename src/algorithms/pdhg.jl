@@ -97,11 +97,10 @@ end
 
 Apply one PDHG update to the iterates `sol`, in place.
 
-The extrapolation `2xp - x` is formed before `x` is overwritten, which evaluates the primal
-update twice instead of keeping the previous iterate around. Writing the new iterate into a
-second buffer and swapping the two would be free in plain Julia, but under Reactant both buffers
-would be carried through the compiled loop and trade places at each step, so XLA would copy them
-in full every time.
+The new primal iterate is formed in scratch space, used for the extrapolation `2xp - x`, then
+copied into `x`. Writing it into a second buffer and swapping the two would avoid that copy in
+plain Julia, but under Reactant both buffers would be carried through the compiled loop and trade
+places at each step, so XLA would copy them in full every time.
 """
 function pdhg_update!(
         sol::PrimalDualSolution, scratch::Scratch, step_sizes::StepSizes, milp::MILP
@@ -113,10 +112,11 @@ function pdhg_update!(
     τ = transpose(broadcast!!(/, scratch.b1, η, ω))
     σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
-    # xp = clamp.(x - τ * (c - At * y), lv, uv), written over x once 2xp - x is formed
+    # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.z, At, y)
-    xdiff = @. scratch.x = 2 * clamp(x - τ * (c - At_y), lv, uv) - x
-    @. x = clamp(x - τ * (c - At_y), lv, uv)
+    xp = @. scratch.x = clamp(x - τ * (c - At_y), lv, uv)
+    xdiff = @. scratch.z = 2xp - x
+    copyto!(x, xp)
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
