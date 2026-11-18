@@ -28,8 +28,6 @@ $(TYPEDFIELDS)
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
-    "last solution"
-    sol_last::PrimalDualSolution{T, V}
     "step sizes"
     step_sizes::SS
     "scratch space"
@@ -42,7 +40,6 @@ nbinstances((; sol)::PDHGState) = nbinstances(sol)
 function instance(state::PDHGState, i::Int)
     return PDHGState(
         instance(state.sol, i),
-        instance(state.sol_last, i),
         instance(state.step_sizes, i),
         instance(state.scratch, i),
         instance(state.stats, i),
@@ -55,7 +52,6 @@ function initialize(
         algo::Algorithm{:PDHG};
         starting_time::Float64
     ) where {T, V}
-    sol_last = zero(sol)
     η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
     ω = batched_expand(sol.x, one(T))
     step_sizes = StepSizes(; η, ω)
@@ -64,7 +60,7 @@ function initialize(
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
     stats = ConvergenceStats(err; starting_time)
-    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats)
+    state = PDHGState(; sol, step_sizes, scratch, stats)
     return state
 end
 
@@ -90,27 +86,40 @@ function step!(
         state::PDHGState{T, V},
         milp::MILP{T},
     ) where {T, V}
-    # switch pointers
-    state.sol, state.sol_last = state.sol_last, state.sol
+    (; sol, step_sizes, scratch) = state
+    pdhg_update!(sol, scratch, step_sizes, milp)
+    state.stats.kkt_passes += 1
+    return nothing
+end
 
-    (; sol, sol_last, step_sizes, scratch) = state
-    (; x, y) = sol_last
+"""
+    pdhg_update!(sol, scratch, step_sizes, milp)
+
+Apply one PDHG update to the iterates `sol`, in place.
+
+The extrapolation `2xp - x` is formed before `x` is overwritten, which evaluates the primal
+update twice instead of keeping the previous iterate around. Writing the new iterate into a
+second buffer and swapping the two would be free in plain Julia, but under Reactant both buffers
+would be carried through the compiled loop and trade places at each step, so XLA would copy them
+in full every time.
+"""
+function pdhg_update!(
+        sol::PrimalDualSolution, scratch::Scratch, step_sizes::StepSizes, milp::MILP
+    )
+    (; x, y) = sol
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
     τ = transpose(broadcast!!(/, scratch.b1, η, ω))
     σ = transpose(broadcast!!(*, scratch.b2, η, ω))
 
-    # xp = clamp.(x - τ * (c - At * y), lv, uv)
-    At_y = mul!(scratch.x, At, y)
-    @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
-    xdiff = @. scratch.x = 2sol.x - x
+    # xp = clamp.(x - τ * (c - At * y), lv, uv), written over x once 2xp - x is formed
+    At_y = mul!(scratch.z, At, y)
+    xdiff = @. scratch.x = 2 * clamp(x - τ * (c - At_y), lv, uv) - x
+    @. x = clamp(x - τ * (c - At_y), lv, uv)
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
-
-    # other updates
-    state.stats.kkt_passes += 1
-    return nothing
+    @. y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
+    return sol
 end

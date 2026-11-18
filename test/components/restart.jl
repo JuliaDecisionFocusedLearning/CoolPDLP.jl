@@ -1,7 +1,7 @@
 using CoolPDLP
 using CoolPDLP: IterationCounter, KKTErrors, RestartParameters, RestartStats, Scratch,
     absolute!!, batched_mean, batched_similar, initialize, kkt_errors!, nbinstances,
-    restart_check!, should_restart, step!
+    restart_check!, save_last!, should_restart, step!
 using Random
 using Test
 
@@ -12,9 +12,11 @@ using Test
 
     @testset "batch size $(nbinstances(milp))" for milp in (milps[1], milp_batch)
         state = initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
-        for _ in 1:20
+        for _ in 1:19
             step!(state, milp)
         end
+        save_last!(state)
+        step!(state, milp)
         restart_check!(state, milp, algo)
 
         (; restart_stats) = state
