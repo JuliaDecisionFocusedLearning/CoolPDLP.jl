@@ -28,11 +28,11 @@ $(TYPEDFIELDS)
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
-    "last solution"
+    "solution before the last step, saved by [`save_last!`](@ref) for the restart check"
     sol_last::PrimalDualSolution{T, V}
     "current average solution"
     sol_avg::PrimalDualSolution{T, V}
-    "last average solution"
+    "average solution before the last step, saved by [`save_last!`](@ref) for the restart check"
     sol_avg_last::PrimalDualSolution{T, V}
     "solution from last restart"
     sol_restart::PrimalDualSolution{T, V}
@@ -101,10 +101,15 @@ function solve!(
     prog = init_progress("PDLP iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
-        @trace for _ in 1:algo.generic.check_every
+        @trace for _ in 1:(algo.generic.check_every - 1)
             step!(state, milp)
             next_progress!(prog, state)
         end
+        # the restart check compares with the iterates before the last step, so only that step
+        # needs them saved
+        save_last!(state)
+        step!(state, milp)
+        next_progress!(prog, state)
         must_terminate = termination_check!(state, milp, algo)
         @trace if !must_terminate & restart_check!(state, milp, algo)
             restart!(state, algo)
@@ -118,27 +123,8 @@ function step!(
         state::PDLPState{T, V},
         milp::MILP{T},
     ) where {T, V}
-    # switch pointers
-    state.sol, state.sol_last = state.sol_last, state.sol
-
-    (; sol, sol_last, step_sizes, scratch) = state
-    (; x, y) = sol_last
-    (; η, ω) = step_sizes
-    (; c, lv, uv, A, At, lc, uc) = milp
-
-    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
-    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
-
-    # xp = clamp.(x - τ * (c - At * y), lv, uv)
-    At_y = mul!(scratch.x, At, y)
-    @. sol.x = clamp(x - τ * (c - At_y), lv, uv)
-    xdiff = @. scratch.x = 2sol.x - x
-
-    # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
-    A_xdiff = mul!(scratch.y, A, xdiff)
-    @. sol.y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
-
-    # other updates
+    (; sol, step_sizes, scratch) = state
+    pdhg_update!(sol, scratch, step_sizes, milp)
     state.stats.kkt_passes += 1
     update_average!(state)
     add_inner!(state.iteration)
@@ -146,13 +132,27 @@ function step!(
 end
 
 function update_average!(state::PDLPState)
-    (; sol, sol_avg, sol_avg_last, step_sizes, scratch) = state
+    (; sol, sol_avg, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
-    copy!(sol_avg_last, sol_avg)
     weight_new = broadcast!!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
     weight_avg = broadcast!!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
     axpby!(weight_new, sol, weight_avg, sol_avg)
     add_stepsize!(step_sizes)
+    return nothing
+end
+
+"""
+    save_last!(state::PDLPState)
+
+Save the current and average iterates of `state` into `sol_last` and `sol_avg_last`, which
+[`restart_check!`](@ref) compares with.
+
+Since `step!` updates the iterates in place, this must be called before the last step preceding
+a restart check. Calling it before every step instead would copy both iterates each time.
+"""
+function save_last!(state::PDLPState)
+    copy!(state.sol_last, state.sol)
+    copy!(state.sol_avg_last, state.sol_avg)
     return nothing
 end
 
