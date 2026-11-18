@@ -19,8 +19,8 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.group }}
-    runs-on: ubuntu-latest
+    name: Julia ${{ matrix.version }} - ${{ matrix.group }}${{ matrix.os == 'macos-latest' && ' (macOS)' || '' }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -28,6 +28,8 @@ jobs:
         version:
           - 'lts'
           - '1'
+        os:
+          - 'ubuntu-latest'
         group:
           - 'Core'
           - 'MOI'
@@ -37,6 +39,11 @@ jobs:
         exclude:
           - version: 'lts'
             group: 'Perf'
+        include:
+          # aarch64, where the extension cannot read the clock inside a compiled solve
+          - version: '1'
+            group: 'Reactant'
+            os: 'macos-latest'
     env:
       COOLPDLP_TEST_GROUP: ${{ matrix.group }}
     steps:
