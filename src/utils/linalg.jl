@@ -5,13 +5,18 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
-# The formats implement `sparse_mul!`, and `mul!` forwards to it with the formats' own narrow
-# signatures (a broader one would be ambiguous with LinearAlgebra's generic `mul!`).
-for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
+# The formats implement `sparse_mul!`, and `mul!` forwards to it with exactly the signatures of
+# `sparse_mul!`: a broader one would be ambiguous with LinearAlgebra's generic `mul!`, and would
+# also catch the products with mismatched storage that this generic `mul!` used to serve.
+for (M, AV) in (
+        (:GPUSparseMatrixCOO, :(GPUSparseMatrixCOO{T, Ti, V})),
+        (:GPUSparseMatrixCSR, :(GPUSparseMatrixCSR{T, Ti, V})),
+        (:GPUSparseMatrixELL, :(GPUSparseMatrixELL{T, Ti})),
+    )
     @eval begin
         function LinearAlgebra.mul!(
-                c::DenseVector{T}, A::$M{T}, b::DenseVector{T}, α::Number, β::Number
-            ) where {T <: Number}
+                c::V, A::$AV, b::V, α::Number, β::Number
+            ) where {T <: Number, Ti, V <: DenseVector{T}}
             return sparse_mul!(c, A, b, α, β)
         end
         function LinearAlgebra.mul!(
