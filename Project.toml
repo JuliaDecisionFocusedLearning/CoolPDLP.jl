@@ -43,9 +43,12 @@ BangBang = "0.4.9"
 CUDA = "6.0.0"
 DispatchDoctor = "0.4.26"
 DocStringExtensions = "0.9.5"
-GPUArrays = "12.2"
+# KernelAbstractions 0.9 and GPUArrays 11 are only allowed for Reactant, which does not support
+# KernelAbstractions 0.10 yet: drop them once https://github.com/EnzymeAD/Reactant.jl/pull/3581
+# is released.
+GPUArrays = "11.4.1, 12.2"
 IterativeSolvers = "0.9.4"
-KernelAbstractions = "0.10.8"
+KernelAbstractions = "0.9.38, 0.10.8"
 LinearAlgebra = "1"
 Logging = "1"
 MathOptInterface = "1.49.0"
