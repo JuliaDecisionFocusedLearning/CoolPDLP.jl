@@ -1,6 +1,6 @@
 using Chairmarks
 using CoolPDLP
-using CoolPDLP: nbinstances, restart!, restart_check!, step!, termination_check!
+using CoolPDLP: nbinstances, restart!, restart_check!, save_last!, step!, termination_check!
 using MathOptBenchmarkInstances
 using ProgressMeter
 using Random
@@ -26,6 +26,7 @@ end
 
 function run_iterations!(state, milp, algo, n)
     for _ in 1:n
+        save_last!(state)
         step!(state, milp)
         termination_check!(state, milp, algo)
         restart_check!(state, milp, algo) && restart!(state, algo)

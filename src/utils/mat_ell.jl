@@ -24,7 +24,7 @@ end
 
 Base.size(A::GPUSparseMatrixELL) = (A.m, A.n)
 
-SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval)
+SparseArrays.nnz(A::GPUSparseMatrixELL) = sum(!=(0), A.colval; init = 0)
 
 function Base.getindex(
         A::GPUSparseMatrixELL{T, Ti}, i::Integer, j::Integer

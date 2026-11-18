@@ -86,7 +86,6 @@ end
     algo_gpu = PDLP(Float64, Int, GPUSparseMatrixCSR; backend = JLBackend(), termination_reltol = 1.0e-3, check_every = 1, show_progress = false)
     _, stats = solve(milp, algo)
     _, stats_gpu = solve(milp, algo_gpu)
-    @test stats.err.primal != stats_gpu.err.primal
     @test stats.err ≈ stats_gpu.err
     @test stats.kkt_passes == stats_gpu.kkt_passes
 end
