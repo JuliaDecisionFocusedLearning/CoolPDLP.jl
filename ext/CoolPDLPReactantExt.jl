@@ -46,7 +46,8 @@ end
 # A batched product launches a kernel over a 2D range, and gets an explicit workgroup size:
 # without one, `ka_with_reactant` skips its launch configuration when CUDA.jl is not functional
 # (e.g. on a machine without a GPU) and launches a single workgroup over the whole range, which
-# leaves every column but the first one wrong from 1024 rows on.
+# leaves every column but the first one wrong from 1024 rows on
+# (https://github.com/EnzymeAD/Reactant.jl/issues/3815).
 const BATCH_WORKGROUPSIZE = (256, 1)
 
 for (cT, bT, kw) in (
