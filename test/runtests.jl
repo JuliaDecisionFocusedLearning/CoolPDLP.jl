@@ -7,10 +7,14 @@ set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 
 # a GPU backend and the preferences it needs must be in place before anything loads CoolPDLP
+# Reactant is added only where it is used: it does not support KernelAbstractions 0.10 yet
+# (https://github.com/EnzymeAD/Reactant.jl/pull/3581), so it holds back the packages that do
 if GROUP == "cuda"
-    Pkg.add(["CUDA", "cuSPARSE"])
+    Pkg.add(["CUDA", "cuSPARSE", "Reactant"])
 elseif GROUP == "metal"
     Pkg.add("Metal")
+elseif GROUP == "Reactant"
+    Pkg.add(["CUDA", "Reactant"])
 elseif GROUP == "OpenCL"
     Pkg.add(name = "OpenCL", version = "1")
     set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
@@ -75,6 +79,11 @@ include("fixtures.jl")
     if GROUP == "OpenCL"
         @testset verbose = true "OpenCL" begin
             include("gpu/opencl/runtests.jl")
+        end
+    end
+    if GROUP == "Reactant"
+        @testset verbose = true "Reactant" begin
+            include("gpu/reactant/runtests.jl")
         end
     end
 end

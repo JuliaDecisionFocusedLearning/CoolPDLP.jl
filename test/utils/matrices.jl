@@ -45,6 +45,16 @@ end
     end
 end
 
+@testset "mul! with mismatched storage falls back to LinearAlgebra $M" for M in (
+        GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
+    )
+    A = sprand(7, 5, 0.5)
+    b = rand(5)
+    # `c` is a `JLArray` but `b` a `Vector`, so the format's kernels do not apply
+    c = @allowscalar mul!(jl(zeros(7)), M(A), b, 1.0, 0.0)
+    @test Array(c) ≈ A * b
+end
+
 @testset "spmm! $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
     A = sprand(8, 6, 0.35)
     A_jl = adapt(JLBackend(), M(A))

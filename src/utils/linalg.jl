@@ -1,4 +1,33 @@
 """
+    GPUSparseMatrix
+
+Union of the sparse formats that CoolPDLP implements with its own kernels.
+"""
+const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
+
+# The formats implement `sparse_mul!`, and `mul!` forwards to it with exactly the signatures of
+# `sparse_mul!`: a broader one would be ambiguous with LinearAlgebra's generic `mul!`, and would
+# also catch the products with mismatched storage that this generic `mul!` used to serve.
+for (M, AV) in (
+        (:GPUSparseMatrixCOO, :(GPUSparseMatrixCOO{T, Ti, V})),
+        (:GPUSparseMatrixCSR, :(GPUSparseMatrixCSR{T, Ti, V})),
+        (:GPUSparseMatrixELL, :(GPUSparseMatrixELL{T, Ti})),
+    )
+    @eval begin
+        function LinearAlgebra.mul!(
+                c::V, A::$AV, b::V, α::Number, β::Number
+            ) where {T <: Number, Ti, V <: DenseVector{T}}
+            return sparse_mul!(c, A, b, α, β)
+        end
+        function LinearAlgebra.mul!(
+                c::DenseMatrix{T}, A::$M{T}, b::DenseMatrix{T}, α::Number, β::Number
+            ) where {T <: Number}
+            return sparse_mul!(c, A, b, α, β)
+        end
+    end
+end
+
+"""
     sametype_transpose(A::AbstractMatrix)
 
 Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).
@@ -198,3 +227,15 @@ mynnz(A::AbstractSparseMatrix) = nnz(A)
 mynnz(A::AbstractMatrix) = prod(size(A))
 
 indtype(::AbstractSparseMatrix{T, Ti}) where {T, Ti} = Ti
+
+"""
+    sparse_mul!(c, A, b, α, β)
+    sparse_mul!(c::AbstractMatrix, A, b::AbstractMatrix, α, β; workgroupsize = nothing)
+
+Kernel-launching body of `mul!` for the formats in [`GPUSparseMatrix`](@ref). Kept separate so
+that the Reactant extension's overlay of `mul!` can reach it without calling `mul!` again.
+
+For a batch of vectors, `workgroupsize` is passed on to the kernel launch, where `nothing` lets
+KernelAbstractions choose it.
+"""
+function sparse_mul! end

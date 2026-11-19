@@ -72,6 +72,13 @@ That's what makes it so cool.
 
 Because the array type returned by OpenCL can change dynamically, [`DispatchDoctor.jl`](https://github.com/MilesCranmer/DispatchDoctor.jl) must be disabled for this package when using the OpenCL backend. You can do this by setting `Preferences.set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")` or wrapping the relevant code in `DispatchDoctor.allow_unstable() do ... end`.
 
+### Reactant
+
+A whole solve can be compiled with [`Reactant.jl`](https://github.com/EnzymeAD/Reactant.jl): convert the problem, the state and the algorithm with `Reactant.to_rarray(x; track_numbers = true)`, then compile `solve!` with `Reactant.@compile`.
+
+- With the custom sparse formats (`GPUSparseMatrixCOO`, `GPUSparseMatrixCSR`, `GPUSparseMatrixELL`), `CUDA.jl` must be loaded on every Reactant backend, CPU included, because Reactant compiles their kernels through it.
+- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build the callback that reads the clock inside a compiled solve, so `time_limit` is not enforced there (a warning says so).
+
 ## References
 
 - [Practical Large-Scale Linear Programming using Primal-Dual Hybrid Gradient](https://arxiv.org/abs/2106.04756), Applegate et al. (2022)

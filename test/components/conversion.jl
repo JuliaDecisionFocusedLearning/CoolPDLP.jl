@@ -13,3 +13,12 @@ milp_gpu = CoolPDLP.perform_conversion(milp, params)
 
 sol_gpu = CoolPDLP.perform_conversion(sol, params)
 @test sol_gpu isa PrimalDualSolution{Float32, JLVector{Float32}}
+
+@testset "No conversion" begin
+    params_none = CoolPDLP.ConversionParameters()
+    @test params_none isa CoolPDLP.ConversionParameters{Nothing, Nothing, Nothing}
+    @test isnothing(params_none.backend)
+    # nothing is converted, so the arrays are passed through as they are
+    @test CoolPDLP.perform_conversion(milp, params_none).A === milp.A
+    @test CoolPDLP.perform_conversion(sol, params_none).x === sol.x
+end
