@@ -77,7 +77,8 @@ Because the array type returned by OpenCL can change dynamically, [`DispatchDoct
 A whole solve can be compiled with [`Reactant.jl`](https://github.com/EnzymeAD/Reactant.jl): convert the problem, the state and the algorithm with `Reactant.to_rarray(x; track_numbers = true)`, then compile `solve!` with `Reactant.@compile`.
 
 - With the custom sparse formats (`GPUSparseMatrixCOO`, `GPUSparseMatrixCSR`, `GPUSparseMatrixELL`), `CUDA.jl` must be loaded on every Reactant backend, CPU included, because Reactant compiles their kernels through it.
-- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build the callback that reads the clock inside a compiled solve, so `time_limit` is not enforced there (a warning says so).
+- `time_limit` is a compile-time constant: changing it means recompiling. Only a finite one makes the compiled solve read the clock, through a host callback at each termination check. Without it (the default, `Inf`), the elapsed time is not measured inside the compiled solve.
+- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build that callback, so a finite `time_limit` is not enforced there (a warning says so).
 
 ## References
 

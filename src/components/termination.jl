@@ -12,6 +12,22 @@ of the compiled loop.
 current_time() = time()
 
 """
+    update_time_elapsed!(stats, params)
+
+Set `stats.time_elapsed` to the time elapsed since `stats.starting_time`.
+
+Inside a Reactant compilation context, do nothing when `params.time_limit` is infinite. Reading
+the clock there costs a host callback at every termination check, and the Reactant extension
+traces the time limit as a constant, so without one the callback is never emitted. The elapsed
+time of such a compiled solve is then left at its initial value.
+"""
+function update_time_elapsed!(stats, params)
+    within_compile() && isinf(params.time_limit) && return nothing
+    stats.time_elapsed = current_time() - stats.starting_time
+    return nothing
+end
+
+"""
     TerminationParameters
 
 # Fields
@@ -23,7 +39,7 @@ $(TYPEDFIELDS)
     termination_reltol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
-    "time limit in seconds"
+    "time limit in seconds (`Inf` for none); a Reactant-compiled solve only reads the clock when it is finite"
     time_limit::F
 end
 

@@ -35,6 +35,51 @@ function Reactant.make_tracer(
     )
 end
 
+# The time limit is structure too, unlike the other termination parameters: whether it is
+# finite decides at trace time whether the compiled program reads the clock at all, through a
+# host callback (see `CoolPDLP.update_time_elapsed!`). Changing it means recompiling.
+function Reactant.traced_type_inner(
+        @nospecialize(TP::Type{<:CoolPDLP.TerminationParameters}),
+        seen,
+        mode::Reactant.TraceMode,
+        @nospecialize(track_numbers::Type),
+        @nospecialize(ndevices),
+        @nospecialize(runtime),
+    )
+    if !(TP isa DataType && isconcretetype(TP))
+        return @invoke Reactant.traced_type_inner(
+            TP::Type, seen::Any, mode::Reactant.TraceMode, track_numbers::Type,
+            ndevices::Any, runtime::Any
+        )
+    end
+    T, I, F = TP.parameters
+    tT = Reactant.traced_type_inner(T, seen, mode, track_numbers, ndevices, runtime)
+    tI = Reactant.traced_type_inner(I, seen, mode, track_numbers, ndevices, runtime)
+    return CoolPDLP.TerminationParameters{tT, tI, F}
+end
+
+function Reactant.make_tracer(
+        seen,
+        @nospecialize(prev::CoolPDLP.TerminationParameters),
+        @nospecialize(path),
+        mode;
+        @nospecialize(track_numbers::Type = Union{}),
+        kwargs...,
+    )
+    # in `TracedToTypes` mode, `path` is the cache key of a compiled function: the untracked
+    # time limit pushes its own value there, so a different limit gets a different key
+    mode == Reactant.TracedToTypes && push!(path, Core.Typeof(prev))
+    fields = map(1:3) do i
+        newpath = mode == Reactant.TracedToTypes ? path : Reactant.append_path(path, i)
+        return Reactant.make_tracer(
+            seen, getfield(prev, i), newpath, mode;
+            track_numbers = i == 3 ? Union{} : track_numbers, kwargs...,
+        )
+    end
+    mode == Reactant.TracedToTypes && return nothing
+    return CoolPDLP.TerminationParameters(fields...)
+end
+
 # Reactant's generic `mul!` overlays cannot serve a sparse format: they recurse until the stack
 # overflows. These are strictly more specific than each of them (same bounds on `c` and `b`, a
 # narrower `A`), so they are the ones selected. They call `sparse_mul!` rather than `mul!`, so
