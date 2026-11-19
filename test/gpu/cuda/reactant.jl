@@ -1,4 +1,5 @@
 # Reactant tracing needs CUDA.jl to compile the kernels, on any backend
+using CUDA: CUDABackend
 using CoolPDLP
 using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL, termination_status
 using LinearAlgebra
@@ -60,12 +61,13 @@ end
         )
     end
 
-    @testset "$M" for M in MATRIX_TYPES
+    # with `CUDABackend()`, the problem is moved to the GPU before tracing
+    @testset "$M on $backend" for M in MATRIX_TYPES, backend in (nothing, CUDABackend())
         algo = PDLP(
             Float64,
             Int32,
             M;
-            backend = nothing,
+            backend,
             termination_reltol = 1.0e-6,
             max_kkt_passes = 200,
             time_limit = Inf,
