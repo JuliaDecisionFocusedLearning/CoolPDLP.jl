@@ -12,6 +12,10 @@ the others stay vectors shared by the whole batch. All batched fields must agree
 number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref). The objective constant
 `c0` is always a single number, shared by the whole batch.
 
+The constraint matrix `A` and its transpose `At` are not required to be `AbstractMatrix`es.
+Preprocessing and initialization need actual matrices, but `solve!` only uses them through
+`size`, `eltype` and `mul!`, so that lazy linear operators are also supported.
+
 # Constructor
 
     MILP(;
@@ -33,8 +37,8 @@ struct MILP{
         Vuc <: AbstractVecOrMat{T},
         Dg1 <: Diagonal{T},
         Dg2 <: Diagonal{T},
-        M <: AbstractMatrix{T},
-        Mt <: AbstractMatrix{T},
+        M,
+        Mt,
         Vb <: DenseVector,
         Tc <: Number,
     }

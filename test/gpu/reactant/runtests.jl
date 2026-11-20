@@ -3,6 +3,7 @@ using CoolPDLP
 using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
     KKTErrors, termination_status
 import MathOptInterface as MOI
+using KernelAbstractions: KernelAbstractions, CPU
 using LinearAlgebra
 using MathOptBenchmarkInstances
 using Reactant
@@ -276,6 +277,77 @@ end
         state, state_r = solve_plain_and_compiled(algo, milp_init, sol_init)
         test_agreement(state, state_r; rtol = 1.0e-8)
     end
+end
+
+"""
+    OpaqueOperator
+
+Linear operator wrapping a matrix without being an `AbstractMatrix`, like the sparse types that
+Reactant may trace a matrix into (e.g. `Reactant.CSRMatrix` from
+https://github.com/EnzymeAD/Reactant.jl/pull/3201).
+"""
+struct OpaqueOperator{M}
+    A::M
+end
+Base.size(op::OpaqueOperator, d...) = size(op.A, d...)
+Base.eltype(op::OpaqueOperator) = eltype(op.A)
+KernelAbstractions.get_backend(op::OpaqueOperator) = KernelAbstractions.get_backend(op.A)
+LinearAlgebra.mul!(c, op::OpaqueOperator, b, α::Number, β::Number) = mul!(c, op.A, b, α, β)
+LinearAlgebra.mul!(c, op::OpaqueOperator, b) = mul!(c, op.A, b)
+
+@testset "Constraint matrix that is not an AbstractMatrix" begin
+    algo = PDLP(
+        Float64,
+        Int32,
+        GPUSparseMatrixCSR;
+        backend = nothing,
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    milp, sol = preprocess(milp0, sol0, algo)
+    state = initialize(milp, sol, algo; starting_time = time())
+    solve!(state, milp, algo)
+
+    # preprocessing and initialization need actual matrices, but the solve itself does not
+    milp_copy, sol_copy = preprocess(milp0, sol0, algo)
+    state_copy = initialize(milp_copy, sol_copy, algo; starting_time = time())
+    (; c, c0, lv, uv, A, At, lc, uc, D1, D2, int_var) = milp_copy
+    milp_opaque = MILP(;
+        c, c0, lv, uv, A = OpaqueOperator(A), At = OpaqueOperator(At), lc, uc, D1, D2, int_var
+    )
+    milp_r = to_rarray(milp_opaque; track_numbers = true)
+    state_r = to_rarray(state_copy; track_numbers = true)
+    algo_r = to_rarray(algo; track_numbers = true)
+    @test milp_r.A isa OpaqueOperator
+    @test milp_r.At isa OpaqueOperator
+    compiled_solve! = @compile solve!(state_r, milp_r, algo_r)
+    compiled_solve!(state_r, milp_r, algo_r)
+    test_agreement(state, state_r; rtol = 1.0e-8)
+end
+
+# an explicit backend used to break `to_rarray(algo; track_numbers = true)`, which tried to
+# track the `Bool` fields of the backend (here `CPU(; static)`) as numbers
+@testset "Explicit backend" begin
+    algo = PDLP(
+        Float64,
+        Int32,
+        GPUSparseMatrixCSR;
+        backend = CPU(),
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    algo_r = to_rarray(algo; track_numbers = true)
+    @test algo_r.conversion === algo.conversion
+    state, state_r = solve_plain_and_compiled(algo)
+    test_agreement(state, state_r; rtol = 1.0e-8)
 end
 
 # Reading the host clock inside a compiled program needs a Reactant callback, which not every
