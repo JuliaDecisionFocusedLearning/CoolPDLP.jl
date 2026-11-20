@@ -10,10 +10,11 @@ GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 # Reactant is added only where it is used: it does not support KernelAbstractions 0.10 yet
 # (https://github.com/EnzymeAD/Reactant.jl/pull/3581), so it holds back the packages that do
 if GROUP == "cuda"
-    Pkg.add(["CUDA", "cuSPARSE", "Reactant"])
+    Pkg.add(["CUDA", "cuSPARSE"])
 elseif GROUP == "metal"
     Pkg.add("Metal")
 elseif GROUP == "Reactant"
+    # Reactant compiles KernelAbstractions kernels through CUDA.jl, on any backend
     Pkg.add(["CUDA", "Reactant"])
 elseif GROUP == "OpenCL"
     Pkg.add(name = "OpenCL", version = "1")
