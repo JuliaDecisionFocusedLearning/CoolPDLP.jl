@@ -14,8 +14,7 @@ number of instances; see [`isbatched`](@ref) and [`nbinstances`](@ref). The obje
 
 The constraint matrix `A` and its transpose `At` are not required to be `AbstractMatrix`es.
 Preprocessing and initialization need actual matrices, but `solve!` only uses them through
-`size`, `eltype` and `mul!`, so that Reactant can trace them into opaque sparse types which
-support nothing else.
+`size`, `eltype` and `mul!`, so that lazy linear operators are also supported.
 
 # Constructor
 
