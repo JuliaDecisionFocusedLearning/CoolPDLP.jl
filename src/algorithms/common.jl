@@ -13,6 +13,7 @@ struct Algorithm{
         R <: RestartParameters,
         G <: GenericParameters,
         T <: TerminationParameters,
+        X <: SpiralCrossover,
     }
     conversion::C
     preconditioning::P
@@ -20,6 +21,7 @@ struct Algorithm{
     restart::R
     generic::G
     termination::T
+    crossover::X
 
     function Algorithm{A}(
             conversion::C,
@@ -28,14 +30,16 @@ struct Algorithm{
             restart::R,
             generic::G,
             termination::T,
-        ) where {A, C, P, S, R, G, T}
-        return new{A, C, P, S, R, G, T}(
+            crossover::X,
+        ) where {A, C, P, S, R, G, T, X}
+        return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
             step_size,
             restart,
             generic,
             termination,
+            crossover,
         )
     end
 end
@@ -69,6 +73,8 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        # run after an OPTIMAL solve; a non-OPTIMAL status is a no-op
+        crossover::SpiralCrossover{T} = SpiralCrossover{T}(),
     )
 
 Constructor for algorithm configs.
@@ -101,6 +107,7 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = 100.0,
+        crossover::SpiralCrossover{T} = SpiralCrossover{T}(),
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -140,12 +147,13 @@ function Algorithm{A}(
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        crossover,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, crossover) = algo
     return print(
         io, """
         $A algorithm:
@@ -154,7 +162,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $crossover"""
     )
 end
 
@@ -235,6 +244,25 @@ function solve(
     trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp)
     if !trivial_solve
         solve!(state, milp, algo)
+    end
+    # Scaled point, before unprecondition. `solve!` stays allocation-free.
+    # No constraint rows: crossover is a no-op. A Reactant trace keeps the PDLP
+    # point: the host QR is not traceable, and `termination_status` must not run
+    # inside a compilation.
+    if !trivial_solve && !within_compile()
+        remain = algo.termination.time_limit - state.stats.time_elapsed
+        if termination_status(state.stats) == MOI.OPTIMAL && remain > 0
+            crossover!(
+                state.sol, milp, algo.crossover;
+                zero_tol = algo.step_size.zero_tol,
+                reltol = algo.termination.termination_reltol,
+                time_limit = remain,
+            )
+            # The point may have moved. The clock and the residuals follow it.
+            # The status stays the one that admitted the crossover.
+            state.stats.time_elapsed = current_time() - state.stats.starting_time
+            kkt_errors!(state.stats.err, state.scratch, state.sol, milp)
+        end
     end
     return get_solution(state, milp), state.stats
 end

@@ -136,3 +136,44 @@ We make use of a few key observations:
 
 - Projection on $\mathcal{Z}$ commutes with scaling
 - Projection on an interval commutes with scaling if scaling is also applied to the interval in question
+
+## Crossover
+
+A crossover runs on the scaled point above, and only after PDLP has stopped optimal. Any other status leaves that point unchanged. It follows Liu–Lu, Algorithm 2.
+
+Introduce a slack $s$ in the constraint bounds, and write $A$ for the scaled matrix:
+
+```math
+\min_{x,s} \; c^\top x
+\quad\text{s.t.}\quad
+Ax - s = 0, \quad
+\ell_v \le x \le u_v, \quad
+\ell_c \le s \le u_c .
+```
+
+Columns split into a basic set $B$ and a nonbasic set $N$ pinned to a bound. Reduced costs are $z = c - A^\top y$. A basic column is fixed to a bound when its slack is no larger than $\gamma$ times the reduced cost pointing that way.
+
+Each push moves along a ray of the current active set, from one least-squares solve. Weights $\eta,\omega$ and the perturbation scale $\delta$ default to $1$; $\tilde{c}$ and $\tilde{b}$ are that perturbation. $D$ is the set of columns with a near-zero reduced cost.
+
+```math
+\begin{align*}
+u &\in \arg\min \lVert A_B u - A_B \tilde{c}_B \rVert_2,
+& v_B &= -\frac{\eta}{\omega}(\tilde{c}_B - u),
+& x &\leftarrow x + \theta v, \\[4pt]
+w &\in \arg\min \lVert A_D w - \tilde{b} \rVert_2,
+& v_y &= \eta\,\omega\,(\tilde{b} - A_D w),
+& y &\leftarrow y + \theta v_y .
+\end{align*}
+```
+
+An exact primal solve puts $v_B$ in $\ker(A_B)$; an exact dual solve puts $v_y$ in $\ker(A_D^\top)$. The step $\theta$ is the ratio test: the first bound met by a basic variable, or the first nonbasic reduced cost that changes sign.
+
+Each least-squares problem is one column-pivoted QR of the active columns. A consistent right-hand side then stays in their kernel. The shared `time_limit` is checked between rays. It is not checked inside a factorization.
+
+The columns the pushes left basic are kept. More than $m$ of them, or a rank-deficient set, leaves that point in place. Fewer than $m$, still full rank, and one QR on the orthogonal complement may add dual-active columns. The square step
+
+```math
+A_B x_B = -A_N x_N, \qquad A_B^\top y = c_B
+```
+
+writes $x_B$ only when that solution already lies within the bounds. The candidate replaces the PDLP point when its primal violation is finite and at most $\max(\texttt{termination\_reltol},\, v(x_{\mathrm{PDLP}}))$. Otherwise the incoming point stays.
