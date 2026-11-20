@@ -78,8 +78,7 @@ A whole solve can be compiled with [`Reactant.jl`](https://github.com/EnzymeAD/R
 
 - With the custom sparse formats (`GPUSparseMatrixCOO`, `GPUSparseMatrixCSR`, `GPUSparseMatrixELL`), `CUDA.jl` must be loaded on every Reactant backend, CPU included, because Reactant compiles their kernels through it.
 - Some parameters are compile-time constants, because they shape the compiled program itself: `check_every`, `record_error_history`, `show_progress` and `time_limit`, as well as the conversion parameters (types and backend). Their values are baked into the compiled `solve!`. **Calling it with an algorithm where they differ raises no error and does not recompile: the values from compilation time are silently used.** To change them, compile `solve!` again. The other parameters, like `termination_reltol` and `max_kkt_passes`, are traced, so they can change without recompiling.
-- Only a finite `time_limit` makes the compiled solve read the clock, through a host callback at each termination check. Without it (the default, `Inf`), the elapsed time is not measured inside the compiled solve.
-- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build that callback, so a finite `time_limit` is not enforced there (a warning says so).
+- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build a clock-reading callback, so a finite `time_limit` is not enforced there (a warning says so).
 
 ## References
 
