@@ -44,13 +44,13 @@ function perform_conversion(
         params::ConversionParameters{T, Ti, M},
     ) where {T, Ti, M}
     (; backend) = params
-    if !(T <: Nothing)
+    if !(T == Nothing)
         milp = set_eltype(T, milp)
     end
-    if !(Ti <: Nothing)
+    if !(Ti == Nothing)
         milp = set_indtype(Ti, milp)
     end
-    if !(M <: Nothing)
+    if !(M == Nothing)
         milp = set_matrix_type(M, milp)
     end
     if isnothing(backend)
@@ -65,7 +65,7 @@ function perform_conversion(
         params::ConversionParameters{T},
     ) where {T}
     (; backend) = params
-    if !(T <: Nothing)
+    if !(T == Nothing)
         sol = set_eltype(T, sol)
     end
     if isnothing(backend)
