@@ -68,7 +68,7 @@ end
         # termination
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
-        time_limit = 100.0,
+        time_limit = Inf,
     )
 
 Constructor for algorithm configs.
@@ -100,7 +100,7 @@ function Algorithm{A}(
         # termination
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
-        time_limit = 100.0,
+        time_limit = Inf,
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -126,12 +126,12 @@ function Algorithm{A}(
     generic = GenericParameters(;
         show_progress,
         check_every,
-        record_error_history
+        record_error_history,
+        time_limit
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),
         max_kkt_passes,
-        time_limit
     )
 
     return Algorithm{A}(
@@ -282,10 +282,10 @@ function termination_check!(
         algo::Algorithm
     )
     (; sol, scratch, stats) = state
-    stats.time_elapsed = current_time() - stats.starting_time
+    update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp)
     record_error_history!(stats, algo.generic.record_error_history)
-    return set_termination_status!!(stats, scratch.b1, algo.termination)
+    return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end
 
 """

@@ -6,9 +6,11 @@ using Reactant: Reactant, @reactant_overlay
 
 # A sparse matrix's shape and pattern are structure, and so are the generic parameters: with a
 # traced `check_every`, the inner loop of `solve!` has a dynamic trip count, and XLA reads its
-# condition back to the host after every KKT pass. So is the backend in the conversion
-# parameters, whose `Bool` fields (e.g. in `CUDABackend` or `CPU`) cannot hold traced numbers.
-# Trace them without number tracking.
+# condition back to the host after every KKT pass; whether `time_limit` is finite decides
+# whether the compiled program reads the clock at all, through a host callback (see
+# `CoolPDLP.update_time_elapsed!`). So is the backend in the conversion parameters, whose `Bool`
+# fields (e.g. in `CUDABackend` or `CPU`) cannot hold traced numbers. Trace them without number
+# tracking: their values are baked into the compiled program.
 const Structural = Union{
     CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters, CoolPDLP.ConversionParameters,
 }

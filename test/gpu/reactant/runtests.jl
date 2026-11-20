@@ -183,9 +183,9 @@ function test_agreement(state, state_r; rtol)
     return nothing
 end
 
-# `time_limit` is deliberately left out. The compiled loop does read the clock at each check
-# now, so a binding time limit would stop the two runs after different numbers of iterations
-# and make them incomparable. The KKT pass budget bounds the runtime instead.
+# `time_limit` is deliberately infinite. A finite one makes the compiled loop read the clock at
+# each check, so a binding time limit would stop the two runs after different numbers of
+# iterations and make them incomparable. The KKT pass budget bounds the runtime instead.
 configs = [
     (:PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
     (:PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
@@ -369,6 +369,8 @@ const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
     # so does the iteration budget, and the iteration counts of the state
     @test !(algo_r.termination.max_kkt_passes isa Int)
     @test unwrap(algo_r.termination.max_kkt_passes) == 300
+    # the time limit is structure too, since its finiteness decides whether the clock is read
+    @test algo_r.generic.time_limit === Inf
     milp, sol = preprocess(milp0, sol0, algo)
     state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
     @test !(state_r.stats.kkt_passes isa Int)
@@ -383,6 +385,26 @@ end
     frozen = @test_logs (:warn,) match_mode = :any REACTANT_EXT.frozen_clock()
     @test frozen isa Float64
     @test frozen > 0
+end
+
+@testset "Host callback only with a finite time limit" begin
+    function compiled_hlo(time_limit)
+        algo = PDLP(
+            Float64, Int64, Matrix;
+            backend = nothing, time_limit, max_kkt_passes = 100, check_every = 50,
+            record_error_history = false,
+        )
+        milp, sol = preprocess(milp0, sol0, algo)
+        state = initialize(milp, sol, algo; starting_time = time())
+        milp_r = to_rarray(milp; track_numbers = true)
+        state_r = to_rarray(state; track_numbers = true)
+        algo_r = to_rarray(algo; track_numbers = true)
+        return repr(@code_hlo CoolPDLP.solve!(state_r, milp_r, algo_r))
+    end
+    @test !occursin("reactant_julia_callback", compiled_hlo(Inf))
+    if REACTANT_EXT.host_callbacks_supported()
+        @test occursin("reactant_julia_callback", compiled_hlo(1.0))
+    end
 end
 
 if !REACTANT_EXT.host_callbacks_supported()

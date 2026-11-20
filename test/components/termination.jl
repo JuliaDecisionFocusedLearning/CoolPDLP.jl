@@ -31,6 +31,19 @@ end
     end
 end
 
+@testset "No time limit by default" begin
+    Random.seed!(0)
+    milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
+    @testset "$alg" for alg in (PDHG, PDLP)
+        algo = alg(; termination_reltol = 0.0, max_kkt_passes = 200)
+        @test algo.generic.time_limit == Inf
+        _, stats = solve(milp, algo)
+        @test termination_status(stats) == MOI.ITERATION_LIMIT
+        # the elapsed time is still measured outside of Reactant
+        @test stats.time_elapsed > 0
+    end
+end
+
 @testset "Empty problem" begin
     # no constraint and no objective: the solution is read off the variable bounds
     lv, uv = [-1.0, 0.0, 2.0], [1.0, 3.0, 4.0]
