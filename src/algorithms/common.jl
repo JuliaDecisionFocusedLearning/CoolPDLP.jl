@@ -205,6 +205,9 @@ function preprocess(
     # moving to GPU
     milp = perform_conversion(milp_cpu, algo.conversion)
     sol = perform_conversion(sol_cpu, algo.conversion)
+    # the starting point must live wherever the problem does: even without an explicit
+    # backend, a GPU matrix type (e.g. `CuSparseMatrixCSR`) moves the whole problem to its device
+    sol = adapt(get_backend(milp), sol)
 
     return milp, sol
 end

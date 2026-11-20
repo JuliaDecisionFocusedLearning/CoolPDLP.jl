@@ -8,6 +8,9 @@ CUDA.versioninfo()
 @testset "Matrices" begin
     include("matrices.jl")
 end
+@testset "Preprocessing" begin
+    include("preprocess.jl")
+end
 @testset verbose = true "Batching" begin
     import cuSPARSE
     using CoolPDLP: GPUSparseMatrixCSR
