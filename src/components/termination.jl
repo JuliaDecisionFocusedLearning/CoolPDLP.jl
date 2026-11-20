@@ -12,17 +12,18 @@ of the compiled loop.
 current_time() = time()
 
 """
-    update_time_elapsed!(stats, params)
+    update_time_elapsed!(stats, time_limit)
 
 Set `stats.time_elapsed` to the time elapsed since `stats.starting_time`.
 
-Inside a Reactant compilation context, do nothing when `params.time_limit` is infinite. Reading
-the clock there costs a host callback at every termination check, and the Reactant extension
-traces the time limit as a constant, so without one the callback is never emitted. The elapsed
-time of such a compiled solve is then left at its initial value.
+Inside a Reactant compilation context, do nothing when `time_limit` is infinite. Reading the
+clock there costs a host callback at every termination check, and the Reactant extension
+traces the time limit (in [`GenericParameters`](@ref)) as a constant, so without one the
+callback is never emitted. The elapsed time of such a compiled solve is then left at its
+initial value.
 """
-function update_time_elapsed!(stats, params)
-    within_compile() && isinf(params.time_limit) && return nothing
+function update_time_elapsed!(stats, time_limit)
+    within_compile() && isinf(time_limit) && return nothing
     stats.time_elapsed = current_time() - stats.starting_time
     return nothing
 end
@@ -34,18 +35,16 @@ end
 
 $(TYPEDFIELDS)
 """
-@kwdef struct TerminationParameters{T <: Number, I <: Number, F <: Number}
+@kwdef struct TerminationParameters{T <: Number, I <: Number}
     "tolerance on KKT relative errors to decide termination"
     termination_reltol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
-    "time limit in seconds (`Inf` for none); a Reactant-compiled solve only reads the clock when it is finite"
-    time_limit::F
 end
 
 function Base.show(io::IO, params::TerminationParameters)
-    (; termination_reltol, max_kkt_passes, time_limit) = params
-    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes, time_limit=$time_limit")
+    (; termination_reltol, max_kkt_passes) = params
+    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes")
 end
 
 
@@ -137,9 +136,12 @@ function Base.show(io::IO, stats::ConvergenceStats)
 end
 
 """
-    set_termination_status!!(stats, dest, params)
+    set_termination_status!!(stats, dest, params, time_limit)
 
 Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
+
+The time limit is passed separately from the other termination parameters `params`, because it
+lives in [`GenericParameters`](@ref).
 
 Set `stats.termination_status_code` and return whether the algorithm should stop.
 
@@ -152,10 +154,11 @@ control flow.
 function set_termination_status!!(
         stats::ConvergenceStats,
         dest::BatchedNumber,
-        params::TerminationParameters
+        params::TerminationParameters,
+        time_limit::Number
     )
     (; err, time_elapsed, kkt_passes) = stats
-    (; termination_reltol, time_limit, max_kkt_passes) = params
+    (; termination_reltol, max_kkt_passes) = params
     is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
     is_time_limit = time_elapsed >= time_limit
     is_iteration_limit = kkt_passes >= max_kkt_passes

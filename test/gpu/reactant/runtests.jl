@@ -370,7 +370,7 @@ const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
     @test !(algo_r.termination.max_kkt_passes isa Int)
     @test unwrap(algo_r.termination.max_kkt_passes) == 300
     # the time limit is structure too, since its finiteness decides whether the clock is read
-    @test algo_r.termination.time_limit === Inf
+    @test algo_r.generic.time_limit === Inf
     milp, sol = preprocess(milp0, sol0, algo)
     state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
     @test !(state_r.stats.kkt_passes isa Int)

@@ -6,9 +6,11 @@ using Reactant: Reactant, @reactant_overlay
 
 # A sparse matrix's shape and pattern are structure, and so are the generic parameters: with a
 # traced `check_every`, the inner loop of `solve!` has a dynamic trip count, and XLA reads its
-# condition back to the host after every KKT pass. So is the backend in the conversion
-# parameters, whose `Bool` fields (e.g. in `CUDABackend` or `CPU`) cannot hold traced numbers.
-# Trace them without number tracking.
+# condition back to the host after every KKT pass; whether `time_limit` is finite decides
+# whether the compiled program reads the clock at all, through a host callback (see
+# `CoolPDLP.update_time_elapsed!`). So is the backend in the conversion parameters, whose `Bool`
+# fields (e.g. in `CUDABackend` or `CPU`) cannot hold traced numbers. Trace them without number
+# tracking: their values are baked into the compiled program.
 const Structural = Union{
     CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters, CoolPDLP.ConversionParameters,
 }
@@ -37,51 +39,6 @@ function Reactant.make_tracer(
     return Reactant.make_tracer_unknown(
         seen, prev, path, mode; track_numbers = Union{}, kwargs...
     )
-end
-
-# The time limit is structure too, unlike the other termination parameters: whether it is
-# finite decides at trace time whether the compiled program reads the clock at all, through a
-# host callback (see `CoolPDLP.update_time_elapsed!`). Changing it means recompiling.
-function Reactant.traced_type_inner(
-        @nospecialize(TP::Type{<:CoolPDLP.TerminationParameters}),
-        seen,
-        mode::Reactant.TraceMode,
-        @nospecialize(track_numbers::Type),
-        @nospecialize(ndevices),
-        @nospecialize(runtime),
-    )
-    if !(TP isa DataType && isconcretetype(TP))
-        return @invoke Reactant.traced_type_inner(
-            TP::Type, seen::Any, mode::Reactant.TraceMode, track_numbers::Type,
-            ndevices::Any, runtime::Any
-        )
-    end
-    T, I, F = TP.parameters
-    tT = Reactant.traced_type_inner(T, seen, mode, track_numbers, ndevices, runtime)
-    tI = Reactant.traced_type_inner(I, seen, mode, track_numbers, ndevices, runtime)
-    return CoolPDLP.TerminationParameters{tT, tI, F}
-end
-
-function Reactant.make_tracer(
-        seen,
-        @nospecialize(prev::CoolPDLP.TerminationParameters),
-        @nospecialize(path),
-        mode;
-        @nospecialize(track_numbers::Type = Union{}),
-        kwargs...,
-    )
-    # in `TracedToTypes` mode, `path` is the cache key of a compiled function: the untracked
-    # time limit pushes its own value there, so a different limit gets a different key
-    mode == Reactant.TracedToTypes && push!(path, Core.Typeof(prev))
-    fields = map(1:3) do i
-        newpath = mode == Reactant.TracedToTypes ? path : Reactant.append_path(path, i)
-        return Reactant.make_tracer(
-            seen, getfield(prev, i), newpath, mode;
-            track_numbers = i == 3 ? Union{} : track_numbers, kwargs...,
-        )
-    end
-    mode == Reactant.TracedToTypes && return nothing
-    return CoolPDLP.TerminationParameters(fields...)
 end
 
 # Reactant's generic `mul!` overlays cannot serve a sparse format: they recurse until the stack

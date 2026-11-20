@@ -36,7 +36,7 @@ end
     milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
     @testset "$alg" for alg in (PDHG, PDLP)
         algo = alg(; termination_reltol = 0.0, max_kkt_passes = 200)
-        @test algo.termination.time_limit == Inf
+        @test algo.generic.time_limit == Inf
         _, stats = solve(milp, algo)
         @test termination_status(stats) == MOI.ITERATION_LIMIT
         # the elapsed time is still measured outside of Reactant
