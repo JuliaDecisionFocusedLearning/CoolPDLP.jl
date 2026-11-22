@@ -5,6 +5,11 @@ using Preferences: set_preferences!
 set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
+# the package defaults to "disable" (what users get): the tests check stability, except on
+# OpenCL
+set_preferences!(
+    "CoolPDLP", "dispatch_doctor_mode" => (GROUP == "OpenCL" ? "disable" : "error"); force = true
+)
 
 # a GPU backend and the preferences it needs must be in place before anything loads CoolPDLP
 # Reactant is added only where it is used: it does not support KernelAbstractions 0.10 yet
@@ -18,7 +23,6 @@ elseif GROUP == "Reactant"
     Pkg.add(["CUDA", "Reactant"])
 elseif GROUP == "OpenCL"
     Pkg.add(name = "OpenCL", version = "1")
-    set_preferences!("CoolPDLP", "dispatch_doctor_mode" => "disable")
 end
 
 # every test file draws on the same fixtures: defining them once here rather than in each
