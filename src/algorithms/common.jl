@@ -60,6 +60,11 @@ end
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
+        reflection_coefficient = 1.0,
+        pid_kp = 0.99,
+        pid_ki = 0.01,
+        pid_kd = 0.0,
+        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -96,7 +101,7 @@ The diagonal preconditioner applies, in this order, `curtis_reid_iter` Curtis-Re
 `geometric_mean_iter` geometric-mean passes, `ruiz_iter` Ruiz passes and a Pock-Chambolle step
 (skipped when `chambolle_pock_alpha` is `NaN`). With `bound_objective_rescaling`, the bounds and
 the objective of the preconditioned problem are then divided by `1 + ‖b‖₂` and `1 + ‖c‖₂`
-respectively (per instance), and PDLP starts from a primal weight of one.
+respectively (per instance), and PDLP and HPDLP start from a primal weight of one.
 `bound_norm_sum_squares` selects the cuPDLPx definition of `‖b‖` instead of the HPR-LP one (see
 [`bound_objective_factors`](@ref)). Errors and solutions are always reported for the original
 problem.
@@ -120,6 +125,11 @@ function Algorithm{A}(
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
+        reflection_coefficient = 1.0,
+        pid_kp = 0.99,
+        pid_ki = 0.01,
+        pid_kd = 0.0,
+        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -155,6 +165,11 @@ function Algorithm{A}(
         zero_tol = _T(zero_tol),
         spectral_norm_tol = _T(spectral_norm_tol),
         spectral_norm_maxiter,
+        reflection_coefficient = _T(reflection_coefficient),
+        pid_kp = _T(pid_kp),
+        pid_ki = _T(pid_ki),
+        pid_kd = _T(pid_kd),
+        pid_integral_discount = _T(pid_integral_discount),
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),
@@ -411,6 +426,7 @@ function termination_check!(
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
+    stats.extra_products += 2
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
     infeasibility_check!(

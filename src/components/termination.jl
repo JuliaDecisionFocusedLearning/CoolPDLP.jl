@@ -148,7 +148,16 @@ mutable struct ConvergenceStats{
     active::A
     "number of KKT passes of each instance of a batch when it terminated, or so far if it is still running (`nothing` without batching)"
     instance_kkt_passes::IP
+    "products by `A` or `Aᵀ` on top of the two of each KKT pass (restart metrics, the KKT errors of the termination checks, the initial KKT errors of the Halpern algorithms); see [`matrix_products`](@ref)"
+    extra_products::I
 end
+
+"""
+    matrix_products(stats)
+
+Total number of products by `A` or `Aᵀ`: two per KKT pass, plus `stats.extra_products`.
+"""
+matrix_products(stats::ConvergenceStats) = 2 * stats.kkt_passes + stats.extra_products
 
 """
     batched_tracker(like, val)
@@ -194,6 +203,7 @@ function ConvergenceStats(
         error_history = [(kkt_passes, copy(err))],
         active = batched_tracker(err.primal, true),
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
+        extra_products = zero(kkt_passes),
     ) where {T, I, S, C}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{
@@ -212,6 +222,7 @@ function ConvergenceStats(
         error_history,
         active,
         instance_kkt_passes,
+        convert(I, extra_products),
     )
 end
 
@@ -265,6 +276,7 @@ function instance(stats::ConvergenceStats, i::Int)
         primal_ray_error = instance_num(stats.primal_ray_error, i),
         dual_ray_error = instance_num(stats.dual_ray_error, i),
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
+        extra_products = stats.extra_products,
     )
 end
 

@@ -166,11 +166,11 @@ The Ruiz iteration alternately rescales each row and each column of $A$ by the s
 ### Composition
 
 The diagonal preconditioner chains, in this order, `curtis_reid_iter` rounds of Curtis–Reid least-squares scaling (block coordinate descent, not the conjugate-gradient method of Curtis and Reid, on $\sum_{ij} (\log|a_{ij}| + r_i + s_j)^2$ over the nonzeros), `geometric_mean_iter` passes of geometric-mean scaling (each row, then each column, divided by $\sqrt{\min |a| \cdot \max |a|}$), `ruiz_iter` Ruiz passes and a Pock–Chambolle step (see above).
-Each stage acts on the matrix scaled by the previous ones. `Algorithm` turns the first two off by default, while `PDLP()` starts with 20 Curtis–Reid rounds: `PDLP(; curtis_reid_iter = 0)` gives back plain Ruiz and Pock–Chambolle scaling. The factors of both are clamped to $[10^{-20}, 10^{20}]$.
+Each stage acts on the matrix scaled by the previous ones. `Algorithm` turns the first two off by default, while `PDLP()` and `HPDLP()` start with 20 Curtis–Reid rounds: `PDLP(; curtis_reid_iter = 0)` gives back plain Ruiz and Pock–Chambolle scaling. The factors of both are clamped to $[10^{-20}, 10^{20}]$.
 
 With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
 A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, and the objective is multiplied by $\beta \gamma$.
-PDLP then starts from a primal weight of one.
+PDLP and HPDLP then start from a primal weight of one.
 `bound_norm_sum_squares = true` takes the cuPDLPx definition of $\|b\|_2^2$, which sums $\ell^2 + u^2$ over the finite bounds.
 
 The factors of the stages multiply: if stage $k$ produces $D_1^{(k)}, D_2^{(k)}$, the final scaling is
@@ -209,4 +209,41 @@ The certificates are returned in `stats.ray`, in the original space: `stats.ray.
 Each check costs two more KKT passes (one product by $A$ and $A^\top$ per candidate), counted in `stats.ray_passes` rather than in `stats.kkt_passes`, so they do not count towards `max_kkt_passes`.
 With `infeasibility_tol = nothing`, the detection is removed at the type level: no buffers, no extra passes, and nothing to trace under Reactant.
 Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without a certificate.
+
+## Halpern methods
+
+`HPDLP` runs the following outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
+
+```math
+z^{k+1} = \frac{k+1}{k+2} \left( \gamma \, (2 T(z^k) - z^k) + (1 - \gamma) \, z^k \right) + \frac{1}{k+2} \, z^0
+```
+
+where $k$ counts steps since the last restart and $z^0$ is the anchor. $T(z^k)$ is the reported point.
+Every `check_every` steps, the fixed-point residual $E = \|z - T(z)\|_P$ decides restarts. An instance restarts when either:
+
+- $E \leq \beta_{\text{suff}} E_0$, or
+- $E \leq \beta_{\text{nec}} E_0$ and $E$ grew since the last check, or
+- the inner loop is long: $k \geq \beta_{\text{art}}$ times the total number of steps.
+
+Here $E_0$ is the residual at the first step after the last restart. A restart moves both $z$ and $z^0$ to $T(z)$. In a batch, every instance restarts on its own.
+
+### HPDLP: reflected Halpern PDHG (r²HPDHG)
+
+$T$ is the PDHG step of [`pdhg_update!`](@ref), with $\tau = \eta/\omega$ and $\sigma = \eta\omega$. With the sign convention of $y$ used here, its metric is $P = \begin{bmatrix} I/\tau & A^\top \\ A & I/\sigma \end{bmatrix}$, and the residual is measured as
+
+```math
+\eta \|\Delta\|_P^2 = \omega \|\Delta x\|^2 + \|\Delta y\|^2/\omega + 2\eta \langle \Delta x, A^\top \Delta y\rangle.
+```
+
+At a restart, PID control in log space sets the primal weight. The error is $e = \log(\|\Delta y\| / (\omega \|\Delta x\|))$, measured between $T(z)$ and the previous anchor. The update is $\omega \leftarrow \omega \exp(k_P e + k_I s + k_D (e - e_{\text{prev}}))$, with $s \leftarrow \zeta s + e$.
+
+| | cuPDLPx | `HPDLP()` |
+|---|---|---|
+| step size | $0.998/\|A\|_2$ | same |
+| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 | same |
+| check frequency | 200 | same |
+| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) | same |
+| preconditioning | Ruiz 10 + Pock-Chambolle | **Curtis-Reid 20** + Ruiz 10 + Pock-Chambolle |
+| bound/objective rescaling | on | **off** (on costs about 15 % more passes on Netlib) |
+| ray candidates | $T(z) - z^0$, $T(z)$, $T(z) - z$ | first two only |
 

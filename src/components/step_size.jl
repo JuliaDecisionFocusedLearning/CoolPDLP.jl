@@ -16,11 +16,24 @@ $(TYPEDFIELDS)
     spectral_norm_tol::T
     "maximum number of power method iterations in iterative spectral norm computation"
     spectral_norm_maxiter::I
+    "reflection coefficient `γ` of the Halpern iteration (`1` is fully reflected, `0` is plain PDHG), used by HPDLP and the other Halpern algorithms"
+    reflection_coefficient::T
+    "proportional gain of the PID primal weight controller, used by HPDLP and the other Halpern algorithms"
+    pid_kp::T
+    "integral gain of the PID primal weight controller, used by HPDLP and the other Halpern algorithms"
+    pid_ki::T
+    "derivative gain of the PID primal weight controller, used by HPDLP and the other Halpern algorithms"
+    pid_kd::T
+    "discount applied to the integral term of the PID primal weight controller at each restart, used by HPDLP and the other Halpern algorithms"
+    pid_integral_discount::T
 end
 
 function Base.show(io::IO, params::StepSizeParameters)
-    (; invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_tol, spectral_norm_maxiter) = params
-    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_tol=$spectral_norm_tol, spectral_norm_maxiter=$spectral_norm_maxiter")
+    (;
+        invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_tol, spectral_norm_maxiter,
+        reflection_coefficient, pid_kp, pid_ki, pid_kd, pid_integral_discount,
+    ) = params
+    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_tol=$spectral_norm_tol, spectral_norm_maxiter=$spectral_norm_maxiter, reflection_coefficient=$reflection_coefficient, pid_kp=$pid_kp, pid_ki=$pid_ki, pid_kd=$pid_kd, pid_integral_discount=$pid_integral_discount")
 end
 
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
