@@ -181,7 +181,7 @@ end
     C = stack([s * base.c .* (1 .+ 0.05 .* randn(rng, length(base.c))) for s in scales])
     batch = MILP(; c = C, lv = base.lv, uv = base.uv, A = base.A, lc = base.lc, uc = base.uc)
     B = length(scales)
-    @testset "$alg" for alg in (HPDLP, HPRLP)
+    @testset "$alg" for alg in (HPDLP, HPRLP, HSDPDLP)
         algo = alg(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000)
         sol, stats = solve(batch, algo)
         @test termination_status(stats) == CoolPDLP.MOI.OPTIMAL

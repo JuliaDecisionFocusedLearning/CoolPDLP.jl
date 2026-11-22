@@ -212,7 +212,7 @@ Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without
 
 ## Halpern methods
 
-`HPDLP` and `HPRLP` share one outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
+`HPDLP`, `HPRLP` and `HSDPDLP` share one outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
 
 ```math
 z^{k+1} = \frac{k+1}{k+2} \left( \gamma \, (2 T(z^k) - z^k) + (1 - \gamma) \, z^k \right) + \frac{1}{k+2} \, z^0
@@ -263,4 +263,28 @@ The implementation follows the reference code (v0.1.7) rather than the paper whe
 | termination | every 150 steps | also on the logging schedule | every 150 steps |
 | dual residual | | uses $\bar z$ of the splitting | as the code |
 | infeasibility | none | none | ray certificates |
+
+### HSDPDLP: homogeneous self-dual H-PDLP
+
+This follows [Lu & Tang, arXiv:2610.17695](https://arxiv.org/abs/2610.17695). The LP is embedded as $z = (\tau, x, \alpha, y) \in \mathcal{K}$, $Qz \in \mathcal{K}^*$, where:
+
+- $\mathcal{K} = K[\ell_v, u_v] \times K[\ell_c, u_c]^*$ is a product of box cones $K[\ell, u] = \mathrm{cl}\{(\tau, x) : \tau > 0, \ell\tau \leq x \leq u\tau\}$;
+- $Qz = (-c^\top x - \alpha, \; c\tau - A^\top y, \; \tau, \; Ax)$ is skew-symmetric.
+
+PDHG on this embedding projects $(\alpha, y)$ onto $K[\ell_c, u_c]^*$ by Moreau's identity. It projects $(\tau, x)$ onto $K[\ell_v, u_v]$ implicitly in $\tau$. Both projections reduce to a scalar root of a continuous, increasing, piecewise-linear function, found by a safeguarded Newton method.
+
+The restarts are those of HPDLP, in the metric of eq. 24 of the paper. Each restart point is rescaled homogeneously (eq. 44), and the primal weight follows a PI controller that is held while $\kappa^+/(\tau + \kappa^+) > 0.9$.
+A point with $\tau > 0$ yields $(x, y)/\tau$. A point with $\tau = 0$ and $\kappa > 0$ yields an infeasibility certificate, read through the usual ray detection.
+
+| | paper | `HSDPDLP()` |
+|---|---|---|
+| Newton tolerance $\epsilon_N$ | $10^{-6}$ | $10^{-9}$: with $10^{-6}$, three Netlib instances stall at reltol $10^{-6}$ |
+| Newton stopping | $\lvert g\rvert \leq d_{\min}\epsilon/(1+\epsilon)\,\tau$, or bracket | also stops once the Newton step no longer moves $\tau$, which takes 4 evaluations per step instead of 22–59 on kb2 and grow7 |
+| Newton warm start | previous root | previous root, rescaled with the restart point |
+| primal weight | unbounded | kept in $[10^{-4}, 10^4]$, with anti-windup |
+| preconditioning | geometric mean 12 + Ruiz 10 + Pock-Chambolle | Ruiz 10 + Pock-Chambolle (geometric mean costs about 25 % more passes on Netlib) |
+| optimality test | best of $r_{\text{act}}$ and $\Pi_R(q)$ | same |
+| infeasibility | always | only when `infeasibility_tol` is not `nothing` |
+
+`stats.newton_iterations` counts the root evaluations per instance. [`matrix_products`](@ref) counts every product by $A$ or $A^\top$, including those of the restart metric and of the termination tests.
 

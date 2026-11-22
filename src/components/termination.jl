@@ -150,6 +150,8 @@ mutable struct ConvergenceStats{
     instance_kkt_passes::IP
     "products by `A` or `Aᵀ` outside the KKT passes and the infeasibility checks: the initial KKT errors, the KKT errors of the termination and restart checks, and the restart metrics; see [`matrix_products`](@ref)"
     extra_products::I
+    "evaluations of the scalar root functions of HSDPDLP's box-cone projections, per instance (zero for the other algorithms)"
+    newton_iterations::T
 end
 
 """
@@ -207,6 +209,7 @@ function ConvergenceStats(
         active = batched_tracker(err.primal, true),
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
         extra_products = zero(kkt_passes),
+        newton_iterations = batched_fill(err.primal, zero(eltype(err.primal))),
     ) where {T, I, S, C}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{
@@ -226,6 +229,7 @@ function ConvergenceStats(
         active,
         instance_kkt_passes,
         convert(I, extra_products),
+        newton_iterations,
     )
 end
 
@@ -280,6 +284,7 @@ function instance(stats::ConvergenceStats, i::Int)
         dual_ray_error = instance_num(stats.dual_ray_error, i),
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
         extra_products = stats.extra_products,
+        newton_iterations = instance_num(stats.newton_iterations, i),
     )
 end
 
