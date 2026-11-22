@@ -294,3 +294,6 @@ A linear program keeps a `ZeroMatrix` as $Q$, on which all of the above dispatch
 
 An algorithm that does not support quadratic objectives (see [`CoolPDLP.supports_quadratic`](@ref)) throws an `ArgumentError` on a quadratic program.
 
+A variant follows PDQP more closely:
+
+- `PDLP(; quadratic_momentum = true)` takes the momentum of PDQP: the objective is linearized at $x_{md} = (1 - \beta) \bar{x} + \beta x$ with $\beta = 2 / (k + 2)$, the dual step extrapolates with $\theta = k / (k + 1)$, and the step size grows towards $1 / \|A\|$ within each restart cycle.

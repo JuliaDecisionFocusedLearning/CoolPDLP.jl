@@ -74,6 +74,7 @@ end
         show_progress = false,
         check_every = 100,
         record_error_history = true,
+        quadratic_momentum = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -139,6 +140,7 @@ function Algorithm{A}(
         show_progress = false,
         check_every = 100,
         record_error_history = true,
+        quadratic_momentum = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -181,6 +183,7 @@ function Algorithm{A}(
         show_progress,
         check_every,
         record_error_history,
+        quadratic_momentum,
         time_limit,
         termination_norm = check_termination_norm(Symbol(termination_norm)),
     )
