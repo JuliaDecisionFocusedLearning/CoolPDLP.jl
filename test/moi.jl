@@ -206,3 +206,34 @@ end
     @test JuMP.objective_value(model) ≈ 205.0f0 rtol = 1.0e-4
     @test JuMP.value(x) isa Float32
 end
+
+@testset "Quadratic objective" begin
+    @testset "$sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+        model = JuMP.Model(CoolPDLP.Optimizer)
+        JuMP.set_silent(model)
+        JuMP.set_attribute(model, "termination_reltol", 1.0e-6)
+        JuMP.@variable(model, x[1:2] >= 0)
+        JuMP.@constraint(model, c, x[1] + x[2] == 1)
+        # min x₁² + x₁x₂ + x₂² + 3, or the max of its opposite: x = (½, ½), gradient (3/2, 3/2)
+        f = x[1]^2 + x[1] * x[2] + x[2]^2 + 3
+        JuMP.@objective(model, sense, sense == MOI.MIN_SENSE ? f : -f)
+        JuMP.optimize!(model)
+        coeff = sense == MOI.MIN_SENSE ? 1 : -1
+        @test JuMP.termination_status(model) == MOI.OPTIMAL
+        @test JuMP.value.(x) ≈ [0.5, 0.5] atol = 1.0e-4
+        @test JuMP.objective_value(model) ≈ coeff * 3.75 atol = 1.0e-4
+        @test JuMP.dual_objective_value(model) ≈ coeff * 3.75 atol = 1.0e-4
+        # the dual of a constraint does not depend on the objective sense in MOI
+        sense == MOI.MIN_SENSE && @test JuMP.dual(c) ≈ 1.5 atol = 1.0e-4
+    end
+
+    @testset "Nonconvex objective" begin
+        model = JuMP.Model(CoolPDLP.Optimizer)
+        JuMP.set_silent(model)
+        JuMP.@variable(model, 0 <= x[1:2] <= 1)
+        JuMP.@objective(model, Min, x[1] * x[2])
+        @test_throws ArgumentError JuMP.optimize!(model)
+        JuMP.@objective(model, Max, x[1]^2)
+        @test_throws ArgumentError JuMP.optimize!(model)
+    end
+end

@@ -163,8 +163,8 @@ function initialize(
         primal_weight_init(milp, algo.step_size)
     end
     ω = batched_expand(sol.x, ω_init)
-    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    step_sizes = StepSizes(; η, ω)
+    η, norm_A, norm_Q = initial_stepsize(milp, ω, algo.step_size)
+    step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
     scratch = Scratch(sol)
     halpern = HalpernStats(sol, ω)
     # the error history is seeded with the starting point, so its errors must be filled already
@@ -298,17 +298,19 @@ end
 Compute the fixed-point residual `‖z - T(z)‖_P` in the norm of the PDHG preconditioner, scaled
 by the step size `η` as in cuPDLPx, column by column, into `dest`:
 
-    ω ‖Δx‖² + ‖Δy‖² / ω + 2η ⟨Δx, Aᵀ Δy⟩
+    ω ‖Δx‖² + ‖Δy‖² / ω + 2η ⟨Δx, Aᵀ Δy⟩ - η ⟨Δx, Q Δx⟩
 
-PDHG is a proximal point step in the metric `[I/τ  Aᵀ; A  I/σ]` (with the sign convention of `y`
-in this package). The square is clamped below so that rounding cannot make it negative.
+The last term only appears for a quadratic program, whose PDHG step is linearized in `Q` (see
+[`pdhg_update!`](@ref)) and is thus a proximal point step in the metric `[I/τ - Q  Aᵀ; A  I/σ]` (with the sign convention of
+`y` in this package; the off-diagonal sign does not change the step size condition).
+The square is clamped below so that rounding cannot make it negative.
 """
 function fixed_point_error!!(
         dest::BatchedNumber, scratch::Scratch,
         z::PrimalDualSolution, Tz::PrimalDualSolution,
         milp::MILP, step_sizes::StepSizes,
     )
-    (; At) = milp
+    (; At, Q) = milp
     (; η, ω) = step_sizes
     Δx = @. scratch.x = z.x - Tz.x
     Δy = @. scratch.y = z.y - Tz.y
@@ -319,6 +321,9 @@ function fixed_point_error!!(
         w * a^2 + b^2 / w
     end
     cross = colsum!!(scratch.b1, @. At_Δy = Δx * At_Δy)
+    # ⟨Δx, Aᵀ Δy⟩ - ⟨Δx, Q Δx⟩ / 2, with `scratch.z` and `scratch.b2` free again
+    ΔxQΔx = quadratic_form!!(scratch.b2, scratch.z, Q, Δx)
+    cross = subtract_half!!(cross, ΔxQΔx)
     return batched_apply!!(dest, dest, cross, η) do movement, cross, η
         sqrt(max(movement + 2η * cross, zero(movement)))
     end
@@ -386,12 +391,16 @@ end
 Restart the instances selected by [`restart_check!`](@ref): update their primal weight with
 the PID controller, then move both their iterate and their anchor to `T(z)`.
 
+For a quadratic program, the step size follows the new primal weight (see [`refresh_stepsize!`](@ref)),
+which leaves it unchanged for the instances which do not restart.
+
 The other instances are left untouched, since every update is masked column by column.
 """
 function restart!(state::HPDLPState{T}, milp::MILP, algo::Algorithm{:HPDLP}) where {T}
     (; sol, z, z_anchor, step_sizes, scratch, halpern, stats) = state
     (; restart) = halpern
     pid_update!(halpern, step_sizes, scratch, sol, z_anchor, stats.err, algo.step_size)
+    refresh_stepsize!(step_sizes, milp.Q, algo.step_size)
     batched_select!(z_anchor, restart, sol)
     batched_select!(z, restart, sol)
     halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k

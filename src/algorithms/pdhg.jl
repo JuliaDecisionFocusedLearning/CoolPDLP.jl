@@ -59,9 +59,9 @@ function initialize(
         algo::Algorithm{:PDHG};
         starting_time::Float64
     ) where {T, V}
-    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
     ω = batched_expand(sol.x, one(T))
-    step_sizes = StepSizes(; η, ω)
+    η, norm_A, norm_Q = initial_stepsize(milp, ω, algo.step_size)
+    step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
     scratch = Scratch(sol)
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
@@ -172,6 +172,11 @@ end
 Apply one PDHG update to the iterates `sol`, in place, for the instances flagged in `active`
 only (see [`active_mask`](@ref)).
 
+For a quadratic program, the objective is linearized at the current iterate, as in PDQP (Lu &
+Yang, 2023) without its momentum: the primal step uses the gradient `c + Q x - Aᵀ y`. This is the
+proximal point method in the metric `[I/τ - Q  -Aᵀ; -A  I/σ]`, which is why the step size must
+satisfy the condition of [`quadratic_stepsize`](@ref).
+
 The new primal iterate is formed in scratch space, used for the extrapolation `2xp - x`, then
 copied into `x`. Writing it into a second buffer and swapping the two would avoid that copy in
 plain Julia, but under Reactant both buffers would be carried through the compiled loop and trade
@@ -183,13 +188,14 @@ function pdhg_update!(
     )
     (; x, y) = sol
     (; η, ω) = step_sizes
-    (; c, lv, uv, A, At, lc, uc) = milp
+    (; c, lv, uv, A, At, Q, lc, uc) = milp
 
     τ = transpose(primal_dual_steps!!(/, scratch.b1, η, ω))
     σ = transpose(primal_dual_steps!!(*, scratch.b2, η, ω))
 
-    # xp = clamp.(x - τ * (c - At * y), lv, uv)
+    # xp = clamp.(x - τ * (c + Q * x - At * y), lv, uv)
     At_y = mul!(scratch.z, At, y)
+    At_y = subtract_quadratic_gradient!(At_y, Q, x)
     xp = @. scratch.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.z = 2xp - x
     masked_copyto!(x, active, xp)

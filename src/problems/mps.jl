@@ -20,6 +20,7 @@ function milp_to_mps(
         var_names::Vector{String} = milp.var_names, con_names::Vector{String} = milp.con_names,
     )
     isbatched(milp) && throw(ArgumentError("Cannot write a batched MILP to an MPS file"))
+    isquadratic(milp.Q) && throw(ArgumentError("Cannot write a quadratic objective to an MPS file"))
     # MPS is a plain-text, `Float64` format, so the problem is brought back to the CPU whatever
     # backend and matrix type it lived on
     milp_cpu = adapt(CPU(), milp)
@@ -57,11 +58,14 @@ end
 
 """
     mps_to_milp(file::AbstractString; dataset = "", name = "", path = "")
+    mps_to_milp(file::AbstractString, Val(false); dataset = "", name = "", path = "")
 
 Read the MPS file at `file` into a [`MILP`](@ref), with
 [QPSReader.jl](https://github.com/JuliaSmoothOptimizers/QPSReader.jl). Rows and columns keep
 the order and the names they have in the file. A maximization problem is turned into a
-minimization one by negating its objective (see [`MILP`](@ref)).
+minimization one by negating its objective (see [`MILP`](@ref)). The objective matrix `Q` is
+sparse (and read from `QUADOBJ`) by default, or a `ZeroMatrix` with `Val(false)`, as in
+`MILP(qps)` and `MILP(qps, Val(false))`.
 
 MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`](@ref) built on
 `SparseMatrixCSC`.
@@ -69,15 +73,12 @@ MPS is a `Float64`, host-memory format, so the result is a CPU-`Float64` [`MILP`
 `dataset`, `name` and `path` are the provenance metadata of the [`MILP`](@ref) to build.
 """
 function mps_to_milp(
-        file::AbstractString;
+        file::AbstractString, quadratic::Val...;
         dataset::AbstractString = "", name::AbstractString = "", path::AbstractString = "",
     )
     # QPSReader narrates its parsing through the logger
     qps = with_logger(NullLogger()) do
         return readqps(file)
     end
-    isempty(qps.qvals) || throw(
-        ArgumentError("MILP only supports linear objectives, but $file has a quadratic one")
-    )
-    return MILP(qps; dataset, name, path)
+    return MILP(qps, quadratic...; dataset, name, path)
 end

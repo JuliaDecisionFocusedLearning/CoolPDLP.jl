@@ -264,3 +264,33 @@ The implementation follows the reference code (v0.1.7) rather than the paper whe
 | dual residual | | uses $\bar z$ of the splitting | as the code |
 | infeasibility | none | none | ray certificates |
 
+## Quadratic programs
+
+With a symmetric positive semidefinite objective matrix $Q$, the primal problem becomes
+
+```math
+\min_x \tfrac{1}{2} x^\top Q x + c^\top x + c_0 \quad \text{s.t.} \quad \ell_c \leq Ax \leq u_c, \quad \ell_v \leq x \leq u_v
+```
+
+and, following [PDQP](https://arxiv.org/abs/2311.07710) and [HPR-QP](https://github.com/PolyU-IOR/HPR-QP), the KKT errors change as follows:
+
+- The reduced costs are $z = \mathrm{proj}_{\mathcal{Z}}(c + Qx - A^\top y)$, and the dual residual is $c + Qx - A^\top y - z$.
+- The primal objective is $\tfrac{1}{2} x^\top Q x + c^\top x + c_0$ and the dual objective is $p(y; \ell_c, u_c) + p(z; \ell_v, u_v) - \tfrac{1}{2} x^\top Q x + c_0$, so the gap is $x^\top Q x + c^\top x - p(y; \ell_c, u_c) - p(z; \ell_v, u_v)$.
+
+Preconditioning scales $\tilde{Q} = D_2 Q D_2$, so that $\tfrac{1}{2} x^\top Q x = \tfrac{1}{2} \tilde{x}^\top \tilde{Q} \tilde{x}$ and $Qx = D_2^{-1} \tilde{Q} \tilde{x}$, which is unscaled like the rest of the dual residual.
+The column norms of the Ruiz and Pock-Chambolle preconditioners are those of $[Q; A]$.
+
+PDHG, PDLP and HPDLP linearize the objective in the primal step, $x^+ = \mathrm{proj}_{[\ell_v, u_v]}(x - \tau (c + Qx - A^\top y))$.
+This is a proximal point step in the metric $\begin{bmatrix} I/\tau - Q & A^\top \\ A & I/\sigma \end{bmatrix}$ (with the sign convention of $y$ used here; the sign of the off-diagonal blocks does not change the condition below), which is positive semidefinite as soon as $1/\tau - \|Q\| \geq \sigma \|A\|^2$.
+With $\tau = \eta / \omega$ and $\sigma = \eta \omega$, the step size is thus
+
+```math
+\eta = \frac{2}{\|Q\|/\omega + \sqrt{\|Q\|^2/\omega^2 + 4 \|A\|^2}}
+```
+
+times `invnorm_scaling`, recomputed whenever the primal weight $\omega$ changes.
+HPDLP measures its fixed-point residual in the same metric, which adds $-\eta \langle \Delta x, Q \Delta x \rangle$ to the one of linear programs.
+A linear program keeps a `ZeroMatrix` as $Q$, on which all of the above dispatches back to the linear code.
+
+An algorithm that does not support quadratic objectives (see [`CoolPDLP.supports_quadratic`](@ref)) throws an `ArgumentError` on a quadratic program.
+

@@ -44,7 +44,7 @@ function solve_saving_every_step!(state, milp, algo)
         end
         must_terminate = termination_check!(state, milp, algo)
         if !must_terminate & restart_check!(state, milp, algo)
-            restart!(state, algo)
+            restart!(state, milp, algo)
         end
     end
     return state

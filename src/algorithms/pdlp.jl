@@ -83,7 +83,6 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
     # after bound and objective rescaling, both norms are below one and cuPDLPx starts from ω = 1
     ω_init = if algo.preconditioning.bound_objective_rescaling
         one(T)
@@ -91,7 +90,8 @@ function initialize(
         primal_weight_init(milp, algo.step_size)
     end
     ω = batched_expand(sol.x, ω_init)
-    step_sizes = StepSizes(; η, ω)
+    η, norm_A, norm_Q = initial_stepsize(milp, ω, algo.step_size)
+    step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)
     restart_stats = RestartStats(sol)
@@ -140,7 +140,7 @@ function solve!(
         next_progress!(prog, state)
         must_terminate = termination_check!(state, milp, algo)
         @trace if !must_terminate & restart_check!(state, milp, algo)
-            restart!(state, algo)
+            restart!(state, milp, algo)
         end
     end
     export_certificate!(state.stats, state.infeas, milp)
@@ -259,11 +259,13 @@ function best_error!!(
 end
 
 """
-    restart!(state, algo)
+    restart!(state, milp, algo)
 
 Restart the PDLP iterations from the candidate selected by [`restart_check!`](@ref).
+
+For a quadratic program, the step size follows the new primal weight (see [`refresh_stepsize!`](@ref)).
 """
-function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
+function restart!(state::PDLPState{T}, milp::MILP, algo::Algorithm{:PDLP}) where {T}
     (;
         sol, sol_avg, sol_restart,
         step_sizes, iteration, scratch, restart_stats,
@@ -281,6 +283,7 @@ function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
     step_sizes.ω = primal_weight_update!!(
         scratch, step_sizes, sol, sol_restart, algo.step_size
     )
+    refresh_stepsize!(step_sizes, milp.Q, algo.step_size)
     # update solutions
     zero!(sol_avg)
     copy!(sol_restart, sol)

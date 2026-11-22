@@ -4,6 +4,8 @@
 Change the element type of floating-point containers inside `milp` to `T`.
 """
 set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = map(T, A)
+set_eltype(::Type{T}, Z::ZeroMatrix) where {T} = ZeroMatrix{T}(Z.n)
+set_eltype(::Type{T}, S::BatchScaledMatrix) where {T} = BatchScaledMatrix(set_eltype(T, S.Q), S.scale)
 
 function set_eltype(::Type{T}, sol::PrimalDualSolution) where {T}
     return PrimalDualSolution(set_eltype(T, sol.x), set_eltype(T, sol.y))
@@ -11,7 +13,7 @@ end
 
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -21,6 +23,7 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
         uv = set_eltype(T, uv),
         A = set_eltype(T, A),
         At = set_eltype(T, At),
+        Q = set_eltype(T, Q),
         lc = set_eltype(T, lc),
         uc = set_eltype(T, uc),
         D1 = set_eltype(T, D1),
@@ -42,6 +45,8 @@ end
 Change the element type of integer containers inside `milp` to `Ti`.
 """
 set_indtype(::Type{Ti}, A::AbstractArray{<:Integer}) where {Ti} = map(Ti, A)
+set_indtype(::Type, Z::ZeroMatrix) = Z
+set_indtype(::Type{Ti}, S::BatchScaledMatrix) where {Ti} = BatchScaledMatrix(set_indtype(Ti, S.Q), S.scale)
 
 function set_indtype(::Type{Ti}, A::SparseMatrixCSC) where {Ti}
     return SparseMatrixCSC(
@@ -55,7 +60,7 @@ end
 
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -65,6 +70,7 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
         uv,
         A = set_indtype(Ti, A),
         At = set_indtype(Ti, At),
+        Q = set_indtype(Ti, Q),
         lc,
         uc,
         D1,
@@ -81,17 +87,27 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
 end
 
 """
+    convert_matrix(M, Q)
+
+Convert the objective matrix `Q` with constructor `M`, unless it is a [`ZeroMatrix`](@ref).
+"""
+convert_matrix(::Type{M}, Q::AbstractMatrix) where {M} = M(Q)
+convert_matrix(::Type, Z::ZeroMatrix) = Z
+convert_matrix(::Type{M}, S::BatchScaledMatrix) where {M} = BatchScaledMatrix(convert_matrix(M, S.Q), S.scale)
+
+"""
     set_matrix_type(::Type{M}, milp)
 
 Convert the sparse matrices inside `milp` using constructor `M`.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     A_M = M(A)
     At_M = M(At)
+    Q_M = convert_matrix(M, Q)
     backend = common_backend(A_M, At_M)
 
     return MILP(;
@@ -101,6 +117,7 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         uv = adapt(backend, uv),
         A = A_M,
         At = At_M,
+        Q = Q_M,
         lc = adapt(backend, lc),
         uc = adapt(backend, uc),
         D1 = adapt(backend, D1),
@@ -122,7 +139,7 @@ end
 
 function Adapt.adapt_structure(to, milp::MILP)
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -132,6 +149,7 @@ function Adapt.adapt_structure(to, milp::MILP)
         uv = adapt(to, uv),
         A = adapt(to, A),
         At = adapt(to, At),
+        Q = adapt(to, Q),
         lc = adapt(to, lc),
         uc = adapt(to, uc),
         D1 = adapt(to, D1),
@@ -159,7 +177,7 @@ integer-specific transformations — a presolver, say — must be handed the rel
 """
 function relax(milp::MILP)
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -169,6 +187,7 @@ function relax(milp::MILP)
         uv,
         A,
         At,
+        Q,
         lc,
         uc,
         D1,

@@ -1,0 +1,214 @@
+using CoolPDLP
+using CoolPDLP: GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL, KKTErrors,
+    Scratch, ZeroMatrix, isquadratic, kkt_errors!, preprocess, relative, termination_status
+using HiGHS: HiGHS
+using JLArrays: JLBackend
+using JuMP: JuMP, MOI
+using KernelAbstractions: CPU
+using LinearAlgebra
+using MathOptBenchmarkInstances
+using Random
+using SparseArrays
+using StableRNGs
+using Test
+
+"""
+    highs_solution(milp)
+
+Solve the QP `milp` with HiGHS, returning the primal solution and the optimal value.
+"""
+function highs_solution(milp::MILP)
+    model = JuMP.Model(HiGHS.Optimizer)
+    JuMP.set_silent(model)
+    n = nbvar(milp)
+    JuMP.@variable(model, milp.lv[j] <= x[j = 1:n] <= milp.uv[j])
+    JuMP.@constraint(model, milp.lc .<= milp.A * x .<= milp.uc)
+    JuMP.@objective(model, Min, x' * milp.Q * x / 2 + milp.c' * x + milp.c0)
+    JuMP.optimize!(model)
+    @assert JuMP.termination_status(model) == MOI.OPTIMAL
+    return JuMP.value.(x), JuMP.objective_value(model)
+end
+
+algname(algo::CoolPDLP.Algorithm{A}) where {A} = "$A"
+
+qp_algorithms(; kwargs...) = (
+    PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
+    PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
+    HPDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
+)
+
+@testset "Linear programs keep a ZeroMatrix" begin
+    milp = CoolPDLP.random_milp_and_sol(StableRNG(0), 5, 4, 0.5)[1]
+    @test milp.Q isa ZeroMatrix{Float64}
+    @test !isquadratic(milp.Q)
+    @test size(milp.Q) == (4, 4)
+    @test iszero(Matrix(milp.Q))
+    milp_p, _ = preprocess(milp, PrimalDualSolution(milp), PDLP(Float32, Int32, GPUSparseMatrixCSR))
+    @test milp_p.Q isa ZeroMatrix{Float32}
+end
+
+@testset "Hand-made QPs" begin
+    # min ½(x₁² + x₂²) - x₁ - x₂  s.t.  x₁ + x₂ ≤ 1, x ≥ 0: x = (½, ½), y = -½
+    simplex = MILP(;
+        c = [-1.0, -1.0], Q = sparse(1.0I, 2, 2), lv = [0.0, 0.0], uv = [Inf, Inf],
+        A = sparse([1.0 1.0]), lc = [-Inf], uc = [1.0],
+    )
+    # min x₁² + x₁x₂ + x₂² + x₃² - 3 x₃  s.t.  x₁ + x₂ = 2, 0 ≤ x₃ ≤ 1: x = (1, 1, 1), y = 3
+    coupled = MILP(;
+        c = [0.0, 0.0, -3.0], Q = sparse([2.0 1.0 0.0; 1.0 2.0 0.0; 0.0 0.0 2.0]),
+        lv = [-Inf, -Inf, 0.0], uv = [Inf, Inf, 1.0],
+        A = sparse([1.0 1.0 0.0]), lc = [2.0], uc = [2.0], c0 = 1.0,
+    )
+    # no constraints at all, only a box: x = (1, -2) clamped to [-1, 1]² is (1, -1)
+    box = MILP(;
+        c = [-2.0, 4.0], Q = sparse(2.0I, 2, 2), lv = [-1.0, -1.0], uv = [1.0, 1.0],
+        A = spzeros(0, 2), lc = Float64[], uc = Float64[],
+    )
+    cases = [
+        (simplex, [0.5, 0.5], [-0.5], -0.75),
+        (coupled, [1.0, 1.0, 1.0], [3.0], 3.0 + 1.0 - 3.0 + 1.0),
+        (box, [1.0, -1.0], Float64[], 1.0 - 2.0 + 1.0 - 4.0),
+    ]
+    @testset "$(algname(algo))" for algo in qp_algorithms()
+        for (milp, x, y, obj) in cases
+            sol, stats = solve(milp, algo)
+            @test termination_status(stats) == MOI.OPTIMAL
+            @test sol.x ≈ x atol = 1.0e-4
+            @test sol.y ≈ y atol = 1.0e-4
+            @test objective_value(sol.x, milp) ≈ obj atol = 1.0e-4
+        end
+    end
+    @testset "KKT errors vanish at the optimum" begin
+        for (milp, x, y, _) in cases
+            sol = PrimalDualSolution(x, y)
+            err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
+            @test relative(err) < 1.0e-12
+        end
+    end
+end
+
+@testset "Random convex QPs against HiGHS" begin
+    rng = StableRNG(42)
+    instances = [
+        random_qp(rng, 10, 15),
+        random_qp(rng, 20, 30; density = 0.2),
+        random_qp(rng, 15, 25; rank = 5),
+    ]
+    @testset "instance $k" for (k, milp) in enumerate(instances)
+        x_ref, obj_ref = highs_solution(milp)
+        @testset "$(algname(algo))" for algo in qp_algorithms()
+            sol, stats = solve(milp, algo)
+            @test termination_status(stats) == MOI.OPTIMAL
+            @test is_feasible(sol.x, milp; cons_tol = 1.0e-4, verbose = false)
+            @test objective_value(sol.x, milp) ≈ obj_ref rtol = 1.0e-4
+        end
+    end
+end
+
+@testset "Matrix formats and Float32" begin
+    milp = random_qp(StableRNG(1), 10, 15)
+    _, obj_ref = highs_solution(milp)
+    configs = [
+        (Float64, SparseMatrixCSC, CPU()),
+        (Float32, SparseMatrixCSC, CPU()),
+        (Float64, GPUSparseMatrixCSR, JLBackend()),
+        (Float64, GPUSparseMatrixCOO, JLBackend()),
+        (Float32, GPUSparseMatrixELL, JLBackend()),
+    ]
+    @testset "$T, $M" for (T, M, backend) in configs
+        tol = T == Float32 ? 1.0e-3 : 1.0e-6
+        for algo in (
+                PDLP(T, Int, M; backend, termination_reltol = tol),
+                HPDLP(T, Int, M; backend, termination_reltol = tol),
+            )
+            sol, stats = solve(milp, algo)
+            @test termination_status(stats) == MOI.OPTIMAL
+            @test eltype(sol.x) == T
+            @test objective_value(Array{Float64}(Array(sol.x)), milp) ≈ obj_ref rtol = 10tol
+        end
+    end
+end
+
+@testset "Batched QPs" begin
+    rng = StableRNG(3)
+    milp = random_qp(rng, 10, 15)
+    nbatch = 3
+    cs = [milp.c .+ 0.3 .* randn(rng, length(milp.c)) for _ in 1:nbatch]
+    singles = [MILP(; c, milp.c0, milp.Q, milp.lv, milp.uv, milp.A, milp.lc, milp.uc) for c in cs]
+    batch = MILP(; c = stack(cs), milp.c0, milp.Q, milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
+    @test isbatched(batch)
+    @testset "$(algname(algo))" for algo in qp_algorithms()
+        sol, stats = solve(batch, algo)
+        @test termination_status(stats) == MOI.OPTIMAL
+        objs = objective_value(sol.x, batch)
+        for i in 1:nbatch
+            _, obj_ref = highs_solution(singles[i])
+            @test objs[i] ≈ obj_ref rtol = 1.0e-4
+        end
+    end
+end
+
+@testset "Batched QPs with per-instance bound and objective rescaling" begin
+    rng = StableRNG(4)
+    milp = random_qp(rng, 10, 15)
+    # objectives of very different sizes, so that each instance needs its own ratio γ / β
+    cs = [f .* milp.c for f in (1.0, 30.0, 0.05)]
+    singles = [MILP(; c, milp.c0, milp.Q, milp.lv, milp.uv, milp.A, milp.lc, milp.uc) for c in cs]
+    batch = MILP(; c = stack(cs), milp.c0, milp.Q, milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
+    milp_scaled, _ = preprocess(batch, PrimalDualSolution(batch), PDLP(; bound_objective_rescaling = true))
+    S = milp_scaled.Q
+    @test S isa CoolPDLP.BatchScaledMatrix
+    @test !allequal(S.scale)
+    # the products by `S` are those by each instance's own matrix
+    X = randn(rng, nbvar(batch), 3)
+    QX = CoolPDLP.quadratic_mul!(similar(X), S, X)
+    for i in 1:3
+        @test QX[:, i] ≈ (S.scale[i] * S.Q) * X[:, i]
+        @test instance(milp_scaled, i).Q ≈ S.scale[i] * S.Q
+    end
+    G = randn(rng, nbvar(batch), 3)
+    @test CoolPDLP.subtract_quadratic_gradient!(copy(G), S, X) ≈ G - QX
+    configs = ((SparseMatrixCSC, CPU()), (GPUSparseMatrixCSR, JLBackend()))
+    @testset "$(algname(algo)) on $M" for (M, backend) in configs, algo in (
+            PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
+            HPDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
+        )
+        sol, stats = solve(batch, algo)
+        @test termination_status(stats) == MOI.OPTIMAL
+        x = Array(sol.x)
+        for i in 1:3
+            _, obj_ref = highs_solution(singles[i])
+            @test objective_value(x[:, i], singles[i]) ≈ obj_ref rtol = 1.0e-4
+        end
+    end
+end
+
+@testset "Maros-Mészáros" begin
+    # small instances which every algorithm solves within the budget below
+    names = ["HS21", "HS35", "HS118", "QAFIRO", "GENHS28"]
+    known = Dict(
+        "HS21" => -9.99599999e+1, "HS35" => 1.11111111e-1, "HS118" => 6.64820452e+2,
+        "QAFIRO" => -1.59078179e+0, "GENHS28" => 9.27173692e-1,
+    )
+    @testset "$name" for name in names
+        qps, path = read_instance(MarosMeszaros, name)
+        @test_throws ArgumentError MILP(qps, Val(false))
+        milp = MILP(qps; dataset = MarosMeszaros, path)
+        @test isquadratic(milp.Q)
+        @testset "$(algname(algo))" for algo in qp_algorithms(; termination_reltol = 1.0e-6, time_limit = 60.0)
+            sol, stats = solve(milp, algo)
+            @test termination_status(stats) == MOI.OPTIMAL
+            @test objective_value(sol.x, milp) ≈ known[name] rtol = 1.0e-4
+        end
+    end
+end
+
+
+@testset "Algorithms without quadratic support" begin
+    @test all(CoolPDLP.supports_quadratic, (PDHG(), PDLP(), HPDLP()))
+    # any algorithm that does not declare the support refuses a quadratic program up front
+    algo = CoolPDLP.Algorithm{:NoQuadratic}(Float64, Int, SparseMatrixCSC)
+    @test !CoolPDLP.supports_quadratic(algo)
+    qp = MILP(; c = [1.0], Q = sparse([1.0;;]), lv = [0.0], uv = [1.0], A = sparse([1.0;;]), lc = [0.0], uc = [1.0])
+    @test_throws ArgumentError solve(qp, algo)
+end
