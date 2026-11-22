@@ -84,7 +84,12 @@ function initialize(
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
+    # restarts always compare errors in the L2 norm, whatever the termination norm
     restart_stats.err_restart = copy(err)
+    norm = algo.termination.termination_norm
+    if norm !== :L2
+        kkt_errors!(err, scratch, sol, milp, norm)
+    end
     stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,

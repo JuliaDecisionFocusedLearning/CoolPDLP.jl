@@ -72,6 +72,55 @@ for (cT, bT, kw) in (
     end
 end
 
+# The fields of `TerminationParameters`, by role under tracing: the numbers are traced, the
+# norm symbol is structure (part of the cache key). The tracer rebuilds the struct by these
+# names, so a new field must be classified here: the check below fails at load time
+# otherwise, instead of silently dropping it.
+const TRACED_TERMINATION_FIELDS = (:termination_reltol, :termination_abstol, :max_kkt_passes)
+const STRUCTURAL_TERMINATION_FIELDS = (:termination_norm,)
+Set(fieldnames(CoolPDLP.TerminationParameters)) ==
+    Set((TRACED_TERMINATION_FIELDS..., STRUCTURAL_TERMINATION_FIELDS...)) ||
+    error("the fields of `TerminationParameters` changed: classify them for its Reactant tracer")
+
+function Reactant.traced_type_inner(
+        @nospecialize(T::Type{<:CoolPDLP.TerminationParameters}),
+        seen,
+        mode::Reactant.TraceMode,
+        @nospecialize(track_numbers::Type),
+        @nospecialize(ndevices),
+        @nospecialize(runtime),
+    )
+    T isa DataType || return @invoke Reactant.traced_type_inner(
+        T::Type, seen::Any, mode::Reactant.TraceMode, track_numbers::Type, ndevices::Any, runtime::Any
+    )
+    Tr, Ir = T.parameters
+    traced(X) = Reactant.traced_type_inner(X, seen, mode, track_numbers, ndevices, runtime)
+    return CoolPDLP.TerminationParameters{traced(Tr), traced(Ir)}
+end
+
+function Reactant.make_tracer(
+        seen, @nospecialize(prev::CoolPDLP.TerminationParameters), @nospecialize(path), mode;
+        kwargs...,
+    )
+    if mode == Reactant.TracedToTypes
+        push!(path, Core.Typeof(prev))
+        for name in STRUCTURAL_TERMINATION_FIELDS
+            push!(path, getfield(prev, name))
+        end
+        for name in TRACED_TERMINATION_FIELDS
+            Reactant.make_tracer(seen, getfield(prev, name), path, mode; kwargs...)
+        end
+        return nothing
+    end
+    # the paths are those of the fields, so traced leaves map back onto the right arguments
+    tr(name) = Reactant.make_tracer(
+        seen, getfield(prev, name),
+        Reactant.append_path(path, Base.fieldindex(typeof(prev), name)), mode; kwargs...
+    )
+    traced_values = NamedTuple{TRACED_TERMINATION_FIELDS}(map(tr, TRACED_TERMINATION_FIELDS))
+    return CoolPDLP.setfields(prev; traced_values...)
+end
+
 """
     write_time!(out)
 

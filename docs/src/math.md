@@ -170,3 +170,20 @@ The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}
 ```math
 D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
 ```
+
+## Termination
+
+With $\epsilon_a$ = `termination_abstol` and $\epsilon_r$ = `termination_reltol`, an instance is optimal once
+
+```math
+\|Ax - \mathrm{proj}_{[\ell_c,u_c]}(Ax)\| \leq \epsilon_a + \epsilon_r \|b\|, \qquad
+\|c - A^\top y - z\| \leq \epsilon_a + \epsilon_r \|c\|, \qquad
+|p - d| \leq \epsilon_a + \epsilon_r (|p| + |d|),
+```
+
+where $b$ keeps the largest finite absolute bound of each constraint, $p$ and $d$ are the primal and dual objectives, and the norm is `termination_norm` (`:L2` or `:Linf`).
+This is the criterion of cuPDLP.jl and cuOpt.
+The default $\epsilon_a = \epsilon_r$ gives back the purely relative criterion $\text{error} / (1 + \text{norm}) \leq \epsilon_r$ of PDLP.
+Every quantity is that of the original problem, whatever the preconditioning.
+Restarts always compare errors in the $\ell_2$ norm.
+
