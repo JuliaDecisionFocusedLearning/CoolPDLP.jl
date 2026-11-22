@@ -166,7 +166,7 @@ The Ruiz iteration alternately rescales each row and each column of $A$ by the s
 ### Composition
 
 The diagonal preconditioner chains, in this order, `curtis_reid_iter` rounds of Curtis–Reid least-squares scaling (block coordinate descent, not the conjugate-gradient method of Curtis and Reid, on $\sum_{ij} (\log|a_{ij}| + r_i + s_j)^2$ over the nonzeros), `geometric_mean_iter` passes of geometric-mean scaling (each row, then each column, divided by $\sqrt{\min |a| \cdot \max |a|}$), `ruiz_iter` Ruiz passes and a Pock–Chambolle step (see above).
-Each stage acts on the matrix scaled by the previous ones. `Algorithm` turns the first two off by default, while `PDLP()` and `HPDLP()` start with 20 Curtis–Reid rounds: `PDLP(; curtis_reid_iter = 0)` gives back plain Ruiz and Pock–Chambolle scaling. The factors of both are clamped to $[10^{-20}, 10^{20}]$.
+Each stage acts on the matrix scaled by the previous ones. `Algorithm` turns the first two off by default, while `PDLP()`, `HPDLP()` and `HPRLP()` start with 20 Curtis–Reid rounds: `PDLP(; curtis_reid_iter = 0)` gives back plain Ruiz and Pock–Chambolle scaling. The factors of both are clamped to $[10^{-20}, 10^{20}]$.
 
 With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
 A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, and the objective is multiplied by $\beta \gamma$.
@@ -212,7 +212,7 @@ Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without
 
 ## Halpern methods
 
-`HPDLP` runs the following outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
+`HPDLP` and `HPRLP` share one outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
 
 ```math
 z^{k+1} = \frac{k+1}{k+2} \left( \gamma \, (2 T(z^k) - z^k) + (1 - \gamma) \, z^k \right) + \frac{1}{k+2} \, z^0
@@ -246,4 +246,21 @@ At a restart, PID control in log space sets the primal weight. The error is $e =
 | preconditioning | Ruiz 10 + Pock-Chambolle | **Curtis-Reid 20** + Ruiz 10 + Pock-Chambolle |
 | bound/objective rescaling | on | **off** (on costs about 15 % more passes on Netlib) |
 | ray candidates | $T(z) - z^0$, $T(z)$, $T(z) - z$ | first two only |
+
+### HPRLP: HPR-LP
+
+With $T_1 = \lambda I - AA^\top$ and $\lambda \geq \lambda_{\max}(AA^\top)$, an HPR-LP step is a PDHG step. Its primal step is $\sigma$ and its dual step is $1/(\lambda\sigma)$, so the code uses $\eta = 1/\sqrt\lambda$ and $\omega = \eta/\sigma$.
+The metric $M$ of the splitting gives $\|\Delta\|_M^2 = \|\Delta x\|^2/\sigma + \sigma\lambda \|\Delta y\|^2 + 2\langle A\Delta x, \Delta y\rangle$, which is the PDHG metric above divided by $\eta$.
+The implementation follows the reference code (v0.1.7) rather than the paper where the two differ. On Netlib, its restart iterations and values of $\sigma$ match the reference code's exactly.
+
+| | paper | reference code | `HPRLP()` |
+|---|---|---|---|
+| $\lambda$ | power method | 1.01 × power method, grown on the fly when $\|\Delta\|_M^2 < 0$ | as the code (never for a frozen instance) |
+| $\sigma_0$ | 1 | $\|b\|/\|c\|$ of the scaled problem | as the code |
+| $\sigma$ update | $\|\Delta x\|/(\|\Delta y\|\sqrt\lambda)$ | blended in log space with the $\sigma$ of the best residual, plus a correction near $10^{-9}$ | as the code |
+| first check | rule-based | always restarts | as the code |
+| preconditioning | Ruiz 10 + Pock-Chambolle + $b, c$ scaling | Curtis-Reid 20 first | as the code |
+| termination | every 150 steps | also on the logging schedule | every 150 steps |
+| dual residual | | uses $\bar z$ of the splitting | as the code |
+| infeasibility | none | none | ray certificates |
 

@@ -8,7 +8,7 @@ Random.seed!(0)
 
 milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
 
-@testset "$alg parameters" for alg in (PDHG, PDLP, HPDLP)
+@testset "$alg parameters" for alg in (PDHG, PDLP, HPDLP, HPRLP)
     algo = alg(Float64, Int, SparseMatrixCSC; check_every = 42, max_kkt_passes = 314)
     str = sprint(show, algo)
 

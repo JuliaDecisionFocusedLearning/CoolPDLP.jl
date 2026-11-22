@@ -143,6 +143,27 @@ function kkt_errors!(
         err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
+        milp::MILP,
+        norm::Symbol = :L2,
+    )
+    return kkt_errors!(err, scratch, sol, nothing, milp, norm)
+end
+
+"""
+    kkt_errors!(err, scratch, sol, z, milp, norm = :L2)
+
+Same as `kkt_errors!(err, scratch, sol, milp, norm)`, with the reduced costs (multipliers of
+the variable bounds) given by `z` rather than chosen as the projection of `c - Aᵀy` onto the
+multipliers that the bounds allow. `z === nothing` falls back to that projection.
+
+[`HPRLP`](@ref) uses it with the `z̄` of its splitting, as HPR-LP does: the dual residual is then
+`‖c - Aᵀy - z‖` and the dual objective uses `z`. `z` is only read.
+"""
+function kkt_errors!(
+        err::KKTErrors,
+        scratch::Scratch,
+        sol::PrimalDualSolution,
+        z_given::Union{Nothing, AbstractVecOrMat},
         milp::MILP{T},
         norm::Symbol = :L2,
     ) where {T}
@@ -155,7 +176,7 @@ function kkt_errors!(
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
     c_At_y = mul!(scratch.x, At, y, -1, false)
     c_At_y .+= c
-    z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
+    z = bound_multipliers!(scratch.z, c_At_y, lv, uv, z_given)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
     err.primal = colnorm!!(err.primal, primal_diff, norm)
@@ -196,3 +217,12 @@ function kkt_errors!(
     err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, pobj)
     return err
 end
+
+"""
+    bound_multipliers!(dest, c_At_y, lv, uv, z)
+
+Return the multipliers of the variable bounds for [`kkt_errors!`](@ref): `z` itself when given,
+otherwise the projection of the reduced costs `c_At_y`, written into `dest`.
+"""
+bound_multipliers!(dest, c_At_y, lv, uv, ::Nothing) = @. dest = proj_multiplier(c_At_y, lv, uv)
+bound_multipliers!(_, _, _, _, z::AbstractVecOrMat) = z
