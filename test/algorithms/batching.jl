@@ -202,3 +202,51 @@ end
         end
     end
 end
+
+@testset verbose = true "Batch compaction" begin
+    base = MILP(read_instance(Netlib, "afiro")[1])
+    rng = Xoshiro(2)
+    scales = (1.0, 1.0e-3, 30.0, 0.5, 2.0, 1.0e-2, 10.0, 1.0)
+    C = stack([s * base.c .* (1 .+ 0.05 .* randn(rng, length(base.c))) for s in scales])
+    batch = MILP(; c = C, lv = base.lv, uv = base.uv, A = base.A, lc = base.lc, uc = base.uc)
+    B = length(scales)
+    @testset "columns and scatter_columns round trip" begin
+        algo = HPDLP()
+        milp, sol = CoolPDLP.preprocess(batch, PrimalDualSolution(batch), algo)
+        state = initialize(milp, sol, algo; starting_time = 0.0)
+        idx = [2, 5, 7]
+        sub = CoolPDLP.columns(state, idx, B)
+        @test typeof(sub) == typeof(state)
+        @test sub.sol.x == state.sol.x[:, idx]
+        @test sub.stats.active == state.stats.active[idx]
+        @test nbinstances(CoolPDLP.columns(milp, idx)) == length(idx)
+        sub.sol.x .= -1
+        sub.stats.kkt_passes = 123
+        CoolPDLP.scatter_columns(state, sub, idx, B)
+        @test all(==(-1), state.sol.x[:, idx])
+        @test !any(==(-1), state.sol.x[:, setdiff(1:B, idx)])
+        @test state.stats.kkt_passes == 123
+    end
+    # only PDLP restarts the whole batch at once, from an average over its instances, so it is
+    # the only algorithm whose iterates depend on the compaction
+    @testset "$alg gives the same result" for alg in (PDHG, HPDLP, HPRLP)
+        r = map((false, true)) do batch_compaction
+            solve(batch, alg(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000, batch_compaction))
+        end
+        (sol0, stats0), (sol1, stats1) = r
+        @test termination_status(stats1) == termination_status(stats0)
+        @test stats1.instance_status_code == stats0.instance_status_code
+        @test stats1.instance_kkt_passes == stats0.instance_kkt_passes
+        @test stats1.kkt_passes == stats0.kkt_passes
+        @test sol1.x == sol0.x
+        @test sol1.y == sol0.y
+        @test length(stats1.error_history) == length(stats0.error_history)
+        @test last(stats1.error_history)[2].primal == last(stats0.error_history)[2].primal
+        @test stats1.active == stats0.active
+    end
+    @testset "PDLP" begin
+        sol, stats = solve(batch, PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000))
+        @test termination_status(stats) == CoolPDLP.MOI.OPTIMAL
+        @test all(relative(instance(stats, i).err) <= 1.0e-6 for i in 1:B)
+    end
+end

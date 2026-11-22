@@ -213,6 +213,7 @@ function solve!(state::HPRLPState, milp::MILP, algo::Algorithm{:HPRLP})
     must_terminate = false
     @trace while !must_terminate
         must_terminate = check_pass!(state, milp, algo, prog)
+        must_terminate = maybe_compact!(state, milp, algo, prog, must_terminate)
     end
     export_certificate!(state.stats, state.infeas, milp)
     finish_progress!(prog)

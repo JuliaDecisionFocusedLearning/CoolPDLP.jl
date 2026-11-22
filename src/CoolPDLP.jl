@@ -54,6 +54,7 @@ include("public.jl")
     include("components/infeasibility.jl")
 
     include("algorithms/common.jl")
+    include("components/compaction.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
     include("algorithms/hpdlp.jl")

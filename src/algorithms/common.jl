@@ -75,6 +75,7 @@ end
         check_every = 100,
         record_error_history = true,
         quadratic_momentum = false,
+        batch_compaction = true,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -106,6 +107,11 @@ respectively (per instance), and PDLP and HPDLP start from a primal weight of on
 `bound_norm_sum_squares` selects the cuPDLPx definition of `‖b‖` instead of the HPR-LP one (see
 [`bound_objective_factors`](@ref)). Errors and solutions are always reported for the original
 problem.
+
+With `batch_compaction`, a batch on the host (CPU arrays, not a compiled Reactant solve) of at
+least four instances solves the instances still running as a smaller batch once at least half of
+it has terminated, so that the frozen instances stop paying for their columns of the products
+(see [`maybe_compact!`](@ref)).
 """
 function Algorithm{A}(
         # conversion
@@ -141,6 +147,7 @@ function Algorithm{A}(
         check_every = 100,
         record_error_history = true,
         quadratic_momentum = false,
+        batch_compaction = true,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -184,6 +191,7 @@ function Algorithm{A}(
         check_every,
         record_error_history,
         quadratic_momentum,
+        batch_compaction = Bool(batch_compaction),
         time_limit,
         termination_norm = check_termination_norm(Symbol(termination_norm)),
     )

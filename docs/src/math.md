@@ -297,3 +297,12 @@ An algorithm that does not support quadratic objectives (see [`CoolPDLP.supports
 A variant follows PDQP more closely:
 
 - `PDLP(; quadratic_momentum = true)` takes the momentum of PDQP: the objective is linearized at $x_{md} = (1 - \beta) \bar{x} + \beta x$ with $\beta = 2 / (k + 2)$, the dual step extrapolates with $\theta = k / (k + 1)$, and the step size grows towards $1 / \|A\|$ within each restart cycle.
+
+## Batches
+
+In a batch, each instance stops being updated as soon as it terminates (optimal or certified infeasible): its iterates, KKT errors and status are frozen, while the other instances keep going until all are done or a limit is reached.
+`instance(stats, i)` reports the status and the KKT passes at which instance `i` terminated.
+The batched sparse products still run over every column, so freezing alone saves no work on the products.
+With `batch_compaction = true` (the default), a host batch (CPU arrays, outside any Reactant compilation) of at least four instances is compacted once at least half of it has terminated: the instances still running are copied into a smaller batch, solved to the end (compacting again if need be) and written back.
+Only PDLP, which restarts the whole batch at once from an average over its instances, can see its iterates change with compaction.
+

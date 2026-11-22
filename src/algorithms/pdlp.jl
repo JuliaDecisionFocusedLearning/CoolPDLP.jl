@@ -129,19 +129,8 @@ function solve!(
     prog = init_progress("PDLP iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
-        @trace for _ in 1:(algo.generic.check_every - 1)
-            step!(state, milp, algo)
-            next_progress!(prog, state)
-        end
-        # the restart check compares with the iterates before the last step, so only that step
-        # needs them saved
-        save_last!(state)
-        step!(state, milp, algo)
-        next_progress!(prog, state)
-        must_terminate = termination_check!(state, milp, algo)
-        @trace if !must_terminate & restart_check!(state, milp, algo)
-            restart!(state, milp, algo)
-        end
+        must_terminate = check_pass!(state, milp, algo, prog)
+        must_terminate = maybe_compact!(state, milp, algo, prog, must_terminate)
     end
     export_certificate!(state.stats, state.infeas, milp)
     finish_progress!(prog)
@@ -168,6 +157,34 @@ function step!(
     update_average!(state)
     add_inner!(state.iteration)
     return nothing
+end
+
+"""
+    check_pass!(state, milp, algo, prog = NoProgress())
+
+Run `check_every` iterations, the termination check and, unless it stops, the restart check;
+return whether to stop.
+"""
+function check_pass!(
+        state::PDLPState,
+        milp::MILP,
+        algo::Algorithm{:PDLP},
+        prog = NoProgress()
+    )
+    @trace for _ in 1:(algo.generic.check_every - 1)
+        step!(state, milp, algo)
+        next_progress!(prog, state)
+    end
+    # the restart check compares with the iterates before the last step, so only that step
+    # needs them saved
+    save_last!(state)
+    step!(state, milp, algo)
+    next_progress!(prog, state)
+    must_terminate = termination_check!(state, milp, algo)
+    @trace if !must_terminate & restart_check!(state, milp, algo)
+        restart!(state, milp, algo)
+    end
+    return must_terminate
 end
 
 """
