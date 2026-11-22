@@ -80,6 +80,7 @@ end
         termination_norm = :L2,
         max_kkt_passes = 10^5,
         time_limit = Inf,
+        relative_kkt = Val(:pdlp),
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
     )
 
@@ -145,6 +146,7 @@ function Algorithm{A}(
         termination_norm = :L2,
         max_kkt_passes = 10^5,
         time_limit = Inf,
+        relative_kkt::Val = Val(:pdlp),
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
     ) where {A, T, Ti, M, B}
 
@@ -188,6 +190,7 @@ function Algorithm{A}(
         termination_reltol = _T(termination_reltol),
         termination_abstol = _T(termination_abstol),
         max_kkt_passes,
+        relative_kkt,
         infeasibility_tol = convert_tol(_T, infeasibility_tol),
     )
 
@@ -346,7 +349,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algori
     bounded_above = !any(@. (c < 0) & isinf(uv))
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.generic.termination_norm)
+        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.termination.relative_kkt, algo.generic.termination_norm)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         state.stats.instance_status_code = batched_fill(
@@ -444,8 +447,8 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
-    stats.extra_products += 2
+    kkt_errors!(stats.err, scratch, sol, milp, algo.termination.relative_kkt, algo.generic.termination_norm)
+    stats.extra_products += kkt_products(algo.termination.relative_kkt)
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
     infeasibility_check!(

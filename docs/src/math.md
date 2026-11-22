@@ -294,3 +294,7 @@ A linear program keeps a `ZeroMatrix` as $Q$, on which all of the above dispatch
 
 An algorithm that does not support quadratic objectives (see [`CoolPDLP.supports_quadratic`](@ref)) throws an `ArgumentError` on a quadratic program.
 
+`HPRQP()` follows HPR-QP: the objective is linearized at an auxiliary variable $w$ with the proximal term $\sigma (\lambda_Q I - Q)$, so that the steps only depend on $\|A\|$, and restarts measure the fixed-point residual in the metric of that splitting. Its dual step sees the symmetric Gauss-Seidel correction $\hat{x} + \sigma (Qw - Q\bar{w}_{1/2})$ of HPR-QP rather than $\hat{x}$, without which the iteration is not the one HPR-QP proves convergent. A diagonal sparse $Q$ is handled exactly, with $\mathrm{Diag}(Q)$ in place of $\lambda_Q I$, on every sparse format and backend (the structure is checked once on the host); a dense $Q$ uses $\lambda_Q I$.
+
+`relative_kkt = Val(:pdqp)` measures the KKT errors as PDQP and HPR-QP do: in infinity norms, relative to $1 + \max(\|b\|_\infty, \|Ax\|_\infty)$, $1 + \max(\|c\|_\infty, \|Qx\|_\infty, \|A^\top y\|_\infty)$ and $1 + \max(|p|, |d|)$ for the primal and dual objectives $p$ and $d$.
+
