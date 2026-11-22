@@ -50,6 +50,40 @@ unwrap(x::AbstractArray) = Array(x)
 # only reads the fields, so it needs no kernel and no CUDA.jl
 trace_fields(A) = sum(A.nzval) + sum(A.colval)
 
+"""
+    same_traced_cache_key(x, others...)
+
+Whether every one of `others` gets the same path as `x` from Reactant's `TracedToTypes` tracing
+mode once traced, as when they are passed to `Reactant.Ops.call` inside a compiled function:
+Reactant keys its cache of called functions by that path, so it must hold the structure of an
+argument but not its traced numbers. The paths hold MLIR types, which live only as long as the
+compilation, so they are compared during tracing.
+"""
+function same_traced_cache_key(x, others...)
+    result = Bool[]
+    function compare_keys(args...)
+        keys = map(args) do arg
+            path = []
+            Reactant.make_tracer(Reactant.OrderedIdDict(), arg, path, Reactant.TracedToTypes)
+            path
+        end
+        append!(result, [k == first(keys) for k in Base.tail(keys)])
+        return nothing
+    end
+    @compile compare_keys(map(a -> to_rarray(a; track_numbers = true), (x, others...))...)
+    return result
+end
+
+@testset "Cache key of the termination parameters" begin
+    termination(; kw...) = PDLP(Float64, Int32, Matrix; kw...).termination
+    # the traced tolerances do not change the key, the structural norm does
+    @test same_traced_cache_key(
+        termination(),
+        termination(; termination_reltol = 1.0e-6, termination_abstol = 1.0e-8),
+        termination(; termination_norm = :Linf),
+    ) == [true, false]
+end
+
 @testset "Custom sparse wrappers can be traced" begin
     A_cpu = convert(SparseMatrixCSC{Float64, Int32}, sprand(StableRNG(0), 12, 8, 0.4))
     @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
