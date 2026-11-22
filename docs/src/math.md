@@ -165,8 +165,16 @@ The Ruiz iteration alternately rescales each row and each column of $A$ by the s
 
 ### Composition
 
-The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}, D_2^{\mathrm{ruiz}}$, then Pock-Chambolle is applied to the already-Ruiz-rescaled matrix $D_1^{\mathrm{ruiz}} A D_2^{\mathrm{ruiz}}$ and produces $D_1^{\mathrm{cp}}, D_2^{\mathrm{cp}}$. The final scaling is then
+The diagonal preconditioner chains, in this order, `curtis_reid_iter` rounds of Curtis–Reid least-squares scaling (block coordinate descent, not the conjugate-gradient method of Curtis and Reid, on $\sum_{ij} (\log|a_{ij}| + r_i + s_j)^2$ over the nonzeros), `geometric_mean_iter` passes of geometric-mean scaling (each row, then each column, divided by $\sqrt{\min |a| \cdot \max |a|}$), `ruiz_iter` Ruiz passes and a Pock–Chambolle step (see above).
+Each stage acts on the matrix scaled by the previous ones. `Algorithm` turns the first two off by default, while `PDLP()` starts with 20 Curtis–Reid rounds: `PDLP(; curtis_reid_iter = 0)` gives back plain Ruiz and Pock–Chambolle scaling. The factors of both are clamped to $[10^{-20}, 10^{20}]$.
+
+With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
+A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, and the objective is multiplied by $\beta \gamma$.
+PDLP then starts from a primal weight of one.
+`bound_norm_sum_squares = true` takes the cuPDLPx definition of $\|b\|_2^2$, which sums $\ell^2 + u^2$ over the finite bounds.
+
+The factors of the stages multiply: if stage $k$ produces $D_1^{(k)}, D_2^{(k)}$, the final scaling is
 
 ```math
-D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
+D_1 = \cdots D_1^{(2)} D_1^{(1)} \qquad D_2 = D_2^{(1)} D_2^{(2)} \cdots
 ```

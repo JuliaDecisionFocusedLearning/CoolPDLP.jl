@@ -11,7 +11,7 @@ end
 
 function set_eltype(::Type{T}, milp::MILP) where {T}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -25,6 +25,8 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
         uc = set_eltype(T, uc),
         D1 = set_eltype(T, D1),
         D2 = set_eltype(T, D2),
+        bound_scale,
+        obj_scale,
         int_var,
         var_names,
         con_names,
@@ -53,7 +55,7 @@ end
 
 function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -67,6 +69,8 @@ function set_indtype(::Type{Ti}, milp::MILP) where {Ti}
         uc,
         D1,
         D2,
+        bound_scale,
+        obj_scale,
         int_var,
         var_names,
         con_names,
@@ -83,7 +87,7 @@ Convert the sparse matrices inside `milp` using constructor `M`.
 """
 function set_matrix_type(::Type{M}, milp::MILP) where {M}
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     A_M = M(A)
@@ -101,6 +105,8 @@ function set_matrix_type(::Type{M}, milp::MILP) where {M}
         uc = adapt(backend, uc),
         D1 = adapt(backend, D1),
         D2 = adapt(backend, D2),
+        bound_scale = adapt(backend, bound_scale),
+        obj_scale = adapt(backend, obj_scale),
         int_var = adapt(backend, int_var),
         var_names,
         con_names,
@@ -116,7 +122,7 @@ end
 
 function Adapt.adapt_structure(to, milp::MILP)
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -130,6 +136,8 @@ function Adapt.adapt_structure(to, milp::MILP)
         uc = adapt(to, uc),
         D1 = adapt(to, D1),
         D2 = adapt(to, D2),
+        bound_scale = adapt(to, bound_scale),
+        obj_scale = adapt(to, obj_scale),
         int_var = adapt(to, int_var),
         var_names,
         con_names,
@@ -151,7 +159,7 @@ integer-specific transformations — a presolver, say — must be handed the rel
 """
 function relax(milp::MILP)
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     return MILP(;
@@ -165,6 +173,8 @@ function relax(milp::MILP)
         uc,
         D1,
         D2,
+        bound_scale,
+        obj_scale,
         int_var = zero!(similar(int_var)),
         var_names,
         con_names,

@@ -2,10 +2,15 @@
     PDLP(args...; kwargs...)
 
 Shortcut for [`Algorithm{:PDLP}`](@ref).
+
+The preconditioner starts with `curtis_reid_iter = 20` Curtis-Reid iterations, as in HPR-LP,
+before the Ruiz passes and the Pock-Chambolle step. Pass `curtis_reid_iter = 0` to go back to
+the Ruiz and Pock-Chambolle scaling of the original PDLP (and of `Algorithm{:PDLP}` itself).
 """
 function PDLP(args...; kwargs...)
     return Algorithm{:PDLP}(
         args...;
+        curtis_reid_iter = 20,
         kwargs...
     )
 end
@@ -75,7 +80,13 @@ function initialize(
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
     η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    ω = batched_expand(sol.x, primal_weight_init(milp, algo.step_size))
+    # after bound and objective rescaling, both norms are below one and cuPDLPx starts from ω = 1
+    ω_init = if algo.preconditioning.bound_objective_rescaling
+        one(T)
+    else
+        primal_weight_init(milp, algo.step_size)
+    end
+    ω = batched_expand(sol.x, ω_init)
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)

@@ -50,6 +50,10 @@ end
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
+        geometric_mean_iter = 0,
+        curtis_reid_iter = 0,
+        bound_objective_rescaling = false,
+        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -72,6 +76,15 @@ end
     )
 
 Constructor for algorithm configs.
+
+The diagonal preconditioner applies, in this order, `curtis_reid_iter` Curtis-Reid iterations,
+`geometric_mean_iter` geometric-mean passes, `ruiz_iter` Ruiz passes and a Pock-Chambolle step
+(skipped when `chambolle_pock_alpha` is `NaN`). With `bound_objective_rescaling`, the bounds and
+the objective of the preconditioned problem are then divided by `1 + ‖b‖₂` and `1 + ‖c‖₂`
+respectively (per instance), and PDLP starts from a primal weight of one.
+`bound_norm_sum_squares` selects the cuPDLPx definition of `‖b‖` instead of the HPR-LP one (see
+[`bound_objective_factors`](@ref)). Errors and solutions are always reported for the original
+problem.
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +95,10 @@ function Algorithm{A}(
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
+        geometric_mean_iter = 0,
+        curtis_reid_iter = 0,
+        bound_objective_rescaling = false,
+        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -108,7 +125,11 @@ function Algorithm{A}(
     )
     preconditioning = PreconditioningParameters(;
         chambolle_pock_alpha = _T(chambolle_pock_alpha),
-        ruiz_iter
+        ruiz_iter,
+        geometric_mean_iter,
+        curtis_reid_iter,
+        bound_objective_rescaling,
+        bound_norm_sum_squares,
     )
     step_size = StepSizeParameters(;
         invnorm_scaling = _T(invnorm_scaling),
@@ -201,6 +222,13 @@ function preprocess(
     prec = pdlp_preconditioner(milp_init_cpu, algo.preconditioning)
     milp_cpu = precondition(milp_init_cpu, prec)
     sol_cpu = precondition(sol_init_cpu, prec)
+    # always applied, with unit factors when disabled, so that the problem type does not
+    # depend on the value of the option
+    enabled = algo.preconditioning.bound_objective_rescaling
+    sum_squares = algo.preconditioning.bound_norm_sum_squares
+    β, γ = bound_objective_factors(milp_cpu; enabled, sum_squares)
+    milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
+    sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
 
     # moving to GPU
     milp = perform_conversion(milp_cpu, algo.conversion)
@@ -341,5 +369,5 @@ finish_progress!(prog) = finish!(prog)
 finish_progress!(::NoProgress) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
-    return unprecondition(state.sol, Preconditioner(milp))
+    return unscale(state.sol, milp)
 end
