@@ -12,17 +12,7 @@ $(TYPEDFIELDS)
     primal_weight_damping::T
     "tolerance in absolute comparisons to zero"
     zero_tol::T
-    """
-    relative residual tolerance in the iterative (Lanczos) spectral norm computation.
-
-    !!! warning "Breaking change"
-        This used to be the absolute tolerance on the eigenvalue estimate of `AᵀA` in the power
-        method. It is now the relative Lanczos residual `‖AᵀA y - θ y‖ ≤ tol * θ` (see
-        [`spectral_norm`](@ref)), with the same default `1e-3`: a custom value tuned for the
-        old meaning must be revisited. With the default, the converged estimate of `‖A‖₂` lies
-        below the true norm by at most about `tol / 2` relative, which `invnorm_scaling`
-        must absorb (`invnorm_scaling ≤ 1 - tol / 2`), unless `spectral_norm_upper` is set.
-    """
+    "relative residual tolerance in the iterative (Lanczos) spectral norm computation"
     spectral_norm_tol::T
     "maximum number of Lanczos iterations in the iterative spectral norm computation"
     spectral_norm_maxiter::I
