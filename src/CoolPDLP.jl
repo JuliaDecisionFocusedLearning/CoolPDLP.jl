@@ -4,7 +4,7 @@ module CoolPDLP
 using Adapt: Adapt, adapt
 using Atomix: Atomix
 using BangBang: add!!, broadcast!!
-using DispatchDoctor: @stable
+using DispatchDoctor: @stable, @unstable
 using DocStringExtensions: TYPEDFIELDS
 using IterativeSolvers: powm!
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
@@ -21,9 +21,29 @@ using Printf: @sprintf
 using Random: Random, randn!
 using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
-include("public.jl")
+# DispatchDoctor's package pattern: the checks are off unless the `dispatch_doctor_mode`
+# preference turns them on (the test suite sets it to "error"). Left on, their wrappers raise
+# the inlining cost of hot-path broadcasts enough that some stop inlining and allocate,
+# depending on what was compiled first, so users get the plain code.
+@stable default_mode = "disable" begin
+    """
+        dispatch_doctor_mode()
 
-@stable begin
+    The `dispatch_doctor_mode` preference of CoolPDLP, `"disable"` when unset. Extensions pass
+    it as `@stable default_mode = CoolPDLP.dispatch_doctor_mode()`: DispatchDoctor looks the
+    preference up under the UUID of the calling module, and an extension has its own UUID, so
+    without this the CoolPDLP preference (the test suite's `"error"`) never reaches them.
+    """
+    function dispatch_doctor_mode()
+        uuid = Base.PkgId(CoolPDLP).uuid
+        if ccall(:jl_generating_output, Cint, ()) == 1
+            Base.record_compiletime_preference(uuid, "dispatch_doctor_mode")
+        end
+        return get(Base.get_preferences(uuid), "dispatch_doctor_mode", "disable")::String
+    end
+
+    include("public.jl")
+
     include("utils/device.jl")
     include("utils/mat_coo.jl")
     include("utils/mat_csr.jl")
@@ -51,9 +71,9 @@ include("public.jl")
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
-end
 
-include("MOI_wrapper.jl")
+    include("MOI_wrapper.jl")
+end
 
 @public sametype_transpose
 

@@ -77,18 +77,31 @@ MOI.supports(::Optimizer, ::MOI.Silent) = true
 MOI.supports(::Optimizer, ::MOI.TimeLimitSec) = true
 MOI.supports(::Optimizer, ::MOI.RawOptimizerAttribute) = true
 
-MOI.get(model::Optimizer, ::MOI.TimeLimitSec) = get(model.options, :time_limit, nothing)
+# `TimeLimitSec` is `nothing` when unset, by MOI convention: the union is part of the API, so
+# allow exactly that two-member union here instead of the package-wide limit of one
+# The literal `default_mode = "disable"` must stay: the `dispatch_doctor_mode` preference still
+# overrides it (so this method is checked in the tests), whereas a nested `@stable` without
+# `default_mode` would fall back to DispatchDoctor's global default `"error"` for users
+@stable default_mode = "disable" default_union_limit = 2 function MOI.get(model::Optimizer, ::MOI.TimeLimitSec)
+    haskey(model.options, :time_limit) || return nothing
+    # a `RawOptimizerAttribute("time_limit")` may have stored any real number
+    return convert(Float64, model.options[:time_limit])::Float64
+end
 function MOI.set(model::Optimizer{T}, ::MOI.TimeLimitSec, value) where {T}
-    return if isnothing(value)
+    if isnothing(value)
         delete!(model.options, :time_limit)
     else
         model.options[:time_limit] = Float64(value)
     end
+    return nothing
 end
 MOI.get(model::Optimizer, ::MOI.Silent) = model.silent
-MOI.set(model::Optimizer, ::MOI.Silent, value::Bool) = (model.silent = value;)
-MOI.get(model::Optimizer, attr::MOI.RawOptimizerAttribute) = model.options[Symbol(attr.name)]
-MOI.set(model::Optimizer, attr::MOI.RawOptimizerAttribute, value) = (model.options[Symbol(attr.name)] = value;)
+MOI.set(model::Optimizer, ::MOI.Silent, value::Bool) = (model.silent = value; nothing)
+# a raw attribute holds whatever value the user set, so its return type is inferred as `Any`
+# by design: exempt exactly this method from the package-wide `@stable` (`@unstable` holds
+# regardless of the `dispatch_doctor_mode` preference, unlike a per-method `default_mode`)
+@unstable MOI.get(model::Optimizer, attr::MOI.RawOptimizerAttribute) = model.options[Symbol(attr.name)]
+MOI.set(model::Optimizer, attr::MOI.RawOptimizerAttribute, value) = (model.options[Symbol(attr.name)] = value; nothing)
 
 MOI.get(::Optimizer, ::MOI.SolverName) = "CoolPDLP"
 MOI.get(::Optimizer, ::MOI.SolverVersion) = string(pkgversion(CoolPDLP))
@@ -238,7 +251,11 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     end
     algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
 
-    sol, stats = solve(milp, algo)
+    # `algo` comes from untyped options, so it is inferred as `Any`: with a direct call, the
+    # compiler would still infer the only matching `solve` method on the abstract `Algorithm`,
+    # which takes many minutes (the whole solver over abstract types). `invokelatest` keeps that
+    # call opaque, and `solve` gets compiled at run time for the concrete algorithm instead.
+    sol, stats = Base.invokelatest(solve, milp, algo)
 
     dest.x = Array(sol.x)
     dest.y = Array(sol.y)

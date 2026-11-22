@@ -38,6 +38,7 @@ makedocs(;
         "Dev docs" => [
             "math.md",
             "internals.md",
+            "development.md",
         ],
     ],
 )
