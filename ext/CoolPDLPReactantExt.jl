@@ -128,11 +128,14 @@ using DispatchDoctor: @stable
     it compiles down to a `stablehlo.reshape`.
     """
     function traced_current_time()
-        host_callbacks_supported() || return frozen_clock()
+        # both branches return a traced `Float64`, so that the result is concrete: Reactant does
+        # not infer the type of a callback's outputs, and the frozen clock is a host `Float64`
+        host_callbacks_supported() ||
+            return Reactant.Ops.constant(frozen_clock())::Reactant.TracedRNumber{Float64}
         out = Reactant.Ops.julia_callback(
             write_time!, ((Float64, (1,)),); has_side_effect = true
         )
-        return sum(out)
+        return sum(out)::Reactant.TracedRNumber{Float64}
     end
 end
 
