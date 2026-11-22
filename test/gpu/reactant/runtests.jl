@@ -50,6 +50,38 @@ unwrap(x::AbstractArray) = Array(x)
 # only reads the fields, so it needs no kernel and no CUDA.jl
 trace_fields(A) = sum(A.nzval) + sum(A.colval)
 
+"""
+    same_traced_cache_key(x, others...)
+
+Whether every one of `others` gets the same path as `x` from Reactant's `TracedToTypes` tracing
+mode once traced, as when they are passed to `Reactant.Ops.call` inside a compiled function:
+Reactant keys its cache of called functions by that path, so it must hold the structure of an
+argument but not its traced numbers. The paths hold MLIR types, which live only as long as the
+compilation, so they are compared during tracing.
+"""
+function same_traced_cache_key(x, others...)
+    result = Bool[]
+    function compare_keys(args...)
+        keys = map(args) do arg
+            path = []
+            Reactant.make_tracer(Reactant.OrderedIdDict(), arg, path, Reactant.TracedToTypes)
+            path
+        end
+        append!(result, [k == first(keys) for k in Base.tail(keys)])
+        return nothing
+    end
+    @compile compare_keys(map(a -> to_rarray(a; track_numbers = true), (x, others...))...)
+    return result
+end
+
+@testset "Cache key of the step size parameters" begin
+    step_size(; kw...) = PDLP(Float64, Int32, Matrix; kw...).step_size
+    # a traced number does not change the key, the structural `Bool` does
+    @test same_traced_cache_key(
+        step_size(), step_size(; invnorm_scaling = 0.8), step_size(; spectral_norm_upper = true)
+    ) == [true, false]
+end
+
 @testset "Custom sparse wrappers can be traced" begin
     A_cpu = convert(SparseMatrixCSC{Float64, Int32}, sprand(StableRNG(0), 12, 8, 0.4))
     @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
@@ -170,7 +202,17 @@ function test_agreement(state, state_r; rtol)
         @testset "$field" for field in fieldnames(KKTErrors)
             err = unwrap(getfield(state.stats.err, field))
             err_r = unwrap(getfield(state_r.stats.err, field))
-            @test isapprox(err_r, err; rtol)
+            # A residual is a difference of terms of the size of its scale, and XLA reassociates
+            # the sums that form them, so the two runs agree to a few ulps of the scale, not of
+            # the residual: when it is small next to its scale (a `Float32` gap of 10 on a scale
+            # of 10^4, say), its relative difference alone can exceed `rtol`.
+            scale_field = Symbol(field, :_scale)
+            atol = if hasfield(KKTErrors, scale_field)
+                100 * eps(eltype(err)) * maximum(unwrap(getfield(state.stats.err, scale_field)))
+            else
+                zero(eltype(err))
+            end
+            @test isapprox(err_r, err; rtol, atol)
         end
     end
 
