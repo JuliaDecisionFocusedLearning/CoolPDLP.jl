@@ -85,11 +85,9 @@ end
 end
 
 @testset "Constraint-free problem with infeasible or unbounded box" begin
-    # this package has no dedicated infeasible/unbounded status: falling through to the
-    # general iteration loop (which no longer blows up thanks to the `fixed_stepsize` fix)
-    # is the same "no detection, just don't converge" behavior as any other bad problem,
-    # whereas silently claiming OPTIMAL from the early exit would be actively wrong
-    algo = PDLP(; max_kkt_passes = 20, show_progress = false)
+    # the early exit must not claim OPTIMAL: crossed bounds are reported right away, and an
+    # unbounded direction is certified by the general iteration loop
+    algo = PDLP(; max_kkt_passes = 10^4, show_progress = false)
 
     @testset "infeasible box (lv > uv)" begin
         milp = MILP(;
@@ -97,7 +95,7 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test termination_status(stats) != MOI.OPTIMAL
+        @test termination_status(stats) == MOI.INFEASIBLE
     end
 
     @testset "unbounded direction (c[1] > 0, lv[1] == -Inf)" begin
@@ -106,7 +104,8 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test termination_status(stats) != MOI.OPTIMAL
+        @test termination_status(stats) == MOI.DUAL_INFEASIBLE
+        @test stats.ray.x[1] * milp.c[1] < 0
     end
 
     @testset "unbounded direction (c[1] < 0, uv[1] == Inf)" begin
@@ -115,7 +114,8 @@ end
         )
         sol, stats = solve(milp, algo)
         @test !any(isnan, sol.x) && !any(isinf, sol.x)
-        @test termination_status(stats) != MOI.OPTIMAL
+        @test termination_status(stats) == MOI.DUAL_INFEASIBLE
+        @test stats.ray.x[1] * milp.c[1] < 0
     end
 end
 
@@ -134,6 +134,7 @@ end
 
         # the history is actually recorded, not left at its single seed entry
         @test length(history) > 1
+        # the passes of the infeasibility checks do not count towards the limit
         @test length(history) == 1 + div(max_kkt_passes, check_every)
 
         passes, errors = first.(history), last.(history)
@@ -280,4 +281,13 @@ end
     milp, sol = CoolPDLP.random_milp_and_sol(5, 6, 0.5)
     scratch = CoolPDLP.Scratch(sol)
     @test_throws ArgumentError CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :L1)
+end
+
+@testset "Single default for the infeasibility tolerance" begin
+    using CoolPDLP: TerminationParameters, DEFAULT_INFEASIBILITY_TOL
+    params = TerminationParameters(; termination_reltol = 1.0e-4, max_kkt_passes = 1)
+    @test params.infeasibility_tol === PDLP().termination.infeasibility_tol === DEFAULT_INFEASIBILITY_TOL
+    @test TerminationParameters(;
+        termination_reltol = 1.0f-4, max_kkt_passes = 1
+    ).infeasibility_tol isa Float32
 end

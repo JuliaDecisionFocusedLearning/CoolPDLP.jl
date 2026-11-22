@@ -30,6 +30,7 @@ $(TYPEDFIELDS)
         It <: IterationCounter,
         RS <: RestartStats,
         CS <: ConvergenceStats,
+        IW <: Union{Nothing, InfeasibilityWorkspace},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
@@ -51,6 +52,8 @@ $(TYPEDFIELDS)
     restart_stats::RS
     "convergence stats"
     stats::CS
+    "infeasibility detection buffers"
+    infeas::IW
 end
 
 nbinstances((; sol)::PDLPState) = nbinstances(sol)
@@ -66,6 +69,7 @@ function instance(state::PDLPState, i::Int)
         state.iteration,
         instance(state.restart_stats, i),
         instance(state.stats, i),
+        instance(state.infeas, i),
     )
 end
 
@@ -105,10 +109,12 @@ function initialize(
     if norm !== :L2
         kkt_errors!(err, scratch, sol, milp, norm)
     end
-    stats = ConvergenceStats(err; starting_time)
+    tol = algo.termination.infeasibility_tol
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    infeas = InfeasibilityWorkspace(sol, tol)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
-        step_sizes, scratch, iteration, restart_stats, stats
+        step_sizes, scratch, iteration, restart_stats, stats, infeas
     )
     return state
 end
@@ -135,16 +141,27 @@ function solve!(
             restart!(state, algo)
         end
     end
+    export_certificate!(state.stats, state.infeas, milp)
     finish_progress!(prog)
     return state
 end
+
+"""
+    ray_candidates(state)
+
+Return the candidate directions for the infeasibility certificates, as `(to, from)` pairs
+standing for `to - from` (or `to` itself if `from` is `nothing`).
+
+For PDLP, these are the last step and the displacement since the last restart.
+"""
+ray_candidates(state::PDLPState) = ((state.sol, state.sol_last), (state.sol, state.sol_restart))
 
 function step!(
         state::PDLPState{T, V},
         milp::MILP{T},
     ) where {T, V}
     (; sol, step_sizes, scratch) = state
-    pdhg_update!(sol, scratch, step_sizes, milp)
+    pdhg_update!(sol, scratch, step_sizes, milp, active_mask(state.stats))
     state.stats.kkt_passes += 1
     update_average!(state)
     add_inner!(state.iteration)
@@ -154,10 +171,11 @@ end
 function update_average!(state::PDLPState)
     (; sol, sol_avg, step_sizes, scratch) = state
     (; η, η_sum) = step_sizes
+    active = active_mask(state.stats)
     weight_new = broadcast!!((a, b) -> a / (a + b), scratch.b1, η, η_sum)
     weight_avg = broadcast!!((a, b) -> b / (a + b), scratch.b2, η, η_sum)
-    axpby!(weight_new, sol, weight_avg, sol_avg)
-    add_stepsize!(step_sizes)
+    masked_axpby!(weight_new, sol, weight_avg, sol_avg, active)
+    add_stepsize!(step_sizes, active)
     return nothing
 end
 
@@ -201,8 +219,9 @@ function restart_check!(
     restart_stats.abs_candidate, abs1, abs2 = best_error!!(
         restart_stats.abs_candidate, err_current, err_avg, scratch, sol, sol_avg, milp, ω,
     )
-    restart_stats.restart_from_avg = broadcast!!(
-        <=, restart_stats.restart_from_avg, abs2, abs1,
+    # a frozen instance never moves to its average
+    restart_stats.restart_from_avg = mask_and!!(
+        broadcast!!(<=, restart_stats.restart_from_avg, abs2, abs1), active_mask(state.stats),
     )
     restart_stats.abs_candidate_last, _, _ = best_error!!(
         restart_stats.abs_candidate_last, err_last, err_avg_last,

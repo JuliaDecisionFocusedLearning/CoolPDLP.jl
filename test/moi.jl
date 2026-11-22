@@ -32,8 +32,6 @@ PKGEVAL = get(ENV, "PKGEVAL", "false") == "true"
         # an empty `include` runs every test
         include = PKGEVAL ? Any[r"test_linear"] : Any[],
         exclude = [
-            # TODO: infeasible/unbounded detection
-            r"INFEASIBILITY_CERTIFICATE", r"INFEASIBLE",  # exclude infeasible test problems
             r"test_linear_add_constraints",  # for `y`, we get 36.434290756682884 but answer is 36.36363636363637
         ],
     )

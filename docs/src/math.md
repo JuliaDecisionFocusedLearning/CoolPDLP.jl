@@ -194,4 +194,19 @@ This is the criterion of cuPDLP.jl and cuOpt.
 The default $\epsilon_a = \epsilon_r$ gives back the purely relative criterion $\text{error} / (1 + \text{norm}) \leq \epsilon_r$ of PDLP.
 Every quantity is that of the original problem, whatever the preconditioning.
 Restarts always compare errors in the $\ell_2$ norm.
+## Infeasibility detection
+
+When a problem is infeasible, the iterates diverge, and their differences converge to a direction whose primal or dual part certifies it ([Applegate et al.](https://arxiv.org/abs/2102.04592)).
+At every termination check, two candidate directions (for PDLP, the last step and the displacement since the last restart; for PDHG, the last step and the iterate itself) are first projected onto the sign conditions of a ray, then tested on the original problem:
+
+- a dual ray $y$, with reduced cost $r = -A^\top y$, certifies primal infeasibility when $r$ only pairs with finite variable bounds and $p(y; \ell_c, u_c) + p(r; \ell_v, u_v) > 0$;
+- a primal ray $d$ certifies dual infeasibility when $d$ and $Ad$ lie in the recession cones of $[\ell_v, u_v]$ and $[\ell_c, u_c]$ and $c^\top d < 0$.
+
+The error of a ray is the norm of its violation of these cone conditions divided by its objective, which does not depend on its length, and a ray qualifies only if its objective is at least `infeasibility_tol` times the sum of the absolute values of its terms, which rules out rounding noise.
+An instance is `MOI.INFEASIBLE` (resp. `MOI.DUAL_INFEASIBLE`) once that error is at most `infeasibility_tol` (default $10^{-8}$), optimality taking precedence, then primal infeasibility.
+The certificates are returned in `stats.ray`, in the original space: `stats.ray.y` for primal infeasibility, `stats.ray.x` for dual infeasibility.
+
+Each check costs two more KKT passes (one product by $A$ and $A^\top$ per candidate), counted in `stats.ray_passes` rather than in `stats.kkt_passes`, so they do not count towards `max_kkt_passes`.
+With `infeasibility_tol = nothing`, the detection is removed at the type level: no buffers, no extra passes, and nothing to trace under Reactant.
+Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without a certificate.
 

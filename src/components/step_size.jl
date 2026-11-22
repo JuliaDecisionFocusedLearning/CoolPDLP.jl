@@ -72,9 +72,14 @@ instance(step_sizes::StepSizes, i::Int) = StepSizes(
     instance_num(step_sizes.ω, i),
 )
 
-function add_stepsize!(step_sizes::StepSizes)
+function add_stepsize!(step_sizes::StepSizes, ::Bool)
     (; η, η_sum) = step_sizes
     step_sizes.η_sum = add!!(η_sum, η)
+    return nothing
+end
+function add_stepsize!(step_sizes::StepSizes, active::AbstractVector)
+    (; η, η_sum) = step_sizes
+    step_sizes.η_sum = masked_apply!!(+, η_sum, active, η_sum, η)
     return nothing
 end
 
