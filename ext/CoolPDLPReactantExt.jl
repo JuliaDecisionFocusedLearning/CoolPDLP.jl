@@ -72,6 +72,55 @@ for (cT, bT, kw) in (
     end
 end
 
+# `StepSizeParameters` holds numbers, which are traced, and the `Bool` `spectral_norm_upper`,
+# which number tracking would try (and fail) to turn into a traced number: it is structure,
+# part of the cache key. A new field must be classified here.
+const STRUCTURAL_STEP_SIZE_FIELDS = (:spectral_norm_upper,)
+const TRACED_STEP_SIZE_FIELDS = Tuple(
+    name for name in fieldnames(CoolPDLP.StepSizeParameters) if !(name in STRUCTURAL_STEP_SIZE_FIELDS)
+)
+all(name -> fieldtype(CoolPDLP.StepSizeParameters, name) === Bool, STRUCTURAL_STEP_SIZE_FIELDS) &&
+    all(name -> fieldtype(CoolPDLP.StepSizeParameters, name) !== Bool, TRACED_STEP_SIZE_FIELDS) ||
+    error("the fields of `StepSizeParameters` changed: classify them for its Reactant tracer")
+
+function Reactant.traced_type_inner(
+        @nospecialize(T::Type{<:CoolPDLP.StepSizeParameters}),
+        seen,
+        mode::Reactant.TraceMode,
+        @nospecialize(track_numbers::Type),
+        @nospecialize(ndevices),
+        @nospecialize(runtime),
+    )
+    T isa DataType || return @invoke Reactant.traced_type_inner(
+        T::Type, seen::Any, mode::Reactant.TraceMode, track_numbers::Type, ndevices::Any, runtime::Any
+    )
+    Tr, Ir = T.parameters
+    traced(X) = Reactant.traced_type_inner(X, seen, mode, track_numbers, ndevices, runtime)
+    return CoolPDLP.StepSizeParameters{traced(Tr), traced(Ir)}
+end
+
+function Reactant.make_tracer(
+        seen, @nospecialize(prev::CoolPDLP.StepSizeParameters), @nospecialize(path), mode;
+        kwargs...,
+    )
+    if mode == Reactant.TracedToTypes
+        push!(path, Core.Typeof(prev))
+        for name in STRUCTURAL_STEP_SIZE_FIELDS
+            push!(path, getfield(prev, name))
+        end
+        for name in TRACED_STEP_SIZE_FIELDS
+            Reactant.make_tracer(seen, getfield(prev, name), path, mode; kwargs...)
+        end
+        return nothing
+    end
+    tr(name) = Reactant.make_tracer(
+        seen, getfield(prev, name),
+        Reactant.append_path(path, Base.fieldindex(typeof(prev), name)), mode; kwargs...
+    )
+    traced_values = NamedTuple{TRACED_STEP_SIZE_FIELDS}(map(tr, TRACED_STEP_SIZE_FIELDS))
+    return CoolPDLP.StepSizeParameters(; traced_values..., spectral_norm_upper = prev.spectral_norm_upper)
+end
+
 """
     write_time!(out)
 

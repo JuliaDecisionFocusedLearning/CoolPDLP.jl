@@ -56,6 +56,7 @@ end
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
+        spectral_norm_upper = false,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -88,6 +89,7 @@ function Algorithm{A}(
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
+        spectral_norm_upper = false,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -116,6 +118,7 @@ function Algorithm{A}(
         zero_tol = _T(zero_tol),
         spectral_norm_tol = _T(spectral_norm_tol),
         spectral_norm_maxiter,
+        spectral_norm_upper = Bool(spectral_norm_upper),
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),

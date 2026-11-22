@@ -92,7 +92,7 @@ end
         A = randn(rng, 10, 20)
         s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7, maxiter = 1000)
         s1_ref = opnorm(A, 2)
-        # normalizing the initial guess and giving the power method a generous,
+        # a deterministic random start and a generous,
         # size-independent iteration budget (#95) makes this accurate to near machine
         # precision, instead of the `rtol = 1.0e-1` this used to require
         @test s1 ≈ s1_ref rtol = 1.0e-10
@@ -100,7 +100,7 @@ end
 end
 
 @testset "Spectral norm requires an explicit tolerance and iteration budget" begin
-    # neither `tol` nor `maxiter` may fall back to IterativeSolvers' size-dependent
+    # neither `tol` nor `maxiter` may fall back to size-dependent (IterativeSolvers-style)
     # defaults (see #95): those scale as `eps(T) * n^3` and `size(B, 2)` respectively,
     # which become far too loose (or too small) to trust at scale
     A = randn(5, 5)
@@ -111,7 +111,7 @@ end
 end
 
 @testset "Spectral norm of a zero matrix is exactly zero" begin
-    # `Kᵀ * K` is positive semidefinite, so the power method's Rayleigh quotient `λ` is
+    # `Kᵀ * K` is positive semidefinite, so the largest Ritz value `λ` is
     # mathematically nonnegative; a genuinely zero spectral norm (no constraint rows, or
     # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
     # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
@@ -119,14 +119,59 @@ end
     @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3, maxiter = 1000) == 0.0
 end
 
-@testset "Spectral norm errors instead of silently under-converging" begin
-    # a `maxiter` too small for the requested `tol` (rather than IterativeSolvers'
-    # size-tied default) must surface as an error instead of an inaccurate estimate
+@testset "Spectral norm rejects NaN entries and non-BLAS element types" begin
+    A = [1.0 NaN; 0.0 2.0]
+    @test_throws ArgumentError CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-3, maxiter = 100)
+    B = BigFloat[1 0; 0 2]
+    @test_throws ArgumentError CoolPDLP.spectral_norm(B, B; tol = 1.0e-3, maxiter = 100)
+    @test CoolPDLP.spectral_norm(Float32[1 0; 0 2], Float32[1 0; 0 2]; tol = 1.0e-4, maxiter = 100) ≈ 2.0f0
+end
+
+@testset "Spectral norm warns and stays conservative instead of crashing" begin
+    # a `maxiter` too small for the requested `tol` used to throw an `AssertionError`
+    # (traininstance2, traininstance6, triptim1 from MIPLIB 2017); it must now warn and
+    # return a finite estimate, never above the rigorous bound
     rng = Xoshiro(42)
     A = randn(rng, 10, 20)
-    @test_throws AssertionError CoolPDLP.spectral_norm(
-        A, Matrix(transpose(A)); tol = 1.0e-12, maxiter = 1
-    )
+    Aᵀ = Matrix(transpose(A))
+    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-12, maxiter = 1)
+    @test 0 < s <= sqrt(opnorm(A, 1) * opnorm(A, Inf))
+    # with a clustered top of the spectrum (the realistic cause of non-convergence), the
+    # inflated estimate lies above the true norm, i.e. on the safe step size side
+    λs = vcat(1.0, 1.0 - 1.0e-7, range(0.0, 0.999; length = 98))
+    K = sparse(Diagonal(sqrt.(λs)))
+    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; tol = 1.0e-12, maxiter = 30)
+    @test 1.0 <= s <= 1.05
+    @test CoolPDLP.spectral_norm_upper_bound(A, Aᵀ) ≈ sqrt(opnorm(A, 1) * opnorm(A, Inf))
+    S = sparse(A)
+    @test CoolPDLP.spectral_norm_upper_bound(S, sparse(Aᵀ)) ≈ sqrt(opnorm(A, 1) * opnorm(A, Inf))
+end
+
+@testset "Spectral norm converges where plain power iteration does not" begin
+    # eigenvalues of `KᵀK`: 1, 0.995 and a bulk in [0, 0.99]; with residual tolerance 1e-6
+    # the power method needs about log(1e-6 / 0.005) / log(0.995) ≈ 1700 iterations,
+    # while Lanczos converges like the power method with the square root of that ratio
+    n = 200
+    λs = vcat(1.0, 0.995, range(0.0, 0.99; length = n - 2))
+    K = sparse(Diagonal(sqrt.(λs)))
+    Kᵀ = copy(transpose(K))
+    tol, maxiter = 1.0e-6, 1000
+    # plain power iteration with the same start and stopping rule as `powm!`
+    x = randn(Xoshiro(0), n)
+    x ./= norm(x)
+    power_converged = false
+    for _ in 1:maxiter
+        y = Kᵀ * (K * x)
+        θ = dot(x, y)
+        if norm(y - θ * x) <= tol * θ
+            power_converged = true
+            break
+        end
+        x = y / norm(y)
+    end
+    @test !power_converged
+    s = @test_logs CoolPDLP.spectral_norm(K, Kᵀ; tol, maxiter)
+    @test s ≈ 1.0 rtol = 1.0e-8
 end
 
 @testset "Column reductions" begin
@@ -162,4 +207,48 @@ end
         @test CoolPDLP.sametype_transpose(A) == transpose(A)
         @test CoolPDLP.sametype_transpose(A) isa typeof(A)
     end
+end
+
+@testset "Spectral norm on the CoolPDLP sparse formats" begin
+    # `abs_entries` and the products in `spectral_norm` must work on every format the solver
+    # converts `A` to, not only on `SparseMatrixCSC`
+    rng = Xoshiro(3)
+    S = sprandn(rng, 30, 40, 0.2)
+    St = sparse(transpose(S))
+    ref = opnorm(Matrix(S), 2)
+    bound = sqrt(opnorm(Matrix(S), 1) * opnorm(Matrix(S), Inf))
+    for F in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+        A, At = F(S), F(St)
+        @test SparseMatrixCSC(CoolPDLP.abs_entries(A)) == abs.(S)
+        @test CoolPDLP.spectral_norm_upper_bound(A, At) ≈ bound
+        @test CoolPDLP.spectral_norm(A, At; tol = 1.0e-8, maxiter = 1000) ≈ ref rtol = 1.0e-6
+    end
+end
+
+@testset "Spectral norm warns at every non-converging call" begin
+    rng = Xoshiro(4)
+    A = randn(rng, 10, 20)
+    At = Matrix(transpose(A))
+    for _ in 1:2
+        @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, At; tol = 1.0e-12, maxiter = 1)
+    end
+end
+
+@testset "Upper spectral norm estimate" begin
+    # the Ritz value lies below the norm; `upper = true` adds the residual bound on top of it
+    rng = Xoshiro(5)
+    S = sprandn(rng, 200, 300, 0.05)
+    St = sparse(transpose(S))
+    ref = opnorm(Matrix(S), 2)
+    lo = CoolPDLP.spectral_norm(S, St; tol = 1.0e-3, maxiter = 1000)
+    hi = CoolPDLP.spectral_norm(S, St; tol = 1.0e-3, maxiter = 1000, upper = true)
+    @test lo <= ref * (1 + 1.0e-12)
+    @test lo <= hi
+    @test hi >= ref * (1 - 1.0e-12)
+    @test hi <= ref * (1 + 1.0e-3)
+    # the keyword of the algorithms reaches the estimate
+    @test !PDLP().step_size.spectral_norm_upper
+    params = PDLP(; spectral_norm_upper = true).step_size
+    @test params.spectral_norm_upper
+    @test CoolPDLP.spectral_norm(S, St, params) == CoolPDLP.spectral_norm(S, St; tol = params.spectral_norm_tol, maxiter = params.spectral_norm_maxiter, upper = true)
 end

@@ -354,6 +354,18 @@ end
 # backend can service; the extension falls back to the frozen trace-time clock when it cannot.
 const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
 
+@testset "spectral_norm_upper stays structural" begin
+    @testset "$upper" for upper in (false, true)
+        algo = PDLP(; backend = nothing, spectral_norm_upper = upper)
+        algo_r = to_rarray(algo; track_numbers = true)
+        # the flag is part of the cache key, while the numbers next to it stay traced
+        @test algo_r.step_size.spectral_norm_upper === upper
+        @test !(algo_r.step_size.invnorm_scaling isa Float64)
+        @test unwrap(algo_r.step_size.invnorm_scaling) == algo.step_size.invnorm_scaling
+        @test unwrap(algo_r.step_size.spectral_norm_maxiter) == algo.step_size.spectral_norm_maxiter
+    end
+end
+
 @testset "Static inner loop" begin
     algo = PDLP(;
         backend = nothing, check_every = 7, termination_reltol = 1.0e-5, max_kkt_passes = 300
