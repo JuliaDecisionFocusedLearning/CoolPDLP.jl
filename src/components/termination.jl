@@ -1,31 +1,91 @@
 """
     current_time()
 
-Return the current time in seconds, like `Base.time()`.
+Return the current host time in seconds, like `Base.time()`.
 
-This indirection exists for Reactant. `time()` is an ordinary Julia call, so tracing it folds
-its trace-time value into the compiled program as a constant: the elapsed time would never
-advance inside a compiled solve loop and the time limit could never fire. The `Reactant`
-extension overlays this method with a host callback, which is re-evaluated at every iteration
-of the compiled loop.
+It is only ever called on the host: inside a Reactant-compiled solve, the clock is read by the
+host callback behind [`check_time_limit!`](@ref) instead.
 """
 current_time() = time()
 
 """
-    update_time_elapsed!(stats, time_limit)
+    HostClock
 
-Set `stats.time_elapsed` to the time elapsed since `stats.starting_time`.
+Wall-clock bookkeeping of a solve, kept on the host.
 
-Inside a Reactant compilation context, do nothing when `time_limit` is infinite. Reading the
-clock there costs a host callback at every termination check, and the Reactant extension
-traces the time limit (in [`GenericParameters`](@ref)) as a constant, so without one the
-callback is never emitted. The elapsed time of such a compiled solve is then left at its
-initial value.
+It is a separate object so that Reactant can leave it out of a compiled program (see the
+Reactant extension): the times are `Float64`, which some accelerators cannot hold, and they are
+only ever read and written by host code.
+
+# Fields
+
+$(TYPEDFIELDS)
 """
-function update_time_elapsed!(stats, time_limit)
-    within_compile() && isinf(time_limit) && return nothing
-    stats.time_elapsed = current_time() - stats.starting_time
-    return nothing
+mutable struct HostClock
+    "time at which the algorithm started, in seconds"
+    starting_time::Float64
+    "time elapsed since the algorithm started, in seconds"
+    time_elapsed::Float64
+end
+
+"""
+    CLOCK_REGISTRY
+
+Every live [`HostClock`](@ref), by the id that [`register_clock!`](@ref) gave it, held weakly.
+
+A compiled program cannot hold a host object, so a Reactant-compiled solve reaches the clock of
+the state it runs on through its id, a traced number of [`ConvergenceStats`](@ref): a program
+compiled on one state then updates the clock of whichever state it is called with.
+"""
+const CLOCK_REGISTRY = Dict{UInt32, WeakRef}()
+const CLOCK_REGISTRY_LOCK = ReentrantLock()
+const LAST_CLOCK_ID = Ref{UInt32}(0)
+
+"""
+    register_clock!(clock)
+
+Give `clock` a new id in [`CLOCK_REGISTRY`](@ref) and return it. Entries of clocks which have
+been garbage collected are swept every 256 registrations.
+"""
+function register_clock!(clock::HostClock)
+    return @lock CLOCK_REGISTRY_LOCK begin
+        id = LAST_CLOCK_ID[] += one(UInt32)
+        if iszero(id % UInt32(256))
+            filter!(entry -> entry.second.value !== nothing, CLOCK_REGISTRY)
+        end
+        CLOCK_REGISTRY[id] = WeakRef(clock)
+        id
+    end
+end
+
+"""
+    update_registered_clock!(id, time_limit)
+
+Update the elapsed time of the clock registered as `id`, and return whether it has reached
+`time_limit`. A clock which is no longer registered never reaches it.
+"""
+function update_registered_clock!(id::Integer, time_limit::Float64)
+    ref = @lock CLOCK_REGISTRY_LOCK get(CLOCK_REGISTRY, UInt32(id), nothing)
+    clock = ref === nothing ? nothing : ref.value
+    clock isa HostClock || return false
+    clock.time_elapsed = current_time() - clock.starting_time
+    return clock.time_elapsed >= time_limit
+end
+
+"""
+    check_time_limit!(stats, time_limit)
+
+Update the elapsed time in `stats` and return whether it has reached `time_limit`, which lives
+in [`GenericParameters`](@ref).
+
+The Reactant extension overlays this, so that inside a compiled solve the comparison happens on
+the host, and only its `Bool` result enters the compiled program. With an infinite `time_limit`,
+the compiled program does not read the clock at all.
+"""
+function check_time_limit!(stats, time_limit::Number)
+    clock = stats.clock
+    clock.time_elapsed = current_time() - clock.starting_time
+    return clock.time_elapsed >= time_limit
 end
 
 """
@@ -51,17 +111,20 @@ end
 """
     ConvergenceStats
 
+The properties `starting_time` and `time_elapsed` are forwarded to the [`HostClock`](@ref) in
+`clock`.
+
 # Fields
 
 $(TYPEDFIELDS)
 """
-mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number, S <: Number}
+mutable struct ConvergenceStats{T <: BatchedNumber, K <: Number, I <: Number, S <: Number}
     "current KKT error"
     err::KKTErrors{T}
-    "time at which the algorithm started, in seconds"
-    starting_time::F
-    "time elapsed since the algorithm started, in seconds"
-    time_elapsed::F
+    "host-side starting time and elapsed time, left out of a Reactant-compiled program"
+    clock::HostClock
+    "id of `clock` in [`CLOCK_REGISTRY`](@ref), traced under Reactant so that a compiled solve reads the clock of the state it is called with"
+    clock_id::K
     "number of multiplications by both the KKT matrix and its transpose"
     kkt_passes::I
     "integer code of the termination status (should be that of `MOI.OPTIMIZE_NOT_CALLED` until the algorithm actually terminates), read with [`termination_status`](@ref)"
@@ -78,16 +141,37 @@ function ConvergenceStats(
         termination_status_code::S = status_code(MOI.OPTIMIZE_NOT_CALLED),
         error_history = [(kkt_passes, copy(err))]
     ) where {T, I, S}
-    F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
-    return ConvergenceStats{T, F, I, S}(
+    clock = HostClock(starting_time, time_elapsed)
+    clock_id = register_clock!(clock)
+    return ConvergenceStats{T, UInt32, I, S}(
         err,
-        starting_time,
-        time_elapsed,
+        clock,
+        clock_id,
         kkt_passes,
         termination_status_code,
         error_history
     )
 end
+
+const CLOCK_PROPERTIES = (:starting_time, :time_elapsed)
+
+function Base.getproperty(stats::ConvergenceStats, name::Symbol)
+    if name in CLOCK_PROPERTIES
+        return getfield(getfield(stats, :clock), name)
+    else
+        return getfield(stats, name)
+    end
+end
+
+function Base.setproperty!(stats::ConvergenceStats, name::Symbol, x)
+    if name in CLOCK_PROPERTIES
+        return setproperty!(getfield(stats, :clock), name, x)
+    else
+        return setfield!(stats, name, convert(fieldtype(typeof(stats), name), x))
+    end
+end
+
+Base.propertynames(::ConvergenceStats) = (fieldnames(ConvergenceStats)..., CLOCK_PROPERTIES...)
 
 """
     status_code(status)
@@ -136,12 +220,12 @@ function Base.show(io::IO, stats::ConvergenceStats)
 end
 
 """
-    set_termination_status!!(stats, dest, params, time_limit)
+    set_termination_status!!(stats, dest, params, is_time_limit)
 
 Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
 
-The time limit is passed separately from the other termination parameters `params`, because it
-lives in [`GenericParameters`](@ref).
+Whether the time limit is reached comes from [`check_time_limit!`](@ref), since the limit lives
+in [`GenericParameters`](@ref) and, inside a compiled solve, is checked on the host.
 
 Set `stats.termination_status_code` and return whether the algorithm should stop.
 
@@ -155,12 +239,11 @@ function set_termination_status!!(
         stats::ConvergenceStats,
         dest::BatchedNumber,
         params::TerminationParameters,
-        time_limit::Number
+        is_time_limit
     )
-    (; err, time_elapsed, kkt_passes) = stats
+    (; err, kkt_passes) = stats
     (; termination_reltol, max_kkt_passes) = params
     is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
-    is_time_limit = time_elapsed >= time_limit
     is_iteration_limit = kkt_passes >= max_kkt_passes
     # nested `ifelse` instead of `if`/`elseif`: it is a plain (traceable) computation, and it
     # states the priority between simultaneous criteria in one place

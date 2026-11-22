@@ -380,11 +380,9 @@ end
 
 @testset "Backend support for host callbacks" begin
     @test REACTANT_EXT.host_callbacks_supported() isa Bool
-    # the fallback keeps a compiled solve working on backends that cannot run a callback: it
-    # reads the clock once, while tracing, and says so
-    frozen = @test_logs (:warn,) match_mode = :any REACTANT_EXT.frozen_clock()
-    @test frozen isa Float64
-    @test frozen > 0
+    # the fallback keeps a compiled solve working on backends that cannot run a callback, and
+    # says that the time limit is off
+    @test_logs (:warn,) match_mode = :any REACTANT_EXT.warn_no_time_limit()
 end
 
 @testset "Host callback only with a finite time limit" begin
@@ -438,11 +436,13 @@ else
         compiled_solve! = @compile CoolPDLP.solve!(state_r, milp_r, algo_r)
         # compilation happens after `initialize`, and counts against the time limit like any other
         # elapsed time, so restart the clock now that it is over
-        state_r.stats.starting_time = to_rarray(time(); track_numbers = true)
+        state_r.stats.starting_time = time()
         compiled_solve!(state_r, milp_r, algo_r)
 
-        elapsed = unwrap(state_r.stats.time_elapsed)
+        # the run is asynchronous, and the elapsed time lives on the host, where the callback
+        # writes it: wait for a device value of the run before reading it
         passes = unwrap(state_r.stats.kkt_passes)
+        elapsed = state_r.stats.time_elapsed
 
         @testset "The clock advances inside the compiled loop" begin
             # without the host callback, `time()` is folded to its trace-time value and the elapsed
@@ -455,7 +455,198 @@ else
             @test passes < max_kkt_passes
             @test termination_status(state_r.stats) == MOI.TIME_LIMIT
         end
+
+        @testset "A solve compiled on one state reads the clock of the state it runs on" begin
+            # the clock is not captured while tracing: the callback looks it up by the traced
+            # `clock_id` of the state it is called with
+            milp_b, sol_b = preprocess(milp0, sol0, algo)
+            state_b = to_rarray(initialize(milp_b, sol_b, algo; starting_time = time()); track_numbers = true)
+            @test state_b.stats.clock !== state_r.stats.clock
+            elapsed_a = state_r.stats.time_elapsed
+            state_b.stats.starting_time = time()
+            compiled_solve!(state_b, milp_r, algo_r)
+            passes_b = unwrap(state_b.stats.kkt_passes)
+            @test state_b.stats.time_elapsed >= time_limit
+            @test passes_b < max_kkt_passes
+            @test termination_status(state_b.stats) == MOI.TIME_LIMIT
+            # and the clock of the state used for compilation is left alone
+            @test state_r.stats.time_elapsed == elapsed_a
+        end
     end
+end
+
+# `solve!` on arrays that already live on a Reactant device, without `@compile`, launches compiled
+# chunks of checks and enforces the time limit on the host, so it needs no host callback
+@testset verbose = true "Host-driven solve" begin
+    @testset "$A agrees with the plain loop" for A in (:PDHG, :PDLP)
+        algo = CoolPDLP.Algorithm{A}(
+            Float64,
+            Int64,
+            Matrix;
+            backend = nothing,
+            termination_reltol = 1.0e-4,
+            max_kkt_passes = 3000,
+            time_limit = Inf,
+            check_every = 50,
+            record_error_history = false,
+            show_progress = false,
+        )
+        milp, sol = preprocess(milp0, sol0, algo)
+        state = initialize(milp, sol, algo; starting_time = time())
+        solve!(state, milp, algo)
+        milp_c, sol_c = preprocess(milp0, sol0, algo)
+        state_c = initialize(milp_c, sol_c, algo; starting_time = time())
+        state_r = to_rarray(state_c; track_numbers = true)
+        solve!(state_r, to_rarray(milp_c; track_numbers = true), to_rarray(algo; track_numbers = true))
+        @test unwrap(state_r.stats.kkt_passes) == state.stats.kkt_passes
+        @test termination_status(state_r.stats) == termination_status(state.stats)
+        @test unwrap(state_r.sol.x) ≈ state.sol.x rtol = 1.0e-6
+        @test state_r.stats.time_elapsed > 0
+    end
+
+    @testset "The time limit is enforced on every backend" begin
+        time_limit = 0.5
+        max_kkt_passes = 10^8
+        algo = PDLP(
+            Float64,
+            Int64,
+            Matrix;
+            backend = nothing,
+            termination_reltol = 1.0e-12,
+            time_limit,
+            max_kkt_passes,
+            check_every = 50,
+            record_error_history = false,
+            show_progress = false,
+        )
+        args() = begin
+            milp, sol = preprocess(milp0, sol0, algo)
+            state = initialize(milp, sol, algo; starting_time = time())
+            to_rarray(state; track_numbers = true), to_rarray(milp; track_numbers = true),
+                to_rarray(algo; track_numbers = true)
+        end
+        solve!(args()...)  # compiles the launches, whose time counts against the limit
+        state_r, milp_r, algo_r = args()
+        solve!(state_r, milp_r, algo_r)
+        @test state_r.stats.time_elapsed >= time_limit
+        @test unwrap(state_r.stats.kkt_passes) < max_kkt_passes
+        @test termination_status(state_r.stats) == MOI.TIME_LIMIT
+    end
+end
+
+# Some accelerators (Metal, TPU) cannot hold a `Float64`: a `Float32` solve without a time limit
+# must not put any on the device, neither in a host-driven launch nor in a whole compiled solve
+@testset "No Float64 on the device in a Float32 solve" begin
+    algo = PDLP(
+        Float32,
+        Int32,
+        Matrix;
+        backend = nothing,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    milp, sol = preprocess(milp0, sol0, algo)
+    state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
+    milp_r = to_rarray(milp; track_numbers = true)
+    algo_r = to_rarray(algo; track_numbers = true)
+    launch_algo = REACTANT_EXT.without_time_limit(algo_r)
+    max_passes = Reactant.ConcreteRNumber(Int32(5))
+    hlo_launch = string(@code_hlo CoolPDLP.run_checks!(state_r, milp_r, launch_algo, max_passes))
+    hlo_solve = string(@code_hlo solve!(state_r, milp_r, algo_r))
+    @test !occursin("f64", hlo_launch)
+    @test !occursin("f64", hlo_solve)
+    # nor a host callback, which an infinite time limit does not need
+    @test !occursin("custom_call", hlo_launch)
+    @test !occursin("custom_call", hlo_solve)
+end
+
+@testset "Adaptive number of checks per launch" begin
+    next = REACTANT_EXT.next_checks_per_launch
+    target = REACTANT_EXT.TARGET_LAUNCH_SECONDS[]
+    # grows at most twofold per launch, towards launches of the target length
+    @test next(1, target / 100, Inf) == 2
+    @test next(64, target / 1000, Inf) == 128
+    @test next(10, target, Inf) == 10
+    # shrinks right away when launches are too long, down to one check
+    @test next(100, 10target, Inf) == 10
+    @test next(5, 100target, Inf) == 1
+    # launches no longer than half of the time left
+    @test next(100, 100 * 1.0e-4, 0.002) == 10
+    @test next(1, 1.0e-9, Inf) == 2
+    @test next(REACTANT_EXT.MAX_CHECKS_PER_LAUNCH, 0.0, Inf) == REACTANT_EXT.MAX_CHECKS_PER_LAUNCH
+end
+
+@testset "Host-driven solves of problems with the same types but other sizes" begin
+    # array sizes are not part of the types, but each compiled launch is specific to them
+    algo = PDLP(
+        Float64,
+        Int32,
+        Matrix;
+        backend = nothing,
+        max_kkt_passes = 500,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    for milp_init in (milp0, CoolPDLP.random_milp_and_sol(StableRNG(1), 7, 9, 0.5)[1])
+        milp, sol = preprocess(milp_init, PrimalDualSolution(milp_init), algo)
+        state_c = initialize(milp, sol, algo; starting_time = time())
+        state_r = to_rarray(state_c; track_numbers = true)
+        solve!(state_r, to_rarray(milp; track_numbers = true), to_rarray(algo; track_numbers = true))
+        @test length(unwrap(state_r.sol.x)) == size(milp.A, 2)
+        @test termination_status(state_r.stats) != MOI.OPTIMIZE_NOT_CALLED
+    end
+end
+
+@testset "The launch cache is bounded" begin
+    old = REACTANT_EXT.LAUNCH_CACHE_LIMIT[]
+    try
+        REACTANT_EXT.LAUNCH_CACHE_LIMIT[] = 2
+        compiled = Int[]
+        ran = Int[]
+        run(k) = REACTANT_EXT.run_cached_launch!((:test, k), k) do
+            push!(compiled, k)
+            j -> push!(ran, j)
+        end
+        run(1)
+        run(2)
+        run(1)  # hit, now most recent
+        run(3)  # evicts 2
+        @test compiled == [1, 2, 3]
+        @test ran == [1, 2, 1, 3]
+        @test haskey(REACTANT_EXT.LAUNCH_CACHE, (:test, 1)) && !haskey(REACTANT_EXT.LAUNCH_CACHE, (:test, 2))
+        @test length(REACTANT_EXT.LAUNCH_CACHE) <= 2
+    finally
+        REACTANT_EXT.LAUNCH_CACHE_LIMIT[] = old
+        for k in 1:3
+            delete!(REACTANT_EXT.LAUNCH_CACHE, (:test, k))
+            filter!(!=((:test, k)), REACTANT_EXT.LAUNCH_CACHE_ORDER)
+        end
+    end
+end
+
+# the callback itself, which only runs inside a compiled solve on some platforms: it finds the
+# clock by id, so it updates the clock of whichever state the compiled program is called with
+@testset "The time limit callback reads the clock by id" begin
+    check = REACTANT_EXT.TimeLimitCheck(0.5)
+    err() = KKTErrors(; primal = 0.0, primal_scale = 1.0, dual = 0.0, dual_scale = 1.0, gap = 0.0, gap_scale = 1.0)
+    stats_a = CoolPDLP.ConvergenceStats(err(); starting_time = time())
+    stats_b = CoolPDLP.ConvergenceStats(err(); starting_time = time() - 10)
+    @test stats_a.clock_id != stats_b.clock_id
+    out = zeros(UInt8, 1)
+    check(out, stats_b.clock_id)
+    @test out == [0x01]
+    @test stats_b.time_elapsed >= 10
+    @test stats_a.time_elapsed == 0.0
+    check(out, stats_a.clock_id)
+    @test out == [0x00]
+    @test 0 <= stats_a.time_elapsed < 0.5
+    # an unknown id never reaches the limit
+    check(out, typemax(UInt32))
+    @test out == [0x00]
 end
 
 if REACTANT_BACKEND != "cpu"

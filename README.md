@@ -78,7 +78,9 @@ A whole solve can be compiled with [`Reactant.jl`](https://github.com/EnzymeAD/R
 
 - With the custom sparse formats (`GPUSparseMatrixCOO`, `GPUSparseMatrixCSR`, `GPUSparseMatrixELL`), `CUDA.jl` must be loaded on every Reactant backend, CPU included, because Reactant compiles their kernels through it.
 - Some parameters are compile-time constants, because they shape the compiled program itself: `check_every`, `record_error_history`, `show_progress` and `time_limit`, as well as the conversion parameters (types and backend). Their values are baked into the compiled `solve!`. **Calling it with an algorithm where they differ raises no error and does not recompile: the values from compilation time are silently used.** To change them, compile `solve!` again. The other parameters, like `termination_reltol` and `max_kkt_passes`, are traced, so they can change without recompiling.
-- On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, Julia cannot build a clock-reading callback, so a finite `time_limit` is not enforced there (a warning says so).
+- Calling `solve!` without `@compile` on such converted arguments runs a host-driven solve: it launches compiled chunks of termination checks, sized adaptively, and enforces `time_limit` and measures `time_elapsed` on the host, on every platform and backend.
+- Inside a solve compiled with `@compile`, a finite time limit needs a host callback, which returns a single flag. On AArch64 (e.g. Apple Silicon), 32-bit ARM and PPC64 machines, and on backends other than CPU and CUDA, Julia or Reactant cannot run it, so `time_limit` is not enforced there (a warning says so). With `time_limit = Inf`, no callback is emitted.
+- Times stay on the host, so no `Float64` enters the compiled program of a `Float32` solve. A compiled `solve!` reads the clock of the state it is called with, not of the one it was compiled with.
 
 ## References
 
