@@ -132,6 +132,20 @@ function step!(
 end
 
 """
+    primal_dual_steps!!(op, dest, η, ω)
+
+Compute the primal (`op = /`) or dual (`op = *`) step `op(η, ω)`, column by column into `dest`.
+
+An unbatched step is computed directly rather than with `broadcast!!`: under Reactant, a
+zero-dimensional broadcast of a `Float32` division between traced numbers can fail to compile
+("Missing Julia object for global"), depending on what was compiled before it.
+"""
+primal_dual_steps!!(op::F, ::Number, η::Number, ω::Number) where {F} = op(η, ω)
+function primal_dual_steps!!(op::F, dest::AbstractVector, η::BatchedNumber, ω::BatchedNumber) where {F}
+    return broadcast!!(op, dest, η, ω)
+end
+
+"""
     dual_update(y, σ, Ax, lc, uc)
 
 Dual PDHG step `y - σ Ax - σ clamp(y / σ - Ax, -uc, -lc)` of one entry.
@@ -171,8 +185,8 @@ function pdhg_update!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
-    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
+    τ = transpose(primal_dual_steps!!(/, scratch.b1, η, ω))
+    σ = transpose(primal_dual_steps!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.z, At, y)
