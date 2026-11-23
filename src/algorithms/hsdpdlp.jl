@@ -402,7 +402,8 @@ keeps the errors of the candidate with the smaller relative KKT error.
 """
 function hsd_termination_check!(state::HSDPDLPState, milp::MILP, algo::Algorithm{:HSDPDLP})
     (; sol, scratch, stats) = state
-    (; termination_norm, infeasibility_tol) = algo.termination
+    (; infeasibility_tol) = algo.termination
+    (; termination_norm) = algo.generic
     update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp, termination_norm)
     stats.extra_products += 2
