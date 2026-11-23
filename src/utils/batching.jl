@@ -82,25 +82,3 @@ Average a per-instance quantity over all the instances, yielding a single number
 """
 batched_mean(val::Number) = val
 batched_mean(val::AbstractVector) = sum(val) / length(val)
-
-"""
-    setfields(x; kwargs...)
-
-Copy of the struct `x` with the fields named in `kwargs` replaced, and every other field kept
-as is. The type parameters are inferred again from the new values, so a replaced field may change
-type. Rebuilding by name means a field added to the struct later is carried over rather than
-silently reset to its default or shifted to the wrong position.
-"""
-function setfields(x::T; kwargs...) where {T}
-    for name in keys(kwargs)
-        hasfield(T, name) || throw(ArgumentError("$T has no field $name"))
-    end
-    return Base.typename(T).wrapper(_merged_fields(x, values(kwargs))...)
-end
-
-function _merged_fields(x::T, nt::NamedTuple) where {T}
-    return ntuple(Val(fieldcount(T))) do i
-        name = fieldname(T, i)
-        haskey(nt, name) ? getfield(nt, name) : getfield(x, i)
-    end
-end

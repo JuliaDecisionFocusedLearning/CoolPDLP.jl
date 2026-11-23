@@ -137,15 +137,14 @@ function Algorithm{A}(
         show_progress,
         check_every,
         record_error_history,
-        time_limit
+        time_limit,
+        termination_norm = check_termination_norm(Symbol(termination_norm)),
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),
         termination_abstol = _T(termination_abstol),
-        termination_norm = Symbol(termination_norm),
         max_kkt_passes,
     )
-    check_termination_parameters(termination)
 
     return Algorithm{A}(
         conversion,
@@ -155,14 +154,6 @@ function Algorithm{A}(
         generic,
         termination
     )
-end
-
-# `Algorithm{A}` cannot infer `A` from its fields
-function setfields(algo::Algorithm{A}; kwargs...) where {A}
-    for name in keys(kwargs)
-        hasfield(Algorithm, name) || throw(ArgumentError("Algorithm has no field $name"))
-    end
-    return Algorithm{A}(_merged_fields(algo, values(kwargs))...)
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
@@ -273,7 +264,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algori
     bounded_above = !any(@. (c < 0) & isinf(uv))
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.termination.termination_norm)
+        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.generic.termination_norm)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         return true
@@ -304,7 +295,7 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp, algo.termination.termination_norm)
+    kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end

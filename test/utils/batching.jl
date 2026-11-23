@@ -76,17 +76,3 @@ end
         @test nbinstances(PrimalDualSolution(instance(milp_batch, 1))) == 1
     end
 end
-
-@testset "setfields" begin
-    algo = PDLP(; time_limit = 10.0, max_kkt_passes = 1000)
-    t = CoolPDLP.setfields(algo.termination; termination_abstol = 1.0e-9, termination_norm = :Linf)
-    @test t.termination_abstol == 1.0e-9
-    @test t.termination_norm === :Linf
-    @test t.max_kkt_passes == 1000
-    @test t.termination_reltol == algo.termination.termination_reltol
-    algo2 = CoolPDLP.setfields(algo; termination = t)
-    @test algo2 isa CoolPDLP.Algorithm{:PDLP}
-    @test algo2.termination === t
-    @test algo2.step_size === algo.step_size
-    @test_throws ArgumentError CoolPDLP.setfields(algo.termination; nope = 1)
-end

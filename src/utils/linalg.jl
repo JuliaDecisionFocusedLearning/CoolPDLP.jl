@@ -83,7 +83,7 @@ if `x` is batched, into `dest`.
 The choice is a plain symbol rather than a number so that Reactant does not trace it: the branch
 is resolved once, when tracing, and only the selected reduction ends up in the compiled program.
 Any other symbol throws an `ArgumentError`, rather than silently falling back to `:L2` (a
-`TerminationParameters` built directly skips [`check_termination_parameters`](@ref)).
+`GenericParameters` built directly skips [`check_termination_norm`](@ref)).
 """
 function colnorm!!(dest, x::AbstractVecOrMat, norm::Symbol)
     if norm === :Linf

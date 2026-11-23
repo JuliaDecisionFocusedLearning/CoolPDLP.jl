@@ -269,7 +269,7 @@ end
         @test statsinf.err.primal <= 1.0e-4 * statsinf.err.primal_scale
     end
 
-    @test PDLP(; termination_norm = :Linf).termination.termination_norm === :Linf
+    @test PDLP(; termination_norm = :Linf).generic.termination_norm === :Linf
     @test_throws ArgumentError PDLP(; termination_norm = :L1)
 end
 

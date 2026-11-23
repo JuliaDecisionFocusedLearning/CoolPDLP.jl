@@ -58,7 +58,7 @@ function initialize(
     scratch = Scratch(sol)
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, algo.termination.termination_norm)  # TODO: count this KKT pass
+    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)  # TODO: count this KKT pass
     stats = ConvergenceStats(err; starting_time)
     state = PDHGState(; sol, step_sizes, scratch, stats)
     return state

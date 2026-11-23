@@ -83,10 +83,14 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
-    # restarts always compare errors in the L2 norm, whatever the termination norm
+    kkt_errors!(err, scratch, sol, milp, :L2)  # TODO: count this KKT pass
+    # The restart errors stay in the L2 norm whatever `termination_norm` is: the restart
+    # criteria (sufficient and necessary decay in `should_restart`) and the choice between the
+    # current and averaged candidates compare these errors over time, with PDLP's default decay
+    # factors, which assume L2. Following the termination norm would let a change of the
+    # stopping test alone (e.g. to L∞) change the restart schedule, and therefore the iterates.
     restart_stats.err_restart = copy(err)
-    norm = algo.termination.termination_norm
+    norm = algo.generic.termination_norm
     if norm !== :L2
         kkt_errors!(err, scratch, sol, milp, norm)
     end
@@ -213,8 +217,8 @@ function best_error!!(
         milp::MILP, ω::BatchedNumber,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err1, scratch, sol1, milp)
-    kkt_errors!(err2, scratch, sol2, milp)
+    kkt_errors!(err1, scratch, sol1, milp, :L2)
+    kkt_errors!(err2, scratch, sol2, milp, :L2)
     abs1 = absolute!!(scratch.b1, err1, ω)
     abs2 = absolute!!(scratch.b2, err2, ω)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2

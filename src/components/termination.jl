@@ -40,29 +40,27 @@ $(TYPEDFIELDS)
     termination_reltol::T
     "absolute tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
     termination_abstol::T = termination_reltol
-    "norm in which the primal and dual residuals are measured, `:L2` or `:Linf`"
-    termination_norm::Symbol = :L2
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
 end
 
 function Base.show(io::IO, params::TerminationParameters)
-    (; termination_reltol, termination_abstol, termination_norm, max_kkt_passes) = params
-    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, termination_norm=$termination_norm, max_kkt_passes=$max_kkt_passes")
+    (; termination_reltol, termination_abstol, max_kkt_passes) = params
+    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, max_kkt_passes=$max_kkt_passes")
 end
 
 const TERMINATION_NORMS = (:L2, :Linf)
 
 """
-    check_termination_parameters(params)
+    check_termination_norm(norm)
 
-Throw an `ArgumentError` if the norm of `params` is not a supported one.
+Throw an `ArgumentError` if `norm` is not one of the supported termination norms.
 """
-function check_termination_parameters(params::TerminationParameters)
-    if !(params.termination_norm in TERMINATION_NORMS)
-        throw(ArgumentError("termination_norm must be one of $TERMINATION_NORMS, got $(repr(params.termination_norm))"))
+function check_termination_norm(norm::Symbol)
+    if !(norm in TERMINATION_NORMS)
+        throw(ArgumentError("termination_norm must be one of $TERMINATION_NORMS, got $(repr(norm))"))
     end
-    return params
+    return norm
 end
 
 """
@@ -86,7 +84,7 @@ Following cuPDLP.jl (`optimality_criteria_met`) and cuOpt (`pdlp_termination_str
     ‖dual residual‖   ≤ ϵₐ + ϵᵣ ‖c‖
     |pobj - dobj|     ≤ ϵₐ + ϵᵣ (|pobj| + |dobj|)
 
-where `b` combines the finite constraint bounds and the norm is `params.termination_norm`. Since
+where `b` combines the finite constraint bounds and the norm is `termination_norm` (in [`GenericParameters`](@ref)). Since
 the scales stored in [`KKTErrors`](@ref) are `1 + ‖b‖`, `1 + ‖c‖` and `1 + |pobj| + |dobj|`, the
 default `ϵₐ = ϵᵣ` is the purely relative criterion `error / scale ≤ ϵᵣ`.
 """
