@@ -274,7 +274,7 @@ function top_singular_value!(b, K, Kᵀ, k::Integer)
 end
 
 """
-    spectral_norm(K, Kᵀ; reltol, maxiter, krylov_dim = SPECTRAL_NORM_KRYLOV_DIM)
+    spectral_norm(K, Kᵀ; reltol, maxiter)
 
 Return an iterative estimate of the spectral norm `‖K‖₂`, starting from a deterministic
 random vector and using at most `maxiter` products by both `K` and `Kᵀ`.
@@ -282,7 +282,7 @@ random vector and using at most `maxiter` products by both `K` and `Kᵀ`.
 The estimate `σ` is accepted once `K` provably has a singular value within `reltol * σ` of
 it, and then lies below `‖K‖₂` by at most about that much when `σ` approximates the top of the
 spectrum. `maxiter` should be chosen independently of the size of `K` (see #95). The iteration
-restarts every `krylov_dim` steps, which bounds its memory independently of `maxiter`.
+restarts every [`SPECTRAL_NORM_KRYLOV_DIM`](@ref) steps, which bounds its memory independently of `maxiter`.
 
 This never throws on non-convergence: it then warns (at every call, since each one is a
 different matrix that gets a conservative step size) and returns the minimum between the
@@ -299,7 +299,6 @@ function spectral_norm(
         Kᵀ::AbstractMatrix{<:Number};
         reltol::Number,
         maxiter::Integer,
-        krylov_dim::Integer = SPECTRAL_NORM_KRYLOV_DIM,
     )
     T = eltype(K)
     R = real(T)
@@ -312,7 +311,7 @@ function spectral_norm(
     σ, residual = zero(R), typemax(R)
     remaining = maxiter
     while remaining > 0
-        k = min(krylov_dim, remaining)
+        k = min(SPECTRAL_NORM_KRYLOV_DIM, remaining)
         σ, residual = top_singular_value!(b, K, Kᵀ, k)
         residual <= R(reltol) * σ && return σ
         remaining -= k

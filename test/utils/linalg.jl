@@ -234,15 +234,38 @@ end
     end
 end
 
+# a matrix that counts its products, to check how many Golub–Kahan steps were run
+struct CountingMatrix{M <: AbstractMatrix{Float64}} <: AbstractMatrix{Float64}
+    A::M
+    count::Base.RefValue{Int}
+end
+Base.size(C::CountingMatrix) = size(C.A)
+Base.getindex(C::CountingMatrix, i::Int, j::Int) = C.A[i, j]
+Base.map(f, C::CountingMatrix) = map(f, C.A)
+CoolPDLP.get_backend(C::CountingMatrix) = CoolPDLP.get_backend(C.A)
+LinearAlgebra.mul!(y::AbstractVector{Float64}, C::CountingMatrix, x::AbstractVector{Float64}) = (C.count[] += 1; mul!(y, C.A, x))
+
 @testset "Spectral norm restarts with a bounded Krylov dimension" begin
+    # this spectrum needs more than `SPECTRAL_NORM_KRYLOV_DIM == 32` steps at `reltol = 1e-3`
+    @test CoolPDLP.SPECTRAL_NORM_KRYLOV_DIM == 32
     λs = vcat(1.0, 0.995, range(0.0, 0.99; length = 198))
-    K = sparse(Diagonal(sqrt.(λs)))
-    for krylov_dim in (4, 8, CoolPDLP.SPECTRAL_NORM_KRYLOV_DIM)
-        s = @test_logs CoolPDLP.spectral_norm(K, K; reltol = 1.0e-6, maxiter = 1000, krylov_dim)
-        @test s ≈ 1.0 rtol = 1.0e-5
+    D = sparse(Diagonal(sqrt.(λs)))
+    function sn(maxiter)
+        K = CountingMatrix(D, Ref(0))
+        s = CoolPDLP.spectral_norm(K, CountingMatrix(D, Ref(0)); reltol = 1.0e-3, maxiter)
+        return s, K.count[]
     end
-    # the budget counts the steps across restarts
-    @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; reltol = 1.0e-12, maxiter = 10, krylov_dim = 4)
+    # one block of 32 steps does not converge
+    _, steps = @test_logs (:warn, r"did not converge") sn(32)
+    @test steps == 32
+    # a restart from the Ritz vector of the first block converges at the end of the second
+    s, steps = @test_logs sn(1000)
+    @test steps == 64
+    @test s ≈ 1.0 rtol = 1.0e-3
+    @test s <= 1 + 1.0e-12
+    # the budget counts the steps across restarts: 33 stops 1 step into the second block
+    _, steps = @test_logs (:warn, r"did not converge") sn(33)
+    @test steps == 33
 end
 
 @testset "Spectral norm in any precision" begin
