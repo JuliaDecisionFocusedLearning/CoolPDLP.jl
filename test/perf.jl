@@ -33,7 +33,7 @@ function run_iterations!(state, milp, algo, n)
         save_last!(state)
         step!(state, milp)
         termination_check!(state, milp, algo)
-        restart_check!(state, milp, algo) && restart!(state, algo)
+        restart_check!(state, milp, algo) && restart!(state, milp, algo)
     end
     return nothing
 end
