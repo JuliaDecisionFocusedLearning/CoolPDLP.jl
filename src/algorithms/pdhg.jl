@@ -79,7 +79,7 @@ function solve!(
 end
 
 """
-    check_pass!(state, milp, algo, prog=nothing)
+    check_pass!(state, milp, algo, prog = NoProgress())
 
 Run `check_every` iterations and the termination check; return whether to stop.
 """
@@ -87,7 +87,7 @@ function check_pass!(
         state::PDHGState,
         milp::MILP,
         algo::Algorithm{:PDHG},
-        prog = nothing
+        prog = NoProgress()
     )
     @trace for _ in 1:algo.generic.check_every
         step!(state, milp)
