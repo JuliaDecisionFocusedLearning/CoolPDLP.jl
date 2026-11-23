@@ -1,6 +1,7 @@
 using CoolPDLP
 using CoolPDLP: termination_status
 import MathOptInterface as MOI
+using MathOptBenchmarkInstances
 using Random
 using SparseArrays
 using Test
@@ -170,4 +171,113 @@ end
         @test first(first(stats.error_history)) == 0
         @test isfinite(CoolPDLP.relative(last(first(stats.error_history))))
     end
+end
+
+@testset "Absolute and relative tolerances" begin
+    using CoolPDLP: KKTErrors, TerminationParameters, ConvergenceStats, set_termination_status!!
+    # raw norms ‖b‖ = 99, ‖c‖ = 9, |pobj| + |dobj| = 0: the stored scales are `1 + norm`
+    err = KKTErrors(;
+        primal = 0.5, primal_scale = 100.0, dual = 0.04, dual_scale = 10.0,
+        gap = 1.0e-3, gap_scale = 1.0,
+    )
+    function converged(; kwargs...)
+        params = TerminationParameters(; max_kkt_passes = 10^9, kwargs...)
+        stats = ConvergenceStats(copy(err))
+        stop = set_termination_status!!(stats, 0.0, params, Inf)
+        @test stop == (termination_status(stats) == MOI.OPTIMAL)
+        return stop
+    end
+    # relative only (the default): primal 0.5 / 100 = 5e-3, dual 4e-3, gap 1e-3
+    @test converged(; termination_reltol = 5.01e-3)
+    @test !converged(; termination_reltol = 4.9e-3)
+    # absolute only: the largest raw error is 0.5
+    @test converged(; termination_reltol = 0.0, termination_abstol = 0.5)
+    @test !converged(; termination_reltol = 0.0, termination_abstol = 0.49)
+    # mixed, as in cuPDLP.jl/cuOpt, with ϵₐ = 1e-3: 0.5 ≤ ϵₐ + ϵᵣ * 99 needs ϵᵣ ≥ 5.04e-3,
+    # 0.04 ≤ ϵₐ + ϵᵣ * 9 needs ϵᵣ ≥ 4.33e-3, and the gap (zero objective scale) needs ϵₐ ≥ 1e-3
+    @test converged(; termination_reltol = 0.0051, termination_abstol = 1.0e-3)
+    @test !converged(; termination_reltol = 0.0051, termination_abstol = 0.9e-3)
+    @test !converged(; termination_reltol = 0.005, termination_abstol = 1.0e-3)
+    # the default absolute tolerance is the relative one
+    @test TerminationParameters(;
+        termination_reltol = 1.0e-3, max_kkt_passes = 1
+    ).termination_abstol == 1.0e-3
+    # NaN errors never count as converged
+    err.primal = NaN
+    @test !converged(; termination_reltol = 1.0)
+    @testset "Batched" begin
+        errb = KKTErrors(;
+            primal = [0.5, 0.05], primal_scale = [100.0, 100.0], dual = [0.0, 0.0],
+            dual_scale = [1.0, 1.0], gap = [0.0, 0.0], gap_scale = [1.0, 1.0],
+        )
+        dest = zeros(2)
+        margin = CoolPDLP.termination_margin!!(
+            dest, errb,
+            TerminationParameters(;
+                termination_reltol = 0.0, termination_abstol = 0.1,
+                max_kkt_passes = 1,
+            ),
+        )
+        @test margin === dest
+        @test margin ≈ [0.4, -0.05]
+        stats = ConvergenceStats(errb)
+        params = TerminationParameters(;
+            termination_reltol = 0.0, termination_abstol = 0.1,
+            max_kkt_passes = 10^9,
+        )
+        # one instance is not converged yet, so the batch goes on
+        @test !set_termination_status!!(stats, dest, params, Inf)
+        errb.primal[1] = 0.1
+        @test set_termination_status!!(stats, dest, params, Inf)
+    end
+end
+
+@testset "Termination norm" begin
+    using LinearAlgebra: norm
+    Random.seed!(1)
+    milp, sol = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
+    sol = PrimalDualSolution(randn(nbvar(milp)), randn(nbcons(milp)))
+    scratch = CoolPDLP.Scratch(sol)
+    (; c, A, lc, uc) = milp
+    err2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :L2)
+    errinf = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :Linf)
+    Ax = A * sol.x
+    @test err2.primal ≈ norm(Ax - clamp.(Ax, lc, uc))
+    @test errinf.primal ≈ norm(Ax - clamp.(Ax, lc, uc), Inf)
+    @test errinf.primal_scale ≈ 1 + norm(CoolPDLP.combine.(lc, uc), Inf)
+    @test errinf.dual_scale ≈ 1 + norm(c, Inf)
+    @test errinf.primal < err2.primal
+    @test errinf.dual <= err2.dual
+    @test errinf.gap == err2.gap
+
+    # batched columns are normed one by one
+    solb = PrimalDualSolution(stack([sol.x, 2 .* sol.x]), stack([sol.y, 2 .* sol.y]))
+    milpb = MILP(; c = stack([c, c]), milp.lv, milp.uv, A, lc, uc)
+    errb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(solb), CoolPDLP.Scratch(solb), solb, milpb, :Linf)
+    @test errb.primal[1] ≈ errinf.primal
+    @test errb.dual[1] ≈ errinf.dual
+    @test CoolPDLP.colmaxabs!!(zeros(2), zeros(0, 2)) == [0.0, 0.0]
+
+    netlib = MILP(read_instance(Netlib, "afiro")[1])
+    @testset "$alg" for alg in (PDHG, PDLP)
+        _, stats2 = solve(netlib, alg(; termination_reltol = 1.0e-4))
+        _, statsinf = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = "Linf"))
+        @test termination_status(stats2) == MOI.OPTIMAL
+        @test termination_status(statsinf) == MOI.OPTIMAL
+        # the L∞ criterion is looser, so it never needs more passes
+        @test statsinf.kkt_passes <= stats2.kkt_passes
+        @test statsinf.err.primal <= 1.0e-4 * statsinf.err.primal_scale
+    end
+
+    @test PDLP(; termination_norm = :Linf).generic.termination_norm === :Linf
+    @test_throws ArgumentError PDLP(; termination_norm = :L1)
+end
+
+@testset "Unknown norms" begin
+    @test_throws ArgumentError PDLP(; termination_norm = :L1)
+    # built directly, the parameters skip the validation, but the norm itself still refuses
+    Random.seed!(2)
+    milp, sol = CoolPDLP.random_milp_and_sol(5, 6, 0.5)
+    scratch = CoolPDLP.Scratch(sol)
+    @test_throws ArgumentError CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :L1)
 end
