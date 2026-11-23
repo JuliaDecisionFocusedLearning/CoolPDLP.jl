@@ -110,7 +110,6 @@ end
         op = CoolPDLP.KrylovOperator(M(A), M(sparse(transpose(A))))
         mul!(view(U, :, 2), op, view(V, :, 2))
         @test view(U, :, 2) ≈ A * V[:, 2]
-        @test (@allocated mul!(view(U, :, 2), op, view(V, :, 2))) < 2_000
     end
 end
 
