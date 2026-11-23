@@ -237,7 +237,21 @@ Base.size(op::KrylovOperator) = size(op.K)
 Base.size(op::KrylovOperator, d::Integer) = size(op.K, d)
 Base.eltype(op::KrylovOperator) = eltype(op.K)
 Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
-LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
+LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = krylov_mul!(y, op.K, x)
+
+krylov_mul!(y, K, x) = mul!(y, K, x)
+
+# Krylov.jl multiplies columns of its bases, `view(V, :, i)`. On the GPU these are device
+# arrays, but on the CPU (and JLArrays) they are `SubArray`s, which are not `DenseVector`s and
+# would miss the kernels of our formats for LinearAlgebra's generic `mul!`, that reads `K`
+# entry by entry (a full scan of the entries per `getindex` for COO).
+function krylov_mul!(y, K::GPUSparseMatrix, x)
+    (x isa DenseVector && y isa DenseVector) && return mul!(y, K, x)
+    xc = copyto!(similar(K.nzval, length(x)), x)  # a vector even for the `nzval` matrix of ELL
+    yc = similar(xc, length(y))
+    mul!(yc, K, xc)
+    return copyto!(y, yc)
+end
 
 """
     SPECTRAL_NORM_KRYLOV_DIM

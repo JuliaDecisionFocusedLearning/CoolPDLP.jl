@@ -99,6 +99,21 @@ end
     end
 end
 
+@testset "Krylov products by column views use the sparse kernels" begin
+    # Krylov.jl multiplies columns `view(V, :, i)` of its bases, which on the CPU are not
+    # `DenseVector`s: they must still reach the kernels rather than the generic `mul!`
+    rng = Xoshiro(0)
+    A = sprandn(rng, 30, 40, 0.1)
+    V = randn(rng, 40, 3)
+    U = zeros(30, 3)
+    for M in (CoolPDLP.GPUSparseMatrixCSR, CoolPDLP.GPUSparseMatrixCOO, CoolPDLP.GPUSparseMatrixELL)
+        op = CoolPDLP.KrylovOperator(M(A), M(sparse(transpose(A))))
+        mul!(view(U, :, 2), op, view(V, :, 2))
+        @test view(U, :, 2) ≈ A * V[:, 2]
+        @test (@allocated mul!(view(U, :, 2), op, view(V, :, 2))) < 2_000
+    end
+end
+
 @testset "Spectral norm requires an explicit tolerance and iteration budget" begin
     # neither `reltol` nor `maxiter` may fall back to size-dependent (IterativeSolvers-style)
     # defaults (see #95): those scale as `eps(T) * n^3` and `size(B, 2)` respectively,
