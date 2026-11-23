@@ -265,7 +265,7 @@ function hprlp_termination_check!(
         milp::MILP, params::TerminationParameters, generic::GenericParameters,
     )
     update_time_elapsed!(stats, generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, z_bar, milp, params.termination_norm)
+    kkt_errors!(stats.err, scratch, sol, z_bar, milp, generic.termination_norm)
     stats.extra_products += 2
     infeasibility_check!(
         stats, infeas, scratch, (sol, z_anchor), (sol, nothing), milp, params.infeasibility_tol,
