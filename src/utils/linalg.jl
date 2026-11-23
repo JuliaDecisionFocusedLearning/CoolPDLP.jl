@@ -28,6 +28,21 @@ for (M, AV) in (
 end
 
 """
+    map(f, A::GPUSparseMatrix)
+
+Apply `f` to the stored entries of `A`, keeping its sparsity structure. Unlike `map` on a
+`SparseMatrixCSC`, the implicit zeros are left alone, so this requires `f(0) == 0`.
+"""
+function Base.map(f, A::GPUSparseMatrix)
+    iszero(f(zero(eltype(A)))) ||
+        throw(ArgumentError("map on a CoolPDLP sparse matrix needs a function that maps zero to zero"))
+    return _map_nzval(f, A)
+end
+_map_nzval(f, A::GPUSparseMatrixCSR) = GPUSparseMatrixCSR(A.m, A.n, A.rowptr, A.colval, map(f, A.nzval))
+_map_nzval(f, A::GPUSparseMatrixCOO) = GPUSparseMatrixCOO(A.m, A.n, A.rowval, A.colval, map(f, A.nzval))
+_map_nzval(f, A::GPUSparseMatrixELL) = GPUSparseMatrixELL(A.m, A.n, A.colval, map(f, A.nzval))
+
+"""
     sametype_transpose(A::AbstractMatrix)
 
 Return a matrix of the same type of `A` containing `transpose(A)` (as opposed to a `Transpose{...}` wrapper).
@@ -185,22 +200,10 @@ function LinearAlgebra.mul!(y, sym::Symmetrized, x)
 end
 
 """
-    abs_entries(A)
-
-Return a matrix with the same sparsity structure (and type) as `A` whose stored entries are
-the absolute values of those of `A`.
-"""
-abs_entries(A::AbstractMatrix) = abs.(A)
-abs_entries(A::SparseMatrixCSC) = SparseMatrixCSC(A.m, A.n, A.colptr, A.rowval, abs.(A.nzval))
-abs_entries(A::GPUSparseMatrixCSR) = GPUSparseMatrixCSR(A.m, A.n, A.rowptr, A.colval, abs.(A.nzval))
-abs_entries(A::GPUSparseMatrixCOO) = GPUSparseMatrixCOO(A.m, A.n, A.rowval, A.colval, abs.(A.nzval))
-abs_entries(A::GPUSparseMatrixELL) = GPUSparseMatrixELL(A.m, A.n, A.colval, abs.(A.nzval))
-
-"""
     spectral_norm_upper_bound(K, Kᵀ)
 
 Return the cheap and rigorous upper bound `sqrt(‖K‖₁ ‖K‖∞) ≥ ‖K‖₂`, computed with two
-matrix-vector products by `|K|` and `|Kᵀ|` so that it works on every backend.
+matrix-vector products by `map(abs, K)` and `map(abs, Kᵀ)` so that it works on every backend.
 """
 function spectral_norm_upper_bound(K::AbstractMatrix{T}, Kᵀ::AbstractMatrix{T}) where {T <: Number}
     m, n = size(K)
@@ -212,116 +215,98 @@ function spectral_norm_upper_bound(K::AbstractMatrix{T}, Kᵀ::AbstractMatrix{T}
     fill!(ones_m, one(T))
     row_sums = allocate(backend, T, m)
     col_sums = allocate(backend, T, n)
-    mul!(row_sums, abs_entries(K), ones_n)
-    mul!(col_sums, abs_entries(Kᵀ), ones_m)
+    mul!(row_sums, map(abs, K), ones_n)
+    mul!(col_sums, map(abs, Kᵀ), ones_m)
     norm_inf = real(maximum(row_sums))
     norm_1 = real(maximum(col_sums))
     return sqrt(norm_1 * norm_inf)
 end
 
 """
-    spectral_norm(K, Kᵀ; tol, maxiter, upper = false)
+    KrylovOperator
 
-Estimate the spectral norm of `K` with the Lanczos method applied to `Kᵀ * K`, starting from
-a deterministic random vector.
+The linear operator `K` with its explicit transpose `Kᵀ`, for Krylov.jl, which multiplies by
+`K'`: `adjoint` swaps them, so that only `mul!(y, K, x)` and `mul!(y, Kᵀ, x)` are needed.
+"""
+struct KrylovOperator{M, Mt}
+    K::M
+    Kᵀ::Mt
+end
 
-The iteration stops once the Lanczos residual bound `‖Kᵀ K y - θ y‖ ≤ tol * θ` holds for the
-largest Ritz pair `(θ, y)`, or after `maxiter` products by `Kᵀ * K`. On convergence, it
-returns `sqrt(θ)`, which lies below `‖K‖₂` (a Ritz value never exceeds the largest
-eigenvalue) by at most about `tol / 2` relative when `θ` converged to the top of the spectrum;
-with `upper = true`, it returns `sqrt(θ + residual)` instead, an upper bound of `‖K‖₂` in that
-case, since an eigenvalue lies within `residual` of `θ`. `maxiter` should be
-chosen independently of the size of `K` (see #95).
+Base.size(op::KrylovOperator) = size(op.K)
+Base.size(op::KrylovOperator, d::Integer) = size(op.K, d)
+Base.eltype(op::KrylovOperator) = eltype(op.K)
+Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
+LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
-The largest Ritz value converges much faster than the power method's Rayleigh quotient when
-the top of the spectrum is clustered (roughly like the power method on a matrix with the
-square root of its condition number). This never throws on non-convergence: it then warns
-(at every call, since each one is a different matrix that gets a conservative step size) and
-returns the minimum between the inflated estimate `1.01 * sqrt(θ + residual)` and
-the rigorous bound `sqrt(‖K‖₁ ‖K‖∞)`, so as to err on the large side (a smaller, safe step
-size) rather than the small side (a divergent step size). Only the second bound is
-guaranteed: the inflated estimate exceeds `‖K‖₂` whenever the top of the spectrum is
-clustered (the usual reason for slow convergence), but not necessarily after very few
-iterations.
+"""
+    top_singular_value(K, Kᵀ, b, k)
 
-This runs on the host with data-dependent control flow and is not meant to be traced by
-Reactant: it is only called from `initialize`, outside of the traced `solve!` loop.
+Run `k` steps of Golub–Kahan bidiagonalization of `K` from `b`, and return the largest
+singular value `σ` of the `k × k` bidiagonal matrix together with the bound `residual` such
+that `K` has a singular value within `residual` of `σ`.
+"""
+function top_singular_value(K, Kᵀ, b, k::Integer)
+    R = real(eltype(K))
+    L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)[4]
+    d = R[L[i, i] for i in 1:k]
+    e = R[L[i + 1, i] for i in 1:(k - 1)]
+    β = R(L[k + 1, k])
+    all(isfinite, d) && all(isfinite, e) && isfinite(β) ||
+        throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
+    F = svd(Bidiagonal(d, e, :L))
+    i = argmax(F.S)
+    # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet of `Bₖ`
+    # leaves the residual `β |qₖ|`, where `q` is its right singular vector
+    return F.S[i], β * abs(F.V[k, i])
+end
 
-The element type of `K` must be `Float32` or `Float64` (possibly complex), and an
-`ArgumentError` is thrown if `K` has a NaN or infinite entry.
+"""
+    spectral_norm(K, Kᵀ; reltol, maxiter)
 
-Only local reorthogonalization is used: a loss of orthogonality creates spurious copies of
-converged Ritz values, but not a wrong largest one, so full reorthogonalization (which costs
-`O(maxiter * n)` memory) is not needed.
+Return an iterative estimate of the spectral norm `‖K‖₂`, starting from a deterministic
+random vector and using at most about `2 maxiter` products by `K` and `Kᵀ`.
+
+The estimate `σ` is accepted once `K` provably has a singular value within `reltol * σ` of
+it, and then lies below `‖K‖₂` by at most about that much when `σ` approximates the top of the
+spectrum. `maxiter` should be chosen independently of the size of `K` (see #95).
+
+This never throws on non-convergence: it then warns (at every call, since each one is a
+different matrix that gets a conservative step size) and returns the minimum between the
+inflated estimate `1.01 * (σ + residual)` and the rigorous bound `sqrt(‖K‖₁ ‖K‖∞)`, so as to
+err on the large side (a smaller, safe step size) rather than the small side (a divergent
+step size).
+
+This runs with data-dependent control flow and is not meant to be traced by Reactant: it is
+only called from `initialize`, outside of the traced `solve!` loop. Any element type is
+supported, and an `ArgumentError` is thrown if `K` has a NaN or infinite entry.
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},
         Kᵀ::AbstractMatrix{<:Number};
-        tol::Number,
+        reltol::Number,
         maxiter::Integer,
-        upper::Bool = false,
     )
     T = eltype(K)
     R = real(T)
-    # the Ritz values come from LAPACK's tridiagonal eigensolver
-    R <: Union{Float32, Float64} ||
-        throw(ArgumentError("spectral_norm needs Float32 or Float64 Lanczos vectors, got $T"))
-    n = size(K, 2)
-    (size(K, 1) == 0 || n == 0) && return zero(R)
-    backend = get_backend(K)
-    q = allocate(backend, T, n)
-    q_cpu = adapt(CPU(), q)  # StableRNGs doesn't work on GPU
-    randn!(StableRNG(0), q_cpu)
-    copyto!(q, q_cpu)
-    q ./= norm(q)
-    q_prev = allocate(backend, T, n)
-    fill!(q_prev, zero(T))
-    w = allocate(backend, T, n)
-    KᵀK = Symmetrized(K, Kᵀ)
-    αs = R[]
-    βs = R[]
-    θ = zero(R)
-    residual = typemax(R)
-    converged = false
-    β_prev = zero(R)
-    for k in 1:maxiter
-        mul!(w, KᵀK, q)
-        α = real(dot(q, w))
-        # a NaN would otherwise reach the step size silently through `min(NaN, bound)`
-        isfinite(α) || throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $T)"))
-        w .-= α .* q .+ β_prev .* q_prev
-        # one step of local reorthogonalization against `q` for numerical stability
-        δ = real(dot(q, w))
-        w .-= δ .* q
-        α += δ
-        β = R(norm(w))
-        push!(αs, α)
-        # an invariant subspace was found (e.g. `K == 0`): the Ritz values are exact
-        breakdown = β <= eps(R) * max(abs(α), β_prev, eps(R))
-        if breakdown || k == maxiter || k <= 10 || k % 5 == 0
-            # largest Ritz pair of the tridiagonal Lanczos matrix, and the corresponding
-            # residual bound `β * |last component of the Ritz vector|`
-            F = eigen(SymTridiagonal(αs, βs), k:k)
-            θ = max(zero(R), F.values[1])
-            residual = β * abs(F.vectors[k, 1])
-            if breakdown || residual <= R(tol) * θ
-                converged = true
-                break
-            end
-        end
-        push!(βs, β)
-        q_prev, q, w = q, w, q_prev
-        q ./= β
-        β_prev = β
+    m, n = size(K)
+    (m == 0 || n == 0) && return zero(R)
+    b = allocate(get_backend(K), T, m)
+    b_cpu = adapt(CPU(), b)  # StableRNGs doesn't work on GPU
+    randn!(StableRNG(0), b_cpu)
+    copyto!(b, b_cpu)
+    k = min(16, maxiter)
+    σ, residual = zero(R), typemax(R)
+    while true
+        σ, residual = top_singular_value(K, Kᵀ, b, k)
+        residual <= R(reltol) * σ && return σ
+        k == maxiter && break
+        k = min(2k, maxiter)
     end
-    if converged
-        return upper ? sqrt(θ + residual) : sqrt(θ)
-    else
-        bound = R(spectral_norm_upper_bound(K, Kᵀ))
-        estimate = min(R(1.01) * sqrt(θ + residual), bound)
-        @warn "Spectral norm estimation did not converge within $maxiter iterations (relative residual $(residual / θ) > tol = $tol), using the conservative estimate $estimate (Lanczos value $(sqrt(θ)), rigorous bound $bound)"
-        return estimate
-    end
+    bound = R(spectral_norm_upper_bound(K, Kᵀ))
+    estimate = min(R(1.01) * (σ + residual), bound)
+    @warn "Spectral norm estimation did not converge within $maxiter iterations (relative residual $(residual / σ) > reltol = $reltol), using the conservative estimate $estimate (iterative value $σ, rigorous bound $bound)"
+    return estimate
 end
 
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)

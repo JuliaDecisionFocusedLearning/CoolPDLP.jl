@@ -76,10 +76,10 @@ end
 
 @testset "Cache key of the step size parameters" begin
     step_size(; kw...) = PDLP(Float64, Int32, Matrix; kw...).step_size
-    # a traced number does not change the key, the structural `Bool` does
+    # every field is a traced number, which does not change the key
     @test same_traced_cache_key(
-        step_size(), step_size(; invnorm_scaling = 0.8), step_size(; spectral_norm_upper = true)
-    ) == [true, false]
+        step_size(), step_size(; invnorm_scaling = 0.8), step_size(; spectral_norm_maxiter = 10)
+    ) == [true, true]
 end
 
 @testset "Custom sparse wrappers can be traced" begin
@@ -397,16 +397,12 @@ end
 # backend can service; the extension falls back to the frozen trace-time clock when it cannot.
 const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
 
-@testset "spectral_norm_upper stays structural" begin
-    @testset "$upper" for upper in (false, true)
-        algo = PDLP(; backend = nothing, spectral_norm_upper = upper)
-        algo_r = to_rarray(algo; track_numbers = true)
-        # the flag is part of the cache key, while the numbers next to it stay traced
-        @test algo_r.step_size.spectral_norm_upper === upper
-        @test !(algo_r.step_size.invnorm_scaling isa Float64)
-        @test unwrap(algo_r.step_size.invnorm_scaling) == algo.step_size.invnorm_scaling
-        @test unwrap(algo_r.step_size.spectral_norm_maxiter) == algo.step_size.spectral_norm_maxiter
-    end
+@testset "Step size parameters are traced" begin
+    algo = PDLP(; backend = nothing)
+    algo_r = to_rarray(algo; track_numbers = true)
+    @test !(algo_r.step_size.invnorm_scaling isa Float64)
+    @test unwrap(algo_r.step_size.invnorm_scaling) == algo.step_size.invnorm_scaling
+    @test unwrap(algo_r.step_size.spectral_norm_maxiter) == algo.step_size.spectral_norm_maxiter
 end
 
 @testset "Static inner loop" begin

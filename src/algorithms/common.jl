@@ -54,9 +54,8 @@ end
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
-        spectral_norm_tol = 1.0e-3,
+        spectral_norm_reltol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        spectral_norm_upper = false,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -87,9 +86,8 @@ function Algorithm{A}(
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
-        spectral_norm_tol = 1.0e-3,
+        spectral_norm_reltol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        spectral_norm_upper = false,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -116,9 +114,8 @@ function Algorithm{A}(
         invnorm_scaling = _T(invnorm_scaling),
         primal_weight_damping = _T(primal_weight_damping),
         zero_tol = _T(zero_tol),
-        spectral_norm_tol = _T(spectral_norm_tol),
+        spectral_norm_reltol = _T(spectral_norm_reltol),
         spectral_norm_maxiter,
-        spectral_norm_upper = Bool(spectral_norm_upper),
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),

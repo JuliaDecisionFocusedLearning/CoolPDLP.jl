@@ -174,10 +174,7 @@ D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2
 ## Step size
 
 The fixed step size is $\eta = s / \|\tilde{A}\|_2$, where $s$ is `invnorm_scaling` and PDHG needs $\eta \|\tilde{A}\|_2 < 1$ to converge.
-The spectral norm is estimated with the Lanczos method on $\tilde{A}^\top \tilde{A}$, which stops once the residual of its largest Ritz pair $(\theta, y)$ satisfies $\|\tilde{A}^\top \tilde{A} y - \theta y\| \leq \tau \theta$, with $\tau$ = `spectral_norm_tol`.
+The spectral norm is an iterative estimate $\sigma$, accepted once $\tilde{A}$ provably has a singular value within $\tau \sigma$ of it, with $\tau$ = `spectral_norm_reltol`.
+When $\sigma$ approximates the top of the spectrum, it lies below $\|\tilde{A}\|_2$ by at most about $\tau$ relative, a margin absorbed by $s \leq 1 - \tau$, which holds comfortably for the default $s = 0.9$.
 
-By default, the estimate is the Ritz value $\sqrt{\theta}$, which never exceeds $\|\tilde{A}\|_2$ and lies below it by at most about $\tau / 2$ relative.
-That margin is absorbed by $s \leq 1 - \tau / 2$, which holds comfortably for the default $s = 0.9$.
-When `invnorm_scaling` is close to $1$, set `spectral_norm_upper = true`: the estimate is then $\sqrt{\theta + \text{residual}}$, an upper bound of $\|\tilde{A}\|_2$ once $\theta$ has converged to the top of the spectrum, at the price of a slightly smaller step (about 5% more KKT passes on netlib).
-
-If the Lanczos iteration does not converge within `spectral_norm_maxiter` products, a warning is shown and the estimate falls back to the smaller of $1.01 \sqrt{\theta + \text{residual}}$ and the rigorous bound $\sqrt{\|\tilde{A}\|_1 \|\tilde{A}\|_\infty}$.
+If the estimate does not converge within `spectral_norm_maxiter` iterations, a warning is shown and the estimate falls back to the smaller of $1.01 (\sigma + \text{residual})$ and the rigorous bound $\sqrt{\|\tilde{A}\|_1 \|\tilde{A}\|_\infty}$.

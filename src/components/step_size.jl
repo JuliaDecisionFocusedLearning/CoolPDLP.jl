@@ -12,40 +12,21 @@ $(TYPEDFIELDS)
     primal_weight_damping::T
     "tolerance in absolute comparisons to zero"
     zero_tol::T
-    "relative residual tolerance in the iterative (Lanczos) spectral norm computation"
-    spectral_norm_tol::T
-    "maximum number of Lanczos iterations in the iterative spectral norm computation"
+    "relative tolerance of the iterative spectral norm estimate"
+    spectral_norm_reltol::T
+    "maximum number of iterations of the iterative spectral norm estimate"
     spectral_norm_maxiter::I
-    """
-    return the upper estimate `sqrt(θ + residual)` instead of the Ritz value `sqrt(θ)` once the
-    spectral norm computation converged (see [`spectral_norm`](@ref)). Turn it on when
-    `invnorm_scaling` is close to `1`, where the Ritz value leaves too little margin.
-    """
-    spectral_norm_upper::Bool = false
 end
 
 function Base.show(io::IO, params::StepSizeParameters)
-    (;
-        invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_tol, spectral_norm_maxiter,
-        spectral_norm_upper,
-    ) = params
-    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_tol=$spectral_norm_tol, spectral_norm_maxiter=$spectral_norm_maxiter, spectral_norm_upper=$spectral_norm_upper")
-end
-
-"""
-    spectral_norm(K, Kᵀ, params::StepSizeParameters)
-
-Call [`spectral_norm`](@ref) with the tolerance, budget and estimate of `params`.
-"""
-function spectral_norm(K::AbstractMatrix, Kᵀ::AbstractMatrix, params::StepSizeParameters)
-    (; spectral_norm_tol, spectral_norm_maxiter, spectral_norm_upper) = params
-    return spectral_norm(K, Kᵀ; tol = spectral_norm_tol, maxiter = spectral_norm_maxiter, upper = spectral_norm_upper)
+    (; invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_reltol, spectral_norm_maxiter) = params
+    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_reltol=$spectral_norm_reltol, spectral_norm_maxiter=$spectral_norm_maxiter")
 end
 
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
-    (; invnorm_scaling) = params
-    norm = spectral_norm(A, At, params)
+    (; invnorm_scaling, spectral_norm_reltol, spectral_norm_maxiter) = params
+    norm = spectral_norm(A, At; reltol = spectral_norm_reltol, maxiter = spectral_norm_maxiter)
     # a zero spectral norm (no constraint rows, or an all-zero `A`) means `A'y` never
     # contributes to the primal step regardless of `η`, so any finite step size is safe;
     # `inv(norm)` would otherwise be `Inf` and corrupt the first primal step

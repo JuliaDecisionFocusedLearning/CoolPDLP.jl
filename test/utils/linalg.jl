@@ -90,7 +90,7 @@ end
     rng = Xoshiro(42)
     for _ in 1:10
         A = randn(rng, 10, 20)
-        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7, maxiter = 1000)
+        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); reltol = 1.0e-7, maxiter = 1000)
         s1_ref = opnorm(A, 2)
         # a deterministic random start and a generous,
         # size-independent iteration budget (#95) makes this accurate to near machine
@@ -100,31 +100,31 @@ end
 end
 
 @testset "Spectral norm requires an explicit tolerance and iteration budget" begin
-    # neither `tol` nor `maxiter` may fall back to size-dependent (IterativeSolvers-style)
+    # neither `reltol` nor `maxiter` may fall back to size-dependent (IterativeSolvers-style)
     # defaults (see #95): those scale as `eps(T) * n^3` and `size(B, 2)` respectively,
     # which become far too loose (or too small) to trust at scale
     A = randn(5, 5)
     Aᵀ = Matrix(transpose(A))
     @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ)
-    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-7)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; reltol = 1.0e-7)
     @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; maxiter = 1000)
 end
 
 @testset "Spectral norm of a zero matrix is exactly zero" begin
-    # `Kᵀ * K` is positive semidefinite, so the largest Ritz value `λ` is
-    # mathematically nonnegative; a genuinely zero spectral norm (no constraint rows, or
-    # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
-    # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
+    # a genuinely zero spectral norm (no constraint rows, or an all-zero `K`) is returned
+    # as such, without a warning (see #95 and the "Fixed step size stays finite" test)
     Z = zeros(2, 2)
-    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3, maxiter = 1000) == 0.0
+    @test (@test_logs CoolPDLP.spectral_norm(Z, Z; reltol = 1.0e-3, maxiter = 1000)) == 0.0
+    Z = spzeros(3, 5)
+    @test (@test_logs CoolPDLP.spectral_norm(Z, sparse(transpose(Z)); reltol = 1.0e-3, maxiter = 1000)) == 0.0
 end
 
-@testset "Spectral norm rejects NaN entries and non-BLAS element types" begin
+@testset "Spectral norm rejects NaN and infinite entries" begin
     A = [1.0 NaN; 0.0 2.0]
-    @test_throws ArgumentError CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-3, maxiter = 100)
-    B = BigFloat[1 0; 0 2]
-    @test_throws ArgumentError CoolPDLP.spectral_norm(B, B; tol = 1.0e-3, maxiter = 100)
-    @test CoolPDLP.spectral_norm(Float32[1 0; 0 2], Float32[1 0; 0 2]; tol = 1.0e-4, maxiter = 100) ≈ 2.0f0
+    @test_throws ArgumentError CoolPDLP.spectral_norm(A, Matrix(transpose(A)); reltol = 1.0e-3, maxiter = 100)
+    A = [1.0 Inf; 0.0 2.0]
+    @test_throws ArgumentError CoolPDLP.spectral_norm(A, Matrix(transpose(A)); reltol = 1.0e-3, maxiter = 100)
+    @test CoolPDLP.spectral_norm(Float32[1 0; 0 2], Float32[1 0; 0 2]; reltol = 1.0e-4, maxiter = 100) ≈ 2.0f0
 end
 
 @testset "Spectral norm warns and stays conservative instead of crashing" begin
@@ -134,13 +134,13 @@ end
     rng = Xoshiro(42)
     A = randn(rng, 10, 20)
     Aᵀ = Matrix(transpose(A))
-    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-12, maxiter = 1)
+    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, Aᵀ; reltol = 1.0e-12, maxiter = 1)
     @test 0 < s <= sqrt(opnorm(A, 1) * opnorm(A, Inf))
     # with a clustered top of the spectrum (the realistic cause of non-convergence), the
     # inflated estimate lies above the true norm, i.e. on the safe step size side
     λs = vcat(1.0, 1.0 - 1.0e-7, range(0.0, 0.999; length = 98))
     K = sparse(Diagonal(sqrt.(λs)))
-    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; tol = 1.0e-12, maxiter = 30)
+    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; reltol = 1.0e-12, maxiter = 30)
     @test 1.0 <= s <= 1.05
     @test CoolPDLP.spectral_norm_upper_bound(A, Aᵀ) ≈ sqrt(opnorm(A, 1) * opnorm(A, Inf))
     S = sparse(A)
@@ -150,13 +150,13 @@ end
 @testset "Spectral norm converges where plain power iteration does not" begin
     # eigenvalues of `KᵀK`: 1, 0.995 and a bulk in [0, 0.99]; with residual tolerance 1e-6
     # the power method needs about log(1e-6 / 0.005) / log(0.995) ≈ 1700 iterations,
-    # while Lanczos converges like the power method with the square root of that ratio
+    # while the Krylov estimate converges like the power method with the square root of that ratio
     n = 200
     λs = vcat(1.0, 0.995, range(0.0, 0.99; length = n - 2))
     K = sparse(Diagonal(sqrt.(λs)))
     Kᵀ = copy(transpose(K))
     tol, maxiter = 1.0e-6, 1000
-    # plain power iteration with the same start and stopping rule as `powm!`
+    # plain power iteration with the same start and a relative residual stopping rule
     x = randn(Xoshiro(0), n)
     x ./= norm(x)
     power_converged = false
@@ -170,7 +170,7 @@ end
         x = y / norm(y)
     end
     @test !power_converged
-    s = @test_logs CoolPDLP.spectral_norm(K, Kᵀ; tol, maxiter)
+    s = @test_logs CoolPDLP.spectral_norm(K, Kᵀ; reltol = tol, maxiter)
     @test s ≈ 1.0 rtol = 1.0e-8
 end
 
@@ -210,7 +210,7 @@ end
 end
 
 @testset "Spectral norm on the CoolPDLP sparse formats" begin
-    # `abs_entries` and the products in `spectral_norm` must work on every format the solver
+    # `map(abs, ⋅)` and the products in `spectral_norm` must work on every format the solver
     # converts `A` to, not only on `SparseMatrixCSC`
     rng = Xoshiro(3)
     S = sprandn(rng, 30, 40, 0.2)
@@ -219,9 +219,9 @@ end
     bound = sqrt(opnorm(Matrix(S), 1) * opnorm(Matrix(S), Inf))
     for F in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
         A, At = F(S), F(St)
-        @test SparseMatrixCSC(CoolPDLP.abs_entries(A)) == abs.(S)
+        @test SparseMatrixCSC(map(abs, A)) == abs.(S)
         @test CoolPDLP.spectral_norm_upper_bound(A, At) ≈ bound
-        @test CoolPDLP.spectral_norm(A, At; tol = 1.0e-8, maxiter = 1000) ≈ ref rtol = 1.0e-6
+        @test CoolPDLP.spectral_norm(A, At; reltol = 1.0e-8, maxiter = 1000) ≈ ref rtol = 1.0e-6
     end
 end
 
@@ -230,25 +230,43 @@ end
     A = randn(rng, 10, 20)
     At = Matrix(transpose(A))
     for _ in 1:2
-        @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, At; tol = 1.0e-12, maxiter = 1)
+        @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(A, At; reltol = 1.0e-12, maxiter = 1)
     end
 end
 
-@testset "Upper spectral norm estimate" begin
-    # the Ritz value lies below the norm; `upper = true` adds the residual bound on top of it
+@testset "Spectral norm in any precision" begin
     rng = Xoshiro(5)
-    S = sprandn(rng, 200, 300, 0.05)
-    St = sparse(transpose(S))
+    S = sprandn(rng, 60, 80, 0.1)
     ref = opnorm(Matrix(S), 2)
-    lo = CoolPDLP.spectral_norm(S, St; tol = 1.0e-3, maxiter = 1000)
-    hi = CoolPDLP.spectral_norm(S, St; tol = 1.0e-3, maxiter = 1000, upper = true)
-    @test lo <= ref * (1 + 1.0e-12)
-    @test lo <= hi
-    @test hi >= ref * (1 - 1.0e-12)
-    @test hi <= ref * (1 + 1.0e-3)
-    # the keyword of the algorithms reaches the estimate
-    @test !PDLP().step_size.spectral_norm_upper
-    params = PDLP(; spectral_norm_upper = true).step_size
-    @test params.spectral_norm_upper
-    @test CoolPDLP.spectral_norm(S, St, params) == CoolPDLP.spectral_norm(S, St; tol = params.spectral_norm_tol, maxiter = params.spectral_norm_maxiter, upper = true)
+    for (T, reltol, rtol) in ((Float16, 1.0e-2, 1.0e-2), (Float32, 1.0e-5, 1.0e-4), (BigFloat, 1.0e-30, 1.0e-12))
+        A = convert(SparseMatrixCSC{T, Int}, S)
+        s = CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = T(reltol), maxiter = 1000)
+        @test s isa T
+        @test s ≈ ref rtol = rtol
+        @test s <= ref * (1 + rtol)
+    end
+end
+
+@testset "Map over the CoolPDLP sparse formats" begin
+    S = sprandn(Xoshiro(6), 10, 12, 0.3)
+    for F in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+        A = map(abs, F(S))
+        @test A isa F
+        @test SparseMatrixCSC(A) == abs.(S)
+        @test SparseMatrixCSC(map(x -> 2x, F(S))) == 2 .* S
+        @test_throws ArgumentError map(x -> x + 1, F(S))
+    end
+end
+
+@testset "Spectral norm on JLArrays" begin
+    using JLArrays: JLArrays, JLBackend
+    JLArrays.allowscalar(false)
+    milp, _ = CoolPDLP.random_milp_and_sol(60, 80, 0.1)
+    ref = opnorm(Matrix(milp.A), 2)
+    bound = sqrt(opnorm(Matrix(milp.A), 1) * opnorm(Matrix(milp.A), Inf))
+    for F in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+        m = CoolPDLP.perform_conversion(milp, CoolPDLP.ConversionParameters(Float32, Int32, F; backend = JLBackend()))
+        @test CoolPDLP.spectral_norm(m.A, m.At; reltol = 1.0f-5, maxiter = 1000) ≈ ref rtol = 1.0e-4
+        @test CoolPDLP.spectral_norm_upper_bound(m.A, m.At) ≈ bound rtol = 1.0e-5
+    end
 end
