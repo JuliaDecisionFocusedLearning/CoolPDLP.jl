@@ -457,3 +457,9 @@ else
         end
     end
 end
+
+if REACTANT_BACKEND != "cpu"
+    @testset verbose = true "GPU" begin
+        include("gpu.jl")
+    end
+end
