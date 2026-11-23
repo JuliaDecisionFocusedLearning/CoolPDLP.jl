@@ -211,7 +211,7 @@ function kkt_errors!(
     # `err.gap` holds `xᵀQx` until the gap itself is computed
     xQx = add_quadratic_gradient!!(err.gap, scratch.z, c_At_y, Q, x)
     c_At_y .+= c
-    z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
+    z = bound_multipliers!(scratch.z, c_At_y, lv, uv, z_given)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
     err.primal = colnorm!!(err.primal, primal_diff, norm)
