@@ -240,15 +240,24 @@ Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
 LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
 """
-    top_singular_value(K, Kᵀ, b, k)
+    SPECTRAL_NORM_KRYLOV_DIM
+
+Number of Golub–Kahan steps between two restarts of [`spectral_norm`](@ref), which bounds its
+memory to `SPECTRAL_NORM_KRYLOV_DIM + 1` vectors of each size of `K`.
+"""
+const SPECTRAL_NORM_KRYLOV_DIM = 32
+
+"""
+    top_singular_value!(b, K, Kᵀ, k)
 
 Run `k` steps of Golub–Kahan bidiagonalization of `K` from `b`, and return the largest
 singular value `σ` of the `k × k` bidiagonal matrix together with the bound `residual` such
-that `K` has a singular value within `residual` of `σ`.
+that `K` has a singular value within `residual` of `σ`. Overwrite `b` with the corresponding
+left Ritz vector, to restart from.
 """
-function top_singular_value(K, Kᵀ, b, k::Integer)
+function top_singular_value!(b, K, Kᵀ, k::Integer)
     R = real(eltype(K))
-    L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)[4]
+    _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
     d = R[L[i, i] for i in 1:k]
     e = R[L[i + 1, i] for i in 1:(k - 1)]
     β = R(L[k + 1, k])
@@ -256,20 +265,24 @@ function top_singular_value(K, Kᵀ, b, k::Integer)
         throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
     F = svd(Bidiagonal(d, e, :L))
     i = argmax(F.S)
-    # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet of `Bₖ`
-    # leaves the residual `β |qₖ|`, where `q` is its right singular vector
+    # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet `(σ, p, q)`
+    # of `Bₖ` leaves the residual `β |qₖ|`, and `Uₖ p` is its left Ritz vector
+    p = allocate(get_backend(b), eltype(b), k)
+    copyto!(p, convert(Vector{eltype(b)}, F.U[:, i]))
+    mul!(b, view(U, :, 1:k), p)
     return F.S[i], β * abs(F.V[k, i])
 end
 
 """
-    spectral_norm(K, Kᵀ; reltol, maxiter)
+    spectral_norm(K, Kᵀ; reltol, maxiter, krylov_dim = SPECTRAL_NORM_KRYLOV_DIM)
 
 Return an iterative estimate of the spectral norm `‖K‖₂`, starting from a deterministic
-random vector and using at most about `2 maxiter` products by `K` and `Kᵀ`.
+random vector and using at most `maxiter` products by both `K` and `Kᵀ`.
 
 The estimate `σ` is accepted once `K` provably has a singular value within `reltol * σ` of
 it, and then lies below `‖K‖₂` by at most about that much when `σ` approximates the top of the
-spectrum. `maxiter` should be chosen independently of the size of `K` (see #95).
+spectrum. `maxiter` should be chosen independently of the size of `K` (see #95). The iteration
+restarts every `krylov_dim` steps, which bounds its memory independently of `maxiter`.
 
 This never throws on non-convergence: it then warns (at every call, since each one is a
 different matrix that gets a conservative step size) and returns the minimum between the
@@ -286,6 +299,7 @@ function spectral_norm(
         Kᵀ::AbstractMatrix{<:Number};
         reltol::Number,
         maxiter::Integer,
+        krylov_dim::Integer = SPECTRAL_NORM_KRYLOV_DIM,
     )
     T = eltype(K)
     R = real(T)
@@ -295,13 +309,13 @@ function spectral_norm(
     b_cpu = adapt(CPU(), b)  # StableRNGs doesn't work on GPU
     randn!(StableRNG(0), b_cpu)
     copyto!(b, b_cpu)
-    k = min(16, maxiter)
     σ, residual = zero(R), typemax(R)
-    while true
-        σ, residual = top_singular_value(K, Kᵀ, b, k)
+    remaining = maxiter
+    while remaining > 0
+        k = min(krylov_dim, remaining)
+        σ, residual = top_singular_value!(b, K, Kᵀ, k)
         residual <= R(reltol) * σ && return σ
-        k == maxiter && break
-        k = min(2k, maxiter)
+        remaining -= k
     end
     bound = R(spectral_norm_upper_bound(K, Kᵀ))
     estimate = min(R(1.01) * (σ + residual), bound)

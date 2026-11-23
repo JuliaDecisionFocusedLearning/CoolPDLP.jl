@@ -234,6 +234,17 @@ end
     end
 end
 
+@testset "Spectral norm restarts with a bounded Krylov dimension" begin
+    λs = vcat(1.0, 0.995, range(0.0, 0.99; length = 198))
+    K = sparse(Diagonal(sqrt.(λs)))
+    for krylov_dim in (4, 8, CoolPDLP.SPECTRAL_NORM_KRYLOV_DIM)
+        s = @test_logs CoolPDLP.spectral_norm(K, K; reltol = 1.0e-6, maxiter = 1000, krylov_dim)
+        @test s ≈ 1.0 rtol = 1.0e-5
+    end
+    # the budget counts the steps across restarts
+    @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; reltol = 1.0e-12, maxiter = 10, krylov_dim = 4)
+end
+
 @testset "Spectral norm in any precision" begin
     rng = Xoshiro(5)
     S = sprandn(rng, 60, 80, 0.1)
