@@ -73,11 +73,16 @@ This only depends on the type of `Q` for a [`ZeroMatrix`](@ref) (never) and a de
 (always). A sparse `Q` without any stored entry, which is what a linear program read from a
 file gets (see [`MILP`](@ref)), is checked at run time: every quadratic computation below then
 skips its products by `Q` and returns zeros of the same type as for a nonzero `Q`, so the code
-stays type-stable while a linear program pays nothing but this check.
+stays type-stable while a linear program pays nothing but this check. That check only reads
+host-side structure (the storage size, never the stored indices), so it stays a plain `Bool`
+when the arrays of `Q` are traced by Reactant.
 """
 isquadratic(::ZeroMatrix) = false
 isquadratic(::AbstractMatrix) = true
 isquadratic(Q::AbstractSparseMatrix) = nnz(Q) > 0
+# `nnz` counts the stored column indices, a traced value under Reactant; the padded width is the
+# length of the longest row, which is zero exactly when there is no stored entry
+isquadratic(Q::GPUSparseMatrixELL) = !isempty(Q.colval)
 isquadratic(S::BatchScaledMatrix) = isquadratic(S.Q)
 
 """
