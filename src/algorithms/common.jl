@@ -304,12 +304,23 @@ function record_error_history!(stats::ConvergenceStats, record)
 end
 
 """
+    NoProgress
+
+Placeholder for the progress bar inside a Reactant compilation context.
+
+It is a dedicated singleton rather than `nothing` because the traced loops capture it, and
+ReactantCore 0.1.27 treats a captured `nothing` as an undefined variable
+(https://github.com/EnzymeAD/Reactant.jl/pull/3507).
+"""
+struct NoProgress end
+
+"""
     init_progress(desc, show_progress)
 
-Build a progress bar, or `nothing` inside a Reactant compilation context, where it cannot be updated.
+Build a progress bar, or a [`NoProgress`](@ref) placeholder inside a Reactant compilation context, where it cannot be updated.
 """
 function init_progress(desc::String, show_progress)
-    within_compile() && return nothing
+    within_compile() && return NoProgress()
     return ProgressUnknown(; desc, enabled = show_progress)
 end
 
@@ -319,7 +330,7 @@ end
 Advance the progress bar built by [`init_progress`](@ref), unless it was skipped.
 """
 next_progress!(prog, state::AbstractState) = next!(prog; showvalues = () -> prog_showvalues(state))
-next_progress!(::Nothing, ::AbstractState) = nothing
+next_progress!(::NoProgress, ::AbstractState) = nothing
 
 """
     finish_progress!(prog)
@@ -327,7 +338,7 @@ next_progress!(::Nothing, ::AbstractState) = nothing
 Close the progress bar built by [`init_progress`](@ref), unless it was skipped.
 """
 finish_progress!(prog) = finish!(prog)
-finish_progress!(::Nothing) = nothing
+finish_progress!(::NoProgress) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
     return unprecondition(state.sol, Preconditioner(milp))
