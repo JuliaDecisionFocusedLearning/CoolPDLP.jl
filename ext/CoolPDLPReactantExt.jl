@@ -12,8 +12,11 @@ using Reactant: Reactant, @reactant_overlay
 # errors are computed with. So is the backend in the conversion parameters, whose `Bool`
 # fields (e.g. in `CUDABackend` or `CPU`) cannot hold traced numbers. Trace them without number
 # tracking: their values are baked into the compiled program.
+# The preconditioning parameters only act before the solve loop, and hold `Bool` fields which
+# number tracking would try (and fail) to turn into traced numbers.
 const Structural = Union{
-    CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters, CoolPDLP.ConversionParameters,
+    CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters,
+    CoolPDLP.PreconditioningParameters, CoolPDLP.ConversionParameters,
 }
 
 function Reactant.traced_type_inner(
