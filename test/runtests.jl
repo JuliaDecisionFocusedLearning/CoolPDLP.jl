@@ -6,9 +6,12 @@ set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 # the package defaults to "disable" (what users get): the tests check stability, except on
-# OpenCL
+# OpenCL and in the Perf group, whose allocation counts must match what users get (the
+# "error" wrappers change inlining and can make hot loops allocate)
 set_preferences!(
-    "CoolPDLP", "dispatch_doctor_mode" => (GROUP == "OpenCL" ? "disable" : "error"); force = true
+    "CoolPDLP",
+    "dispatch_doctor_mode" => (GROUP in ("OpenCL", "Perf") ? "disable" : "error");
+    force = true
 )
 
 # a GPU backend and the preferences it needs must be in place before anything loads CoolPDLP
