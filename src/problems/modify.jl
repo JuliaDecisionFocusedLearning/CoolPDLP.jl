@@ -4,6 +4,9 @@
 Change the element type of floating-point containers inside `milp` to `T`.
 """
 set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = map(T, A)
+# `map` on a `Diagonal` only keeps it diagonal if `T(0)` is zero, which inference can't
+# prove for every `T` (e.g. `BigFloat`), so it would return `Union{Diagonal, Matrix}`
+set_eltype(::Type{T}, D::Diagonal{<:AbstractFloat}) where {T} = Diagonal(set_eltype(T, D.diag))
 
 function set_eltype(::Type{T}, sol::PrimalDualSolution) where {T}
     return PrimalDualSolution(set_eltype(T, sol.x), set_eltype(T, sol.y))

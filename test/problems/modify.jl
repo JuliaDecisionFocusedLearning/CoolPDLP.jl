@@ -1,6 +1,7 @@
 using Adapt
 using CoolPDLP
 using JLArrays
+using LinearAlgebra: Diagonal
 using KernelAbstractions: CPU, get_backend
 using Test
 
@@ -10,6 +11,17 @@ milp, sol = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
     milp_f32 = CoolPDLP.set_eltype(Float32, milp)
     @test milp_f32 isa MILP{Float32}
     @test milp_f32.A isa SparseMatrixCSC{Float32, Int}
+
+    # precisions where `T(0)` isn't a compile-time zero keep the scalings diagonal, and the
+    # conversion stays type-stable
+    for T in (Float16, BigFloat)
+        milp_T = @inferred CoolPDLP.set_eltype(T, milp)
+        @test milp_T isa MILP{T}
+        @test milp_T.D1 isa Diagonal{T, Vector{T}}
+        @test milp_T.D2 == Diagonal(T.(milp.D2.diag))
+        sol_T = @inferred CoolPDLP.set_eltype(T, sol)
+        @test sol_T isa PrimalDualSolution{T}
+    end
 
     milp_i32 = CoolPDLP.set_indtype(Int32, milp)
     @test milp_i32 isa MILP{Float64}
