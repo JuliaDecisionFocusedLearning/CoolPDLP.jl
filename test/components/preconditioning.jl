@@ -97,5 +97,6 @@ end
             expected = iszero(ref) ? 1.0 : inv(sqrt(ref))
             @test prec.D1.diag[i] ≈ expected
         end
+        @test opnorm(Matrix(prec.D1 * A * prec.D2)) <= 1 + 1.0e-10
     end
 end
