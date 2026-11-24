@@ -227,6 +227,15 @@ end
         @test all(==(-1), state.sol.x[:, idx])
         @test !any(==(-1), state.sol.x[:, setdiff(1:B, idx)])
         @test state.stats.kkt_passes == 123
+        # tuples and named tuples are split and scattered entry by entry
+        t = (state.sol.x, (; y = state.sol.y))
+        sub_t = CoolPDLP.columns(t, idx, B)
+        sub_t[1] .= -2
+        sub_t[2].y .= -3
+        CoolPDLP.scatter_columns(t, sub_t, idx, B)
+        @test all(==(-2), state.sol.x[:, idx])
+        @test all(==(-3), state.sol.y[:, idx])
+        @test !any(==(-3), state.sol.y[:, setdiff(1:B, idx)])
     end
     # what belongs to the instances is read from the types: sizes cannot tell a batch of `m` or
     # `n` instances from the shared data
