@@ -47,6 +47,40 @@ qp_algorithms(; kwargs...) = (
     @test milp_p.Q isa ZeroMatrix{Float32}
 end
 
+@testset "Linear programs read from a file stay linear" begin
+    qps, _ = read_instance(Netlib, "afiro")
+    milp = MILP(qps)
+    @testset "$M" for M in (Matrix, SparseMatrixCSC, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+        milp_p, _ = preprocess(milp, PrimalDualSolution(milp), PDLP(Float64, Int32, M))
+        @test !isquadratic(milp_p.Q)
+    end
+    # a quadratic one keeps its products by `Q` with dense matrices
+    qp = MILP(read_instance(MarosMeszaros, "HS21")[1])
+    qp_p, _ = preprocess(qp, PrimalDualSolution(qp), PDLP(Float64, Int32, Matrix))
+    @test isquadratic(qp_p.Q)
+    @test Matrix(qp_p.Q) ≈ Matrix(preprocess(qp, PrimalDualSolution(qp), PDLP(Float64, Int32, SparseMatrixCSC))[1].Q)
+end
+
+@testset "Batch-scaled Q in Float32" begin
+    # bound and objective rescaling gives every instance its own scale of `Q`, which must follow
+    # the element type of the algorithm
+    rng = StableRNG(1)
+    Q = sparse([2.0 1.0; 1.0 2.0])
+    qp = MILP(;
+        c = randn(rng, 2, 3), Q, lv = zeros(2), uv = fill(10.0, 2),
+        A = sparse([1.0 1.0]), lc = [-Inf], uc = [1.0],
+    )
+    algo = PDLP(Float32, Int32, GPUSparseMatrixCSR; bound_objective_rescaling = true)
+    milp_p, _ = preprocess(qp, PrimalDualSolution(qp), algo)
+    @test milp_p.Q isa CoolPDLP.BatchScaledMatrix
+    @test eltype(milp_p.Q.scale) == Float32
+    @test eltype(CoolPDLP.set_eltype(Float32, CoolPDLP.BatchScaledMatrix(Q, [1.0, 2.0])).scale) == Float32
+    # one instance of it, in a sparse format of this package
+    Q1 = CoolPDLP.instance_quadratic(milp_p.Q, 2)
+    @test Q1 isa GPUSparseMatrixCSR
+    @test Matrix(Q1) ≈ milp_p.Q.scale[2] * Matrix(milp_p.Q.Q)
+end
+
 @testset "Hand-made QPs" begin
     # min ½(x₁² + x₂²) - x₁ - x₂  s.t.  x₁ + x₂ ≤ 1, x ≥ 0: x = (½, ½), y = -½
     simplex = MILP(;

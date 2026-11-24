@@ -483,14 +483,15 @@ function rescale_quadratic(Q::AbstractMatrix, β::Number, γ::Number)
     return isone(r) ? Q : r * Q
 end
 function rescale_quadratic(Q::AbstractMatrix, β::BatchedNumber, γ::BatchedNumber)
-    ratio = collect(broadcast(/, γ, β))
+    # in the element type of `Q`, whatever that of the factors
+    ratio = collect(eltype(Q), broadcast(/, γ, β))
     return BatchScaledMatrix(Q, ratio)
 end
 # rescaling an already batch-scaled matrix (e.g. a second pass) multiplies the ratios
 function rescale_quadratic(S::BatchScaledMatrix, β::BatchedNumber, γ::BatchedNumber)
-    return BatchScaledMatrix(S.Q, S.scale .* broadcast(/, γ, β))
+    return BatchScaledMatrix(S.Q, convert.(eltype(S.Q), S.scale .* broadcast(/, γ, β)))
 end
-rescale_quadratic(S::BatchScaledMatrix, β::Number, γ::Number) = BatchScaledMatrix(S.Q, S.scale .* (γ / β))
+rescale_quadratic(S::BatchScaledMatrix, β::Number, γ::Number) = BatchScaledMatrix(S.Q, convert.(eltype(S.Q), S.scale .* (γ / β)))
 
 function rescale_bounds_objective(sol::PrimalDualSolution, β::BatchedNumber, γ::BatchedNumber)
     return PrimalDualSolution(scale_columns(sol.x, β), scale_columns(sol.y, γ))

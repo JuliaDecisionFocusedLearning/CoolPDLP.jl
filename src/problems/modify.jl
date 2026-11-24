@@ -5,7 +5,7 @@ Change the element type of floating-point containers inside `milp` to `T`.
 """
 set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = map(T, A)
 set_eltype(::Type{T}, Z::ZeroMatrix) where {T} = ZeroMatrix{T}(Z.n)
-set_eltype(::Type{T}, S::BatchScaledMatrix) where {T} = BatchScaledMatrix(set_eltype(T, S.Q), S.scale)
+set_eltype(::Type{T}, S::BatchScaledMatrix) where {T} = BatchScaledMatrix(set_eltype(T, S.Q), set_eltype(T, S.scale))
 
 function set_eltype(::Type{T}, sol::PrimalDualSolution) where {T}
     return PrimalDualSolution(set_eltype(T, sol.x), set_eltype(T, sol.y))
@@ -90,8 +90,14 @@ end
     convert_matrix(M, Q)
 
 Convert the objective matrix `Q` with constructor `M`, unless it is a [`ZeroMatrix`](@ref).
+
+A sparse `Q` stays sparse with dense matrices (`M = Matrix`), in the [`GPUSparseMatrixCSR`](@ref)
+format, which also compiles under Reactant: a dense `Q` would always count as quadratic (see
+[`isquadratic`](@ref)), so the empty `Q` of a linear program read from a file would cost a dense
+product at every step.
 """
 convert_matrix(::Type{M}, Q::AbstractMatrix) where {M} = M(Q)
+convert_matrix(::Type{<:Matrix}, Q::SparseMatrixCSC) = GPUSparseMatrixCSR(Q)
 convert_matrix(::Type, Z::ZeroMatrix) = Z
 convert_matrix(::Type{M}, S::BatchScaledMatrix) where {M} = BatchScaledMatrix(convert_matrix(M, S.Q), S.scale)
 

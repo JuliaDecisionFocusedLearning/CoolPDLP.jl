@@ -175,9 +175,9 @@ By default, the quadratic objective (`QUADOBJ` section) becomes the sparse matri
 empty for a linear program: the result has the same type either way, and a linear program only
 pays a run-time check for its empty `Q` (see [`isquadratic`](@ref)). With `Val(false)`, `Q` is a
 [`ZeroMatrix`](@ref) instead, which removes even that check at compile time, and an
-`ArgumentError` is thrown if the file has a quadratic objective. Prefer `Val(false)` for a
-linear program solved with dense matrices (`Matrix` in [`Algorithm`](@ref)): an empty sparse `Q`
-then becomes a dense zero matrix, which cannot be told apart from a quadratic one cheaply.
+`ArgumentError` is thrown if the file has a quadratic objective. With dense matrices (`Matrix` in
+[`Algorithm`](@ref)), a sparse `Q` stays sparse (see [`convert_matrix`](@ref)), so that the
+empty `Q` of a linear program still skips every quadratic computation.
 
 In both cases, an `ArgumentError` is thrown if `Q` is detectably nonconvex (see
 [`check_convex`](@ref)).

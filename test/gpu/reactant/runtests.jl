@@ -305,6 +305,30 @@ const HALPERN_ALGORITHMS = (:HPDLP, :HPRLP)
     end
 end
 
+# a quadratic objective adds products by `Q` to the steps and the KKT errors; with dense
+# matrices, a sparse `Q` stays in the CSR format of this package (see `convert_matrix`)
+const QP_ALGORITHMS = (:PDHG, :PDLP, :HPDLP)
+qp0 = MILP(read_instance(MarosMeszaros, "HS21")[1])
+
+@testset verbose = true "Quadratic program with $A and $M" for A in QP_ALGORITHMS,
+        M in (Matrix, GPUSparseMatrixCSR)
+
+    algo = CoolPDLP.Algorithm{A}(
+        Float64,
+        Int32,
+        M;
+        backend = nothing,
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    state, state_r = solve_plain_and_compiled(algo, qp0, PrimalDualSolution(qp0))
+    test_agreement(state, state_r; rtol = 1.0e-8)
+end
+
 """
     OpaqueOperator
 

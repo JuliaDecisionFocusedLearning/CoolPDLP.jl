@@ -62,7 +62,17 @@ end
 Return the objective matrix of instance `i`: `Q` itself unless it is a [`BatchScaledMatrix`](@ref).
 """
 instance_quadratic(Q::AbstractMatrix, ::Int) = Q
-instance_quadratic(S::BatchScaledMatrix, i::Int) = Array(S.scale)[i] * S.Q
+instance_quadratic(S::BatchScaledMatrix, i::Int) = scale_matrix(S.Q, Array(S.scale)[i])
+
+"""
+    scale_matrix(Q, s)
+
+Return `s * Q`, also for the sparse formats of this package, which do not define it.
+"""
+scale_matrix(Q::AbstractMatrix, s::Number) = s * Q
+scale_matrix(Q::GPUSparseMatrixCSR, s::Number) = GPUSparseMatrixCSR(Q.m, Q.n, Q.rowptr, Q.colval, Q.nzval .* s)
+scale_matrix(Q::GPUSparseMatrixELL, s::Number) = GPUSparseMatrixELL(Q.m, Q.n, Q.colval, Q.nzval .* s)
+scale_matrix(Q::GPUSparseMatrixCOO, s::Number) = GPUSparseMatrixCOO(Q.m, Q.n, Q.rowval, Q.colval, Q.nzval .* s)
 
 """
     isquadratic(Q)
@@ -108,9 +118,9 @@ struct NoQuadraticTerm end
 Compute `dest ± q / 2`, column by column, into `dest`. A no-op when `q` is a [`NoQuadraticTerm`](@ref).
 """
 add_half!!(dest::BatchedNumber, ::NoQuadraticTerm) = dest
-add_half!!(dest::BatchedNumber, q::BatchedNumber) = broadcast!!((d, q) -> d + q / 2, dest, dest, q)
+add_half!!(dest::BatchedNumber, q::BatchedNumber) = batched_apply!!((d, q) -> d + q / 2, dest, dest, q)
 subtract_half!!(dest::BatchedNumber, ::NoQuadraticTerm) = dest
-subtract_half!!(dest::BatchedNumber, q::BatchedNumber) = broadcast!!((d, q) -> d - q / 2, dest, dest, q)
+subtract_half!!(dest::BatchedNumber, q::BatchedNumber) = batched_apply!!((d, q) -> d - q / 2, dest, dest, q)
 
 """
     scaled_quadratic_term(xQx, β, γ)
@@ -135,7 +145,7 @@ end
 function quadratic_form!!(
         dest::BatchedNumber, scratch::AbstractVecOrMat, Q::AbstractMatrix, x::AbstractVecOrMat
     )
-    isquadratic(Q) || return broadcast!!(zero, dest, dest)
+    isquadratic(Q) || return batched_apply!!(zero, dest, dest)
     Qx = quadratic_mul!(scratch, Q, x)
     return colsum!!(dest, @. scratch = x * Qx)
 end
@@ -156,7 +166,7 @@ function add_quadratic_gradient!!(
         dest::BatchedNumber, scratch::AbstractVecOrMat, g::AbstractVecOrMat,
         Q::AbstractMatrix, x::AbstractVecOrMat,
     )
-    isquadratic(Q) || return broadcast!!(zero, dest, dest)
+    isquadratic(Q) || return batched_apply!!(zero, dest, dest)
     Qx = quadratic_mul!(scratch, Q, x)
     g .+= Qx
     return colsum!!(dest, @. scratch = x * Qx)
