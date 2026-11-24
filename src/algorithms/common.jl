@@ -53,7 +53,6 @@ end
         geometric_mean_iter = 0,
         curtis_reid_iter = 0,
         bound_objective_rescaling = false,
-        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -77,7 +76,7 @@ end
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
-        termination_norm = :L2,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
@@ -88,7 +87,7 @@ Constructor for algorithm configs.
 The algorithm stops when, for every instance, the KKT errors meet
 `error ≤ termination_abstol + termination_reltol * scale` (see
 [`termination_margin!!`](@ref)), with the residuals measured in the norm `termination_norm`
-(`:L2` or `:Linf`, a string is accepted too). The default `termination_abstol = termination_reltol`
+(a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
 is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
 
 With `infeasibility_tol` (default `1e-8`, as in PDLP), PDHG and PDLP look for infeasibility
@@ -97,14 +96,8 @@ certificates at every termination check, and stop with `MOI.INFEASIBLE` or
 checks cost two KKT passes each, which do not count towards `max_kkt_passes`.
 `infeasibility_tol = nothing` removes the detection altogether.
 
-The diagonal preconditioner applies, in this order, `curtis_reid_iter` Curtis-Reid iterations,
-`geometric_mean_iter` geometric-mean passes, `ruiz_iter` Ruiz passes and a Pock-Chambolle step
-(skipped when `chambolle_pock_alpha` is `NaN`). With `bound_objective_rescaling`, the bounds and
-the objective of the preconditioned problem are then divided by `1 + ‖b‖₂` and `1 + ‖c‖₂`
-respectively (per instance), and PDLP and HPDLP start from a primal weight of one.
-`bound_norm_sum_squares` selects the cuPDLPx definition of `‖b‖` instead of the HPR-LP one (see
-[`bound_objective_factors`](@ref)). Errors and solutions are always reported for the original
-problem.
+The preconditioning stages and the bound and objective rescaling are described on the math page
+of the documentation.
 """
 function Algorithm{A}(
         # conversion
@@ -118,7 +111,6 @@ function Algorithm{A}(
         geometric_mean_iter = 0,
         curtis_reid_iter = 0,
         bound_objective_rescaling = false,
-        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -142,7 +134,7 @@ function Algorithm{A}(
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
-        termination_norm = :L2,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
@@ -157,7 +149,6 @@ function Algorithm{A}(
         geometric_mean_iter,
         curtis_reid_iter,
         bound_objective_rescaling,
-        bound_norm_sum_squares,
     )
     step_size = StepSizeParameters(;
         invnorm_scaling = _T(invnorm_scaling),
@@ -182,7 +173,7 @@ function Algorithm{A}(
         check_every,
         record_error_history,
         time_limit,
-        termination_norm = check_termination_norm(Symbol(termination_norm)),
+        termination_norm,
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),
@@ -249,7 +240,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 
 Return a tuple `(milp, sol)`.
 """
-function preprocess(
+@stable default_union_limit = 2 function preprocess(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
@@ -258,13 +249,12 @@ function preprocess(
     prec = pdlp_preconditioner(milp_init_cpu, algo.preconditioning)
     milp_cpu = precondition(milp_init_cpu, prec)
     sol_cpu = precondition(sol_init_cpu, prec)
-    # always applied, with unit factors when disabled, so that the problem type does not
-    # depend on the value of the option
-    enabled = algo.preconditioning.bound_objective_rescaling
-    sum_squares = algo.preconditioning.bound_norm_sum_squares
-    β, γ = bound_objective_factors(milp_cpu; enabled, sum_squares)
-    milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
-    sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
+    # per-instance factors turn shared variable bounds into batched ones, hence a small union
+    if algo.preconditioning.bound_objective_rescaling
+        β, γ = bound_objective_factors(milp_cpu)
+        milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
+        sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
+    end
 
     # moving to GPU
     milp = perform_conversion(milp_cpu, algo.conversion)
@@ -516,5 +506,7 @@ finish_progress!(prog) = finish!(prog)
 finish_progress!(::NoProgress) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
-    return unscale(state.sol, milp)
+    (; bound_scale, obj_scale) = milp
+    sol = rescale_bounds_objective(state.sol, inv.(bound_scale), inv.(obj_scale))
+    return unprecondition(sol, Preconditioner(milp))
 end

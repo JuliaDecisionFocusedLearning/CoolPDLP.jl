@@ -466,7 +466,7 @@ in `state.stats.err`. Costs three products by `A` or `Aᵀ`.
 
 A frozen instance of a batch keeps its `r_act`, hence its errors.
 """
-function active_set_candidate!(state::HSDPDLPState, milp::MILP, norm::Symbol)
+function active_set_candidate!(state::HSDPDLPState, milp::MILP, norm::TerminationNorm)
     (; sol, Tz, hsd, scratch, stats, r_act, err_act) = state
     (; c, At) = milp
     At_y = mul!(scratch.x, At, sol.y)
