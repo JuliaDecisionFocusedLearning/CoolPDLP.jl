@@ -654,3 +654,16 @@ if REACTANT_BACKEND != "cpu"
         include("gpu.jl")
     end
 end
+
+@testset "The launch cache key includes the device of each array" begin
+    x = Reactant.to_rarray(ones(3))
+    acc = Any[]
+    REACTANT_EXT.collect_shapes!(acc, (; x))
+    dev = Reactant.XLA.device(x)
+    @test acc == Any[((3,), REACTANT_EXT.placement(x))]
+    @test REACTANT_EXT.placement(x) in ((dev,), dev)
+    # the same shape on the same device gives the same key, so the cache is still hit
+    acc2 = Any[]
+    REACTANT_EXT.collect_shapes!(acc2, (; x = Reactant.to_rarray(zeros(3))))
+    @test isequal(acc, acc2)
+end

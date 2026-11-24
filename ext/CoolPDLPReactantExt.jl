@@ -209,7 +209,7 @@ end
     LAUNCH_CACHE
 
 Compiled launches of host-driven solves, keyed by everything that tracing bakes in: the
-argument types, the array shapes and the structural parameters (see
+argument types, the array shapes and devices, and the structural parameters (see
 [`collect_shapes!`](@ref)). The number of checks is traced, so it is not part of the key.
 
 It keeps at most `LAUNCH_CACHE_LIMIT[]` executables, evicting the least recently used one,
@@ -260,15 +260,25 @@ function without_time_limit(algo::CoolPDLP.Algorithm{A}) where {A}
 end
 
 """
+    placement(x)
+
+Return the devices holding the buffers of the device array `x`, which a compiled program is
+bound to: two arrays of the same shape on different devices (or sharded differently) need
+different executables.
+"""
+placement(x::Reactant.ConcretePJRTArray) = map(Reactant.XLA.device, x.data)
+placement(x::Reactant.ConcreteIFRTArray) = Reactant.XLA.device(x)
+
+"""
     collect_shapes!(acc, x, baked=false)
 
-Push onto `acc` what tracing `x` bakes into a compiled program besides types: the size of
-every device array, and the plain numbers of the structures traced without number tracking
+Push onto `acc` what tracing `x` bakes into a compiled program besides types: the size and
+the placement (see [`placement`](@ref)) of every device array, and the plain numbers of the structures traced without number tracking
 (the dimensions of a sparse matrix). The clock is left out, since a launch never reads it.
 """
 function collect_shapes!(acc::Vector{Any}, x, baked::Bool = false)
     if x isa Union{Reactant.ConcretePJRTArray, Reactant.ConcreteIFRTArray}
-        push!(acc, size(x))
+        push!(acc, (size(x), placement(x)))
     elseif x isa CoolPDLP.HostClock || x isa Array
         # host-only data, which tracing leaves alone
     elseif x isa Number
