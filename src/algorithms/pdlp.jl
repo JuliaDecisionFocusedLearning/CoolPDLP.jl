@@ -3,9 +3,7 @@
 
 Shortcut for [`Algorithm{:PDLP}`](@ref).
 
-The preconditioner starts with `curtis_reid_iter = 20` Curtis-Reid iterations, as in HPR-LP,
-before the Ruiz passes and the Pock-Chambolle step. Pass `curtis_reid_iter = 0` to go back to
-the Ruiz and Pock-Chambolle scaling of the original PDLP (and of `Algorithm{:PDLP}` itself).
+Unlike `Algorithm{:PDLP}`, it defaults to `curtis_reid_iter = 20`, as in HPR-LP.
 """
 function PDLP(args...; kwargs...)
     return Algorithm{:PDLP}(
@@ -83,12 +81,9 @@ function initialize(
     sol_avg = copy(sol)
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
-    # after bound and objective rescaling, both norms are below one and cuPDLPx starts from ω = 1
-    ω_init = if algo.preconditioning.bound_objective_rescaling
-        one(T)
-    else
-        primal_weight_init(milp, algo.step_size)
-    end
+    # after bound and objective rescaling both norms are below one, and cuPDLPx starts from ω = 1
+    rescaled = algo.preconditioning.bound_objective_rescaling
+    ω_init = rescaled ? one(T) : primal_weight_init(milp, algo.step_size)
     ω = batched_expand(sol.x, ω_init)
     η, norm_A, norm_Q = initial_stepsize(milp, ω, algo.step_size)
     step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
@@ -98,20 +93,15 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, :L2)
-    # The restart errors stay in the L2 norm whatever `termination_norm` is: the restart
-    # criteria (sufficient and necessary decay in `should_restart`) and the choice between the
-    # current and averaged candidates compare these errors over time, with PDLP's default decay
-    # factors, which assume L2. Following the termination norm would let a change of the
-    # stopping test alone (e.g. to L∞) change the restart schedule, and therefore the iterates.
+    kkt_errors!(err, scratch, sol, milp, L2Norm())
+    # Restarts stay in L2 whatever `termination_norm` is: PDLP's decay factors in
+    # `should_restart` assume it, and the stopping test alone must not change the iterates.
     restart_stats.err_restart = copy(err)
-    norm = algo.generic.termination_norm
-    if norm !== :L2
-        kkt_errors!(err, scratch, sol, milp, norm)
-    end
+    (; termination_norm) = algo.generic
+    termination_norm isa L2Norm || kkt_errors!(err, scratch, sol, milp, termination_norm)
     tol = algo.termination.infeasibility_tol
     # each evaluation of the initial KKT errors costs one product by `A` and one by `Aᵀ`
-    extra_products = norm === :L2 ? 2 : 4
+    extra_products = termination_norm isa L2Norm ? 2 : 4
     stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products)
     infeas = InfeasibilityWorkspace(sol, tol)
     state = PDLPState(;
@@ -346,8 +336,8 @@ function best_error!!(
         milp::MILP, ω::BatchedNumber,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err1, scratch, sol1, milp, :L2)
-    kkt_errors!(err2, scratch, sol2, milp, :L2)
+    kkt_errors!(err1, scratch, sol1, milp, L2Norm())
+    kkt_errors!(err2, scratch, sol2, milp, L2Norm())
     abs1 = absolute!!(scratch.b1, err1, ω)
     abs2 = absolute!!(scratch.b2, err2, ω)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2

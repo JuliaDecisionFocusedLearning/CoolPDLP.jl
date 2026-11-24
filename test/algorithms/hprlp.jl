@@ -21,7 +21,6 @@ using Test
     @test algo.preconditioning.ruiz_iter == 10
     @test algo.preconditioning.chambolle_pock_alpha == 1.0
     @test algo.preconditioning.bound_objective_rescaling
-    @test !algo.preconditioning.bound_norm_sum_squares
     @test occursin("HPRLP algorithm", sprint(show, algo))
     milp, _ = CoolPDLP.random_milp_and_sol(Xoshiro(0), 5, 8, 0.5)
     @test_throws ArgumentError solve(milp, HPRLP(; check_every = 1))

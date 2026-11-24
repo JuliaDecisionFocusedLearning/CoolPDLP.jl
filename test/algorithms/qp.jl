@@ -116,7 +116,7 @@ end
     @testset "KKT errors vanish at the optimum" begin
         for (milp, x, y, _) in cases
             sol = PrimalDualSolution(x, y)
-            err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
+            err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, L2Norm())
             @test relative(err) < 1.0e-12
         end
     end
