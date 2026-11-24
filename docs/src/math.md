@@ -229,7 +229,7 @@ Here $E_0$ is the residual at the first step after the last restart. A restart m
 
 ### HPDLP: reflected Halpern PDHG (r²HPDHG)
 
-$T$ is the PDHG step of [`pdhg_update!`](@ref), with $\tau = \eta/\omega$ and $\sigma = \eta\omega$. With the sign convention of $y$ used here, its metric is $P = \begin{bmatrix} I/\tau & A^\top \\ A & I/\sigma \end{bmatrix}$, and the residual is measured as
+$T$ is the PDHG step of `pdhg_update!`, with $\tau = \eta/\omega$ and $\sigma = \eta\omega$. With the sign convention of $y$ used here, its metric is $P = \begin{bmatrix} I/\tau & A^\top \\ A & I/\sigma \end{bmatrix}$, and the residual is measured as
 
 ```math
 \eta \|\Delta\|_P^2 = \omega \|\Delta x\|^2 + \|\Delta y\|^2/\omega + 2\eta \langle \Delta x, A^\top \Delta y\rangle.
