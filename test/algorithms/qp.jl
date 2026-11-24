@@ -265,3 +265,21 @@ end
     qp = MILP(; c = [1.0], Q = sparse([1.0;;]), lv = [0.0], uv = [1.0], A = sparse([1.0;;]), lc = [0.0], uc = [1.0])
     @test_throws ArgumentError solve(qp, algo)
 end
+
+@testset "Quadratic helpers" begin
+    lp = MILP(read_instance(Netlib, "afiro")[1], Val(false))
+    @test lp.Q isa ZeroMatrix{Float64}
+    qp = MILP(read_instance(MarosMeszaros, "HS21")[1])
+    @test occursin("quadratic objective nonzeros", sprint(show, qp))
+    Q = sparse([2.0 0; 0 4])
+    x = [1.0, 1.0]
+    @test CoolPDLP.mul_quadratic!(zeros(2), Q, x) == [2.0, 4.0]
+    @test CoolPDLP.mul_quadratic!(ones(2), spzeros(2, 2), x) == zeros(2)
+    @test CoolPDLP.scaled_quadratic_term([6.0, 8.0], [1.0, 2.0], [3.0, 2.0]) ≈ [2.0, 2.0]
+    # a second rescaling of a batch-scaled matrix multiplies the ratios
+    S = CoolPDLP.rescale_quadratic(Q, [1.0, 2.0], [2.0, 2.0])
+    @test S isa CoolPDLP.BatchScaledMatrix
+    S2 = CoolPDLP.rescale_quadratic(S, [1.0, 2.0], [2.0, 2.0])
+    @test S2.Q === Q
+    @test S2.scale ≈ [4.0, 1.0]
+end
