@@ -98,7 +98,7 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, :L2)  # TODO: count this KKT pass
+    kkt_errors!(err, scratch, sol, milp, :L2)
     # The restart errors stay in the L2 norm whatever `termination_norm` is: the restart
     # criteria (sufficient and necessary decay in `should_restart`) and the choice between the
     # current and averaged candidates compare these errors over time, with PDLP's default decay
@@ -110,7 +110,9 @@ function initialize(
         kkt_errors!(err, scratch, sol, milp, norm)
     end
     tol = algo.termination.infeasibility_tol
-    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    # each evaluation of the initial KKT errors costs one product by `A` and one by `Aᵀ`
+    extra_products = norm === :L2 ? 2 : 4
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products)
     infeas = InfeasibilityWorkspace(sol, tol)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
@@ -230,6 +232,8 @@ function restart_check!(
 
     # `err_restart` stays valid between restarts, only the primal weight `ω` moves
     restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
+    # the four KKT errors of `best_error!!`, two products each
+    state.stats.extra_products += 8
 
     return should_restart(restart_stats, iteration, algo.restart)
 end

@@ -148,16 +148,19 @@ mutable struct ConvergenceStats{
     active::A
     "number of KKT passes of each instance of a batch when it terminated, or so far if it is still running (`nothing` without batching)"
     instance_kkt_passes::IP
-    "products by `A` or `Aᵀ` on top of the two of each KKT pass (restart metrics, the KKT errors of the termination checks, the initial KKT errors of the Halpern algorithms); see [`matrix_products`](@ref)"
+    "products by `A` or `Aᵀ` outside the KKT passes and the infeasibility checks: the initial KKT errors, the KKT errors of the termination and restart checks, and the restart metrics; see [`matrix_products`](@ref)"
     extra_products::I
 end
 
 """
     matrix_products(stats)
 
-Total number of products by `A` or `Aᵀ`: two per KKT pass, plus `stats.extra_products`.
+Total number of products by `A` or `Aᵀ` made by the solver: two per KKT pass and per KKT pass
+of the infeasibility checks (`stats.ray_passes`), plus `stats.extra_products`, which counts every
+other product (initial KKT errors, termination and restart checks). It is comparable across
+algorithms, whereas `kkt_passes` leaves out the work that differs between them.
 """
-matrix_products(stats::ConvergenceStats) = 2 * stats.kkt_passes + stats.extra_products
+matrix_products(stats::ConvergenceStats) = 2 * (stats.kkt_passes + stats.ray_passes) + stats.extra_products
 
 """
     batched_tracker(like, val)

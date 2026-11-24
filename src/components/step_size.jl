@@ -16,7 +16,7 @@ $(TYPEDFIELDS)
     spectral_norm_tol::T
     "maximum number of power method iterations in iterative spectral norm computation"
     spectral_norm_maxiter::I
-    "reflection coefficient `γ` of the Halpern iteration (`1` is fully reflected, `0` is plain PDHG), used by HPDLP and the other Halpern algorithms"
+    "reflection coefficient `γ` of the Halpern iteration (`1` is fully reflected, `1/2` is plain Halpern on the PDHG operator), used by HPDLP and the other Halpern algorithms"
     reflection_coefficient::T
     "proportional gain of the PID primal weight controller, used by HPDLP and the other Halpern algorithms"
     pid_kp::T
