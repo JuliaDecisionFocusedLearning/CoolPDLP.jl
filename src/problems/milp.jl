@@ -71,9 +71,9 @@ struct MILP{
     D1::Dg1
     "right preconditioner"
     D2::Dg2
-    "bound rescaling factor (one per instance when batched): the stored bounds are those of the original problem, preconditioned by `D1` and `D2`, times this factor"
+    "bound rescaling factor, one per instance when batched"
     bound_scale::Sb
-    "objective rescaling factor (one per instance when batched): the stored objective is that of the original problem, preconditioned by `D2`, times this factor"
+    "objective rescaling factor, one per instance when batched"
     obj_scale::So
     "which variables must be integers"
     int_var::Vb
@@ -388,20 +388,9 @@ function instance(milp::MILP, i::Int)
     )
 end
 
-"""
-    convert_scale(T, s)
-
-Convert a (possibly batched) rescaling factor of a [`MILP`](@ref) to the element type `T`.
-"""
 convert_scale(::Type{T}, s::Number) where {T} = convert(T, s)
-function convert_scale(::Type{T}, s::AbstractVector) where {T}
-    return eltype(s) === T ? s : map(T, s)
-end
+convert_scale(::Type{T}, s::AbstractVector) where {T} = eltype(s) === T ? s : map(T, s)
 
-"""
-    instance_scale(s, i)
-
-Extract the rescaling factor of the `i`-th instance, copying it to the CPU if `s` lives on a device.
-"""
+# copied to the CPU when `s` lives on a device
 instance_scale(s::Number, ::Int) = s
 instance_scale(s::AbstractVector, i::Int) = only(Array(view(s, i:i)))

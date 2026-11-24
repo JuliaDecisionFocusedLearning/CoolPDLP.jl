@@ -60,20 +60,6 @@ function Base.show(io::IO, params::TerminationParameters)
     return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, max_kkt_passes=$max_kkt_passes, relative_kkt=$relative_kkt, infeasibility_tol=$infeasibility_tol")
 end
 
-const TERMINATION_NORMS = (:L2, :Linf)
-
-"""
-    check_termination_norm(norm)
-
-Throw an `ArgumentError` if `norm` is not one of the supported termination norms.
-"""
-function check_termination_norm(norm::Symbol)
-    if !(norm in TERMINATION_NORMS)
-        throw(ArgumentError("termination_norm must be one of $TERMINATION_NORMS, got $(repr(norm))"))
-    end
-    return norm
-end
-
 """
     excess(e, s, ϵₐ, ϵᵣ)
 

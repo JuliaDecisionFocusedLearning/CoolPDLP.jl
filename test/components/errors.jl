@@ -21,11 +21,11 @@ prec = CoolPDLP.pdlp_preconditioner(milp, params)
 milp_p = CoolPDLP.precondition(milp, prec)
 sol_p = CoolPDLP.precondition(sol, prec)
 
-err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp)
-err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
+err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, L2Norm())
+err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p, L2Norm())
 
 @testset "KKT errors with a given norm and no given multipliers" begin
-    err_l2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, nothing, milp, :L2)
+    err_l2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, nothing, milp, L2Norm())
     @test err_l2.primal ≈ err.primal
     @test err_l2.dual ≈ err.dual
     @test err_l2.gap ≈ err.gap
@@ -75,7 +75,7 @@ end
     milp_batch = MILP(; c = batch(c), lv, uv, A, At, lc, uc)
     sol_batch = PrimalDualSolution(batch(x), batch(y))
     err_batch = CoolPDLP.kkt_errors!(
-        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch
+        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch, L2Norm()
     )
 
     str, str_batch = sprint(show, err), sprint(show, err_batch)

@@ -116,7 +116,7 @@ end
     @testset "KKT errors vanish at the optimum" begin
         for (milp, x, y, _) in cases
             sol = PrimalDualSolution(x, y)
-            err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
+            err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, L2Norm())
             @test relative(err) < 1.0e-12
         end
     end
@@ -125,8 +125,8 @@ end
 @testset "PDQP relative KKT error" begin
     milp = random_qp(StableRNG(7), 10, 15)
     sol = PrimalDualSolution(randn(StableRNG(8), 15), randn(StableRNG(9), 10))
-    err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
-    err_pdqp = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, Val(:pdqp))
+    err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, L2Norm())
+    err_pdqp = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, Val(:pdqp), LInfNorm())
     (; x, y) = sol
     (; c, Q, A, lv, uv, lc, uc) = milp
     Ax = A * x
