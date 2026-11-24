@@ -171,6 +171,7 @@ function initialize(
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
     tol = algo.termination.infeasibility_tol
+    # the initial KKT errors cost one product by `A` and one by `Aᵀ`
     stats = ConvergenceStats(
         err; ray = ray_buffer(sol, tol), starting_time,
         extra_products = 2,
@@ -271,7 +272,7 @@ function step!(
         halpern.fpe = fixed_point_error!!(halpern.fpe, scratch, z, sol, milp, step_sizes)
         state.stats.extra_products += 1
     end
-    w = broadcast!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
+    w = batched_apply!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
     halpern_combine!(z.x, w, γ, sol.x, z_anchor.x, active)
     halpern_combine!(z.y, w, γ, sol.y, z_anchor.y, active)
     halpern.inner = masked_apply!!(k -> k + 1, halpern.inner, active, halpern.inner)
@@ -314,11 +315,11 @@ function fixed_point_error!!(
     At_Δy = mul!(scratch.z, At, Δy)
     Δx_norm = colnorm!!(scratch.b1, Δx)
     Δy_norm = colnorm!!(scratch.b2, Δy)
-    dest = broadcast!!(dest, Δx_norm, Δy_norm, ω) do a, b, w
+    dest = batched_apply!!(dest, Δx_norm, Δy_norm, ω) do a, b, w
         w * a^2 + b^2 / w
     end
     cross = colsum!!(scratch.b1, @. At_Δy = Δx * At_Δy)
-    return broadcast!!(dest, dest, cross, η) do movement, cross, η
+    return batched_apply!!(dest, dest, cross, η) do movement, cross, η
         sqrt(max(movement + 2η * cross, zero(movement)))
     end
 end
@@ -330,10 +331,10 @@ Take the fixed-point residual just measured as the reference residual of the ins
 restarted at the last check (or never did).
 """
 function seed_fixed_point_error!(halpern::HalpernStats)
-    halpern.fpe_initial = broadcast!!(
+    halpern.fpe_initial = batched_apply!!(
         ifelse, halpern.fpe_initial, halpern.fpe_pending, halpern.fpe, halpern.fpe_initial
     )
-    halpern.fpe_pending = broadcast!!(zero, halpern.fpe_pending, halpern.fpe_pending)
+    halpern.fpe_pending = batched_apply!!(zero, halpern.fpe_pending, halpern.fpe_pending)
     return nothing
 end
 
@@ -359,16 +360,19 @@ function halpern_restart_check!(
     )
     (; sufficient_decay, necessary_decay, artificial_decay) = params
     (; total) = halpern
-    halpern.restart = broadcast!!(
+    # `must_terminate` and `total` are traced under Reactant, so they are arguments rather than
+    # captured by the closure
+    halpern.restart = batched_apply!!(
         halpern.restart, halpern.fpe, halpern.fpe_initial, halpern.fpe_last, halpern.inner,
-    ) do fpe, fpe0, fpe_last, inner
+        must_terminate, total,
+    ) do fpe, fpe0, fpe_last, inner, stop, total
         sufficient = fpe <= sufficient_decay * fpe0
         necessary = (fpe <= necessary_decay * fpe0) & (fpe > fpe_last)
         long_inner_loop = inner >= artificial_decay * total
-        !must_terminate & (sufficient | necessary | long_inner_loop)
+        !stop & (sufficient | necessary | long_inner_loop)
     end
     halpern.restart = mask_and!!(halpern.restart, active)
-    halpern.fpe_last = broadcast!!(
+    halpern.fpe_last = batched_apply!!(
         halpern.fpe_last, halpern.restart, halpern.fpe
     ) do restart, fpe
         ifelse(restart, oftype(fpe, Inf), fpe)
@@ -390,13 +394,15 @@ function restart!(state::HPDLPState{T}, milp::MILP, algo::Algorithm{:HPDLP}) whe
     pid_update!(halpern, step_sizes, scratch, sol, z_anchor, stats.err, algo.step_size)
     batched_select!(z_anchor, restart, sol)
     batched_select!(z, restart, sol)
-    halpern.inner = broadcast!!(halpern.inner, restart, halpern.inner) do r, k
+    halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k
         ifelse(r, zero(k), k)
     end
-    halpern.restarts = broadcast!!(halpern.restarts, restart, halpern.restarts) do r, n
+    halpern.restarts = batched_apply!!(halpern.restarts, restart, halpern.restarts) do r, n
         ifelse(r, n + 1, n)
     end
-    halpern.fpe_pending = broadcast!!(identity, halpern.fpe_pending, restart)
+    # a new value, not `restart` itself: two fields holding the same traced number confuse the
+    # tracing of the loop which updates them
+    halpern.fpe_pending = batched_apply!!(r -> r & true, halpern.fpe_pending, restart)
     return nothing
 end
 
@@ -428,12 +434,12 @@ function pid_update!(
     # the logarithms are guarded so that a degenerate instance gives a finite, unused value
     safelog(a) = log(ifelse(a > zero(a), a, one(a)))
 
-    halpern.pid_error = broadcast!!(
+    halpern.pid_error = batched_apply!!(
         halpern.pid_error, Δx, Δy, step_sizes.ω,
     ) do Δx, Δy, w
         safelog(Δy) - safelog(Δx) - log(w)
     end
-    step_sizes.ω = broadcast!!(
+    step_sizes.ω = batched_apply!!(
         step_sizes.ω, restart, Δx, Δy, primal, primal_scale, dual, dual_scale,
         step_sizes.ω, halpern.pid_error, halpern.pid_error_sum, halpern.pid_last_error, halpern.best_ω,
     ) do r, Δx, Δy, p, ps, d, ds, w, e, s, l, best
@@ -441,13 +447,13 @@ function pid_update!(
         w_new = w * exp(pid_kp * e + pid_ki * s_new + pid_kd * (e - l))
         ifelse(r, ifelse(valid(Δx, Δy, p, ps, d, ds), w_new, best), w)
     end
-    halpern.pid_error_sum = broadcast!!(
+    halpern.pid_error_sum = batched_apply!!(
         halpern.pid_error_sum, restart, Δx, Δy, primal, primal_scale, dual, dual_scale,
         halpern.pid_error, halpern.pid_error_sum,
     ) do r, Δx, Δy, p, ps, d, ds, e, s
         ifelse(r, ifelse(valid(Δx, Δy, p, ps, d, ds), pid_integral_discount * s + e, zero(s)), s)
     end
-    halpern.pid_last_error = broadcast!!(
+    halpern.pid_last_error = batched_apply!!(
         halpern.pid_last_error, restart, Δx, Δy, primal, primal_scale, dual, dual_scale,
         halpern.pid_error, halpern.pid_last_error,
     ) do r, Δx, Δy, p, ps, d, ds, e, l
@@ -458,13 +464,13 @@ function pid_update!(
     # as in cuPDLPx (`perform_restart` in `solver.cu`), it is recorded from the weight *after*
     # the PID update of this restart, compared with the residuals measured before it
     balance(p, ps, d, ds) = abs(log((d / ds) / (p / ps)))
-    halpern.best_ω = broadcast!!(
+    halpern.best_ω = batched_apply!!(
         halpern.best_ω, restart, primal, primal_scale, dual, dual_scale,
         halpern.best_gap, step_sizes.ω, halpern.best_ω,
     ) do r, p, ps, d, ds, gap, w, best
         ifelse(r & (balance(p, ps, d, ds) < gap), w, best)
     end
-    halpern.best_gap = broadcast!!(
+    halpern.best_gap = batched_apply!!(
         halpern.best_gap, restart, primal, primal_scale, dual, dual_scale, halpern.best_gap,
     ) do r, p, ps, d, ds, gap
         ifelse(r & (balance(p, ps, d, ds) < gap), balance(p, ps, d, ds), gap)
