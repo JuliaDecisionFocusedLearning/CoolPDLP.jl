@@ -185,11 +185,13 @@ function step!(state::PDLPState, milp::MILP, algo::Algorithm{:PDLP})
     # boxed `milp` at every KKT pass
     if isquadratic(milp.Q) && algo.generic.quadratic_momentum
         momentum_update!(state, milp, algo.step_size)
+        state.stats.kkt_passes += 1
+        momentum_average!(state)
     else
         pdhg_update!(state.sol, state.scratch, state.step_sizes, milp, active_mask(state.stats))
+        state.stats.kkt_passes += 1
+        update_average!(state)
     end
-    state.stats.kkt_passes += 1
-    update_average!(state)
     add_inner!(state.iteration)
     return nothing
 end
@@ -201,7 +203,7 @@ Apply one step of PDQP (Lu & Yang, 2023, `solver_gpu.jl` of PDQP.jl), with `k` t
 steps since the last restart and `k' = k + 2`:
 
 - the objective is linearized at the momentum point `x_md = (1 - β) x̄ + β x` with `β = 2 / k'`,
-  where `x̄` is the average iterate of PDLP;
+  where `x̄` is the aggregate iterate of PDQP, updated by [`momentum_average!`](@ref);
 - the dual step extrapolates with `θ = k / (k + 1)` instead of `1`;
 - the step size grows from that of [`quadratic_stepsize`](@ref) towards `1 / ‖A‖` as
   `η = k' / (‖Q‖/ω + √(k'² ‖A‖² + ‖Q‖²/ω²))`, scaled by `invnorm_scaling`, since the Lipschitz
@@ -241,6 +243,26 @@ function momentum_update!(state::PDLPState{T}, milp::MILP, params::StepSizeParam
     A_xdiff = mul!(scratch.y, A, xdiff)
     masked_dual_update!(y, active, y, σ, A_xdiff, lc, uc)
     return sol
+end
+
+"""
+    momentum_average!(state::PDLPState)
+
+Update the aggregate iterate of PDQP, `x̄ ← (1 - β) x̄ + β x⁺` (and the same for `y`) with
+`β = 2 / (k + 2)`, in place of the step-size-weighted average of PDLP: with the momentum of
+[`momentum_update!`](@ref), `state.sol_avg` holds this aggregate, which is both the momentum
+point's anchor and the averaged candidate of the restarts and of the output.
+"""
+function momentum_average!(state::PDLPState{T}) where {T}
+    (; sol, sol_avg, step_sizes, iteration) = state
+    β = 2 / convert(T, iteration.inner + 2)
+    active = active_mask(state.stats)
+    # `β` is traced under Reactant: an argument of the broadcast rather than a captured value
+    f(β, new, agg) = β * new + (1 - β) * agg
+    masked_broadcast!(f, sol_avg.x, active, β, sol.x, sol_avg.x)
+    masked_broadcast!(f, sol_avg.y, active, β, sol.y, sol_avg.y)
+    add_stepsize!(step_sizes, active)
+    return nothing
 end
 
 function update_average!(state::PDLPState)
