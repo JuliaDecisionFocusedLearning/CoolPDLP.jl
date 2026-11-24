@@ -21,8 +21,8 @@ prec = CoolPDLP.pdlp_preconditioner(milp, params)
 milp_p = CoolPDLP.precondition(milp, prec)
 sol_p = CoolPDLP.precondition(sol, prec)
 
-err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp)
-err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
+err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, L2Norm())
+err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p, L2Norm())
 
 @testset "Correct KKT errors" begin
     @test err.primal ≈ norm(A * x - CoolPDLP.clamp.(A * x, lc, uc))
@@ -68,7 +68,7 @@ end
     milp_batch = MILP(; c = batch(c), lv, uv, A, At, lc, uc)
     sol_batch = PrimalDualSolution(batch(x), batch(y))
     err_batch = CoolPDLP.kkt_errors!(
-        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch
+        CoolPDLP.KKTErrors(sol_batch), CoolPDLP.Scratch(sol_batch), sol_batch, milp_batch, L2Norm()
     )
 
     str, str_batch = sprint(show, err), sprint(show, err_batch)

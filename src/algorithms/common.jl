@@ -71,12 +71,18 @@ end
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
-        termination_norm = :L2,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
     )
 
 Constructor for algorithm configs.
+
+The algorithm stops when, for every instance, the KKT errors meet
+`error ≤ termination_abstol + termination_reltol * scale` (see
+[`termination_margin!!`](@ref)), with the residuals measured in the norm `termination_norm`
+(a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
+is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
 
 The preconditioning stages and the bound and objective rescaling are described on the math page
 of the documentation.
@@ -111,7 +117,7 @@ function Algorithm{A}(
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
-        termination_norm = :L2,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
     ) where {A, T, Ti, M, B}
@@ -144,7 +150,7 @@ function Algorithm{A}(
         check_every,
         record_error_history,
         time_limit,
-        termination_norm = check_termination_norm(Symbol(termination_norm)),
+        termination_norm,
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),

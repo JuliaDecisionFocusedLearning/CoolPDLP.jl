@@ -72,7 +72,7 @@ function unscale(sol, milp)
     sol_p = CoolPDLP.rescale_bounds_objective(sol, inv.(milp.bound_scale), inv.(milp.obj_scale))
     return CoolPDLP.unprecondition(sol_p, CoolPDLP.Preconditioner(milp))
 end
-kkt(sol, milp) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp)
+kkt(sol, milp) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp, L2Norm())
 
 @testset "Bound and objective rescaling round trip" begin
     milp, sol = CoolPDLP.random_milp_and_sol(40, 60, 0.3)
