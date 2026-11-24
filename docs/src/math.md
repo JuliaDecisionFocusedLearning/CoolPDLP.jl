@@ -294,3 +294,10 @@ A linear program keeps a `ZeroMatrix` as $Q$, on which all of the above dispatch
 
 An algorithm that does not support quadratic objectives (see [`CoolPDLP.supports_quadratic`](@ref)) throws an `ArgumentError` on a quadratic program.
 
+## Step size
+
+The fixed step size is $\eta = s / \|\tilde{A}\|_2$, where $s$ is `invnorm_scaling` and PDHG needs $\eta \|\tilde{A}\|_2 < 1$ to converge.
+The spectral norm is an iterative estimate $\sigma$, accepted once $\tilde{A}$ provably has a singular value within $\tau \sigma$ of it, with $\tau$ = `spectral_norm_reltol`.
+When $\sigma$ approximates the top of the spectrum, it lies below $\|\tilde{A}\|_2$ by at most about $\tau$ relative, a margin absorbed by $s \leq 1 - \tau$, which holds comfortably for the default $s = 0.9$.
+
+If the estimate does not converge within `spectral_norm_maxiter` iterations, a warning is shown and the estimate falls back to the smaller of $1.01 (\sigma + \text{residual})$ and the rigorous bound $\sqrt{\|\tilde{A}\|_1 \|\tilde{A}\|_\infty}$.

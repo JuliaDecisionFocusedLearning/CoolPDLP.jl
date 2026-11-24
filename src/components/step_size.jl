@@ -6,15 +6,15 @@
 $(TYPEDFIELDS)
 """
 @kwdef struct StepSizeParameters{T <: Number, I <: Number}
-    "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size"
+    "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size; must be positive with `invnorm_scaling * (1 + spectral_norm_reltol) < 1`"
     invnorm_scaling::T
     "primal weight update damping"
     primal_weight_damping::T
     "tolerance in absolute comparisons to zero"
     zero_tol::T
-    "absolute tolerance in iterative spectral norm computation"
-    spectral_norm_tol::T
-    "maximum number of power method iterations in iterative spectral norm computation"
+    "relative tolerance of the iterative spectral norm estimate"
+    spectral_norm_reltol::T
+    "maximum number of iterations of the iterative spectral norm estimate"
     spectral_norm_maxiter::I
     "reflection coefficient `γ` of the Halpern iteration (`1` is fully reflected, `1/2` is plain Halpern on the PDHG operator), used by HPDLP and the other Halpern algorithms"
     reflection_coefficient::T
@@ -30,16 +30,16 @@ end
 
 function Base.show(io::IO, params::StepSizeParameters)
     (;
-        invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_tol, spectral_norm_maxiter,
+        invnorm_scaling, primal_weight_damping, zero_tol, spectral_norm_reltol, spectral_norm_maxiter,
         reflection_coefficient, pid_kp, pid_ki, pid_kd, pid_integral_discount,
     ) = params
-    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_tol=$spectral_norm_tol, spectral_norm_maxiter=$spectral_norm_maxiter, reflection_coefficient=$reflection_coefficient, pid_kp=$pid_kp, pid_ki=$pid_ki, pid_kd=$pid_kd, pid_integral_discount=$pid_integral_discount")
+    return print(io, "StepSizeParameters: invnorm_scaling=$invnorm_scaling, primal_weight_damping=$primal_weight_damping, zero_tol=$zero_tol, spectral_norm_reltol=$spectral_norm_reltol, spectral_norm_maxiter=$spectral_norm_maxiter, reflection_coefficient=$reflection_coefficient, pid_kp=$pid_kp, pid_ki=$pid_ki, pid_kd=$pid_kd, pid_integral_discount=$pid_integral_discount")
 end
 
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
-    (; invnorm_scaling, spectral_norm_tol, spectral_norm_maxiter) = params
-    norm = spectral_norm(A, At; tol = spectral_norm_tol, maxiter = spectral_norm_maxiter)
+    (; invnorm_scaling, spectral_norm_reltol, spectral_norm_maxiter) = params
+    norm = spectral_norm(A, At; reltol = spectral_norm_reltol, maxiter = spectral_norm_maxiter)
     # a zero spectral norm (no constraint rows, or an all-zero `A`) means `A'y` never
     # contributes to the primal step regardless of `η`, so any finite step size is safe;
     # `inv(norm)` would otherwise be `Inf` and corrupt the first primal step
@@ -59,7 +59,7 @@ function quadratic_norm(S::BatchScaledMatrix, params::StepSizeParameters)
 end
 function quadratic_norm(Q::AbstractMatrix, params::StepSizeParameters)
     isquadratic(Q) || return zero(eltype(Q))
-    return spectral_norm(Q, Q; tol = params.spectral_norm_tol, maxiter = params.spectral_norm_maxiter)
+    return spectral_norm(Q, Q; reltol = params.spectral_norm_reltol, maxiter = params.spectral_norm_maxiter)
 end
 
 """
@@ -89,7 +89,7 @@ batched, and the spectral norms `(‖A‖₂, ‖Q‖₂)` it was computed from.
 """
 function initial_stepsize(milp::MILP{T}, ω::BatchedNumber, params::StepSizeParameters) where {T}
     (; A, At, Q) = milp
-    norm_A = spectral_norm(A, At; tol = params.spectral_norm_tol, maxiter = params.spectral_norm_maxiter)
+    norm_A = spectral_norm(A, At; reltol = params.spectral_norm_reltol, maxiter = params.spectral_norm_maxiter)
     norm_Q = quadratic_norm(Q, params)
     return initial_stepsize(Q, ω, norm_A, norm_Q, params), norm_A, norm_Q
 end

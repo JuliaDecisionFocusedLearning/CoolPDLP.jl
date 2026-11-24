@@ -50,6 +50,38 @@ unwrap(x::AbstractArray) = Array(x)
 # only reads the fields, so it needs no kernel and no CUDA.jl
 trace_fields(A) = sum(A.nzval) + sum(A.colval)
 
+"""
+    same_traced_cache_key(x, others...)
+
+Whether every one of `others` gets the same path as `x` from Reactant's `TracedToTypes` tracing
+mode once traced, as when they are passed to `Reactant.Ops.call` inside a compiled function:
+Reactant keys its cache of called functions by that path, so it must hold the structure of an
+argument but not its traced numbers. The paths hold MLIR types, which live only as long as the
+compilation, so they are compared during tracing.
+"""
+function same_traced_cache_key(x, others...)
+    result = Bool[]
+    function compare_keys(args...)
+        keys = map(args) do arg
+            path = []
+            Reactant.make_tracer(Reactant.OrderedIdDict(), arg, path, Reactant.TracedToTypes)
+            path
+        end
+        append!(result, [k == first(keys) for k in Base.tail(keys)])
+        return nothing
+    end
+    @compile compare_keys(map(a -> to_rarray(a; track_numbers = true), (x, others...))...)
+    return result
+end
+
+@testset "Cache key of the step size parameters" begin
+    step_size(; kw...) = PDLP(Float64, Int32, Matrix; kw...).step_size
+    # every field is a traced number, which does not change the key
+    @test same_traced_cache_key(
+        step_size(), step_size(; invnorm_scaling = 0.8), step_size(; spectral_norm_maxiter = 10)
+    ) == [true, true]
+end
+
 @testset "Custom sparse wrappers can be traced" begin
     A_cpu = convert(SparseMatrixCSC{Float64, Int32}, sprand(StableRNG(0), 12, 8, 0.4))
     @testset "$M" for M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
@@ -170,7 +202,18 @@ function test_agreement(state, state_r; rtol, atol = 0.0)
         @testset "$field" for field in fieldnames(KKTErrors)
             err = unwrap(getfield(state.stats.err, field))
             err_r = unwrap(getfield(state_r.stats.err, field))
-            @test isapprox(err_r, err; rtol, atol)
+            # A residual is a difference of terms of the size of its scale, and XLA reassociates
+            # the sums that form them, so the two runs agree to a few ulps of the scale, not of
+            # the residual: when it is small next to its scale (a `Float32` gap of 10 on a scale
+            # of 10^4, say), its relative difference alone can exceed `rtol`. The ulps are those
+            # of the solve's precision, not of the `Float64` errors.
+            scale_field = Symbol(field, :_scale)
+            atol_scale = if hasfield(KKTErrors, scale_field)
+                100 * eps(eltype(unwrap(state.sol.x))) * maximum(unwrap(getfield(state.stats.err, scale_field)))
+            else
+                zero(eltype(err))
+            end
+            @test isapprox(err_r, err; rtol, atol = max(atol, atol_scale))
         end
     end
 
@@ -405,6 +448,14 @@ end
 # Reading the host clock inside a compiled program needs a Reactant callback, which not every
 # backend can service; the extension falls back to the frozen trace-time clock when it cannot.
 const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
+
+@testset "Step size parameters are traced" begin
+    algo = PDLP(; backend = nothing)
+    algo_r = to_rarray(algo; track_numbers = true)
+    @test !(algo_r.step_size.invnorm_scaling isa Float64)
+    @test unwrap(algo_r.step_size.invnorm_scaling) == algo.step_size.invnorm_scaling
+    @test unwrap(algo_r.step_size.spectral_norm_maxiter) == algo.step_size.spectral_norm_maxiter
+end
 
 @testset "Static inner loop" begin
     algo = PDLP(;

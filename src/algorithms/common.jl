@@ -58,7 +58,7 @@ end
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
-        spectral_norm_tol = 1.0e-3,
+        spectral_norm_reltol = 1.0e-3,
         spectral_norm_maxiter = 1000,
         reflection_coefficient = 1.0,
         pid_kp = 0.99,
@@ -123,7 +123,7 @@ function Algorithm{A}(
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
         zero_tol = 1.0e-8,
-        spectral_norm_tol = 1.0e-3,
+        spectral_norm_reltol = 1.0e-3,
         spectral_norm_maxiter = 1000,
         reflection_coefficient = 1.0,
         pid_kp = 0.99,
@@ -159,11 +159,18 @@ function Algorithm{A}(
         bound_objective_rescaling,
         bound_norm_sum_squares,
     )
+    invnorm_scaling > 0 ||
+        throw(ArgumentError("invnorm_scaling = $invnorm_scaling must be positive"))
+    invnorm_scaling * (1 + spectral_norm_reltol) < 1 || throw(
+        ArgumentError(
+            "invnorm_scaling * (1 + spectral_norm_reltol) = $(invnorm_scaling * (1 + spectral_norm_reltol)) must be < 1: the accepted spectral norm estimate σ only guarantees ‖A‖ ≤ σ (1 + spectral_norm_reltol), so the step size invnorm_scaling / σ could exceed the PDHG stability limit 1 / ‖A‖",
+        ),
+    )
     step_size = StepSizeParameters(;
         invnorm_scaling = _T(invnorm_scaling),
         primal_weight_damping = _T(primal_weight_damping),
         zero_tol = _T(zero_tol),
-        spectral_norm_tol = _T(spectral_norm_tol),
+        spectral_norm_reltol = _T(spectral_norm_reltol),
         spectral_norm_maxiter,
         reflection_coefficient = _T(reflection_coefficient),
         pid_kp = _T(pid_kp),
