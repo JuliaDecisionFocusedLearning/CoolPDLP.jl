@@ -170,18 +170,7 @@ function test_agreement(state, state_r; rtol)
         @testset "$field" for field in fieldnames(KKTErrors)
             err = unwrap(getfield(state.stats.err, field))
             err_r = unwrap(getfield(state_r.stats.err, field))
-            # A residual is a difference of terms of the size of its scale, and XLA reassociates
-            # the sums that form them, so the two runs agree to a few ulps of the scale, not of
-            # the residual: when it is small next to its scale (a `Float32` gap of 10 on a scale
-            # of 10^4, say), its relative difference alone can exceed `rtol`. The ulps are those
-            # of the solve's precision, not of the `Float64` errors.
-            scale_field = Symbol(field, :_scale)
-            atol = if hasfield(KKTErrors, scale_field)
-                100 * eps(eltype(unwrap(state.sol.x))) * maximum(unwrap(getfield(state.stats.err, scale_field)))
-            else
-                zero(eltype(err))
-            end
-            @test isapprox(err_r, err; rtol, atol)
+            @test isapprox(err_r, err; rtol)
         end
     end
 
