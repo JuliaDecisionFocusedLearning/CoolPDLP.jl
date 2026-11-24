@@ -4,6 +4,9 @@ using Preferences: set_preferences!
 # see https://github.com/MilesCranmer/DispatchDoctor.jl?tab=readme-ov-file#-usage-in-packages
 set_preferences!("CoolPDLP", "default_codegen_level" => "min")
 
+# the Maros-Mészáros QPs are downloaded through DataDeps, which refuses to prompt on CI
+ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+
 GROUP = get(ENV, "COOLPDLP_TEST_GROUP", nothing)
 # the package defaults to "disable" (what users get): the tests check stability, except on
 # OpenCL and in the Perf group, whose allocation counts must match what users get (the
