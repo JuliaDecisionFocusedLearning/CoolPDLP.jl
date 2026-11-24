@@ -204,9 +204,9 @@ end
     @test CoolPDLP.subtract_quadratic_gradient!(copy(G), S, X) ≈ G - QX
     configs = ((SparseMatrixCSC, CPU()), (GPUSparseMatrixCSR, JLBackend()))
     @testset "$(algname(algo)) on $M" for (M, backend) in configs, algo in (
-            PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
-            HPDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
-        )
+                PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
+                HPDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
+            )
         sol, stats = solve(batch, algo)
         @test termination_status(stats) == MOI.OPTIMAL
         x = Array(sol.x)
