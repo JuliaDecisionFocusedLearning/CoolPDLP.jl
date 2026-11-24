@@ -72,6 +72,29 @@ end
     end
 end
 
+@testset "Frozen instances skip the Newton method" begin
+    # a frozen instance of a batch keeps its warm start and must not hold up the loop of the
+    # others: it counts no residual evaluation
+    rng = Xoshiro(1)
+    m = 30
+    lc, uc = random_bounds(rng, m)
+    c = randn(rng, 4, 2)
+    milp = MILP(; c, lv = fill(-Inf, 4), uv = fill(Inf, 4), A = sprandn(rng, m, 4, 0.5), lc, uc)
+    state = initialize(milp, PrimalDualSolution(milp), HSDPDLP(); starting_time = time())
+    ws = state.ws
+    ws.wt .= 3 .* randn(rng, m, 2)
+    ws.tt .= 3 .* randn(rng, 2)
+    ws.newton_iters .= 0
+    warm = [0.5, 0.7]
+    τ = copy(boxcone_root!(ws, (lc, uc), warm, 1.0, [true, false]))
+    @test τ[2] == warm[2]
+    @test ws.newton_iters[2] == 0
+    @test ws.newton_iters[1] > 0
+    # the running instance gets the root it would get on its own
+    τ_alone = boxcone_root!(ws, (lc, uc), warm, 1.0, [true, true])
+    @test τ[1] == τ_alone[1]
+end
+
 """
     P_inner(a, b, A, μ, η, σ)
 

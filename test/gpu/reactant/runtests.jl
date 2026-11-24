@@ -281,7 +281,7 @@ end
 
 # the Halpern algorithms have their own loop and their own bookkeeping, whose unbatched updates
 # must not go through zero-dimensional broadcasts (see `batched_apply!!`)
-const HALPERN_ALGORITHMS = (:HPDLP, :HPRLP)
+const HALPERN_ALGORITHMS = (:HPDLP, :HPRLP, :HSDPDLP)
 
 @testset verbose = true "$A with $M" for A in HALPERN_ALGORITHMS, M in (Matrix, GPUSparseMatrixCSR)
     algo = CoolPDLP.Algorithm{A}(

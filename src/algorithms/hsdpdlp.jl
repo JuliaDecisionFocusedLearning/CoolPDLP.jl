@@ -65,6 +65,12 @@ const HSD_NEWTON_TOL = 1.0e-9
 const HSD_OMEGA_WINDOW = 1.0e4
 "maximum number of iterations of the safeguarded Newton method, as in the paper"
 const HSD_NEWTON_MAXITER = 100
+"""
+Number of Newton iterations between two convergence tests of [`boxcone_root!`](@ref). The test
+reduces over the batch, which reads the result back to the host on a KernelAbstractions GPU, so it
+does not run after every iteration; the extra iterations leave the converged instances as they are.
+"""
+const HSD_NEWTON_CHECK_EVERY = 4
 
 """
     HSDPoint
@@ -329,7 +335,7 @@ function initialize(
     scratch = Scratch(sol)
     halpern = HalpernStats(sol, ω)
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp)
+    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
     tol = algo.termination.infeasibility_tol
     stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2)
     infeas = InfeasibilityWorkspace(sol, tol)
@@ -387,7 +393,7 @@ function check_pass!(
     halpern_restart_check!(state.halpern, algo.restart, must_terminate, active_mask(state.stats))
     hsd_restart!(state, algo)
     state.stats.newton_iterations = masked_apply!!(
-        identity, state.stats.newton_iterations, active_mask(state.stats), state.ws.newton_iters
+        n -> n + zero(n), state.stats.newton_iterations, active_mask(state.stats), state.ws.newton_iters
     )
     return must_terminate
 end
@@ -455,12 +461,12 @@ function keep_smaller_errors!(err::KKTErrors, alt::KKTErrors, scratch::Scratch)
     a = relative!!(scratch.b1, err)
     b = relative!!(scratch.b2, alt)
     pick(a, b, x, y) = ifelse(b < a, y, x)
-    err.primal = broadcast!!(pick, err.primal, a, b, err.primal, alt.primal)
-    err.primal_scale = broadcast!!(pick, err.primal_scale, a, b, err.primal_scale, alt.primal_scale)
-    err.dual = broadcast!!(pick, err.dual, a, b, err.dual, alt.dual)
-    err.dual_scale = broadcast!!(pick, err.dual_scale, a, b, err.dual_scale, alt.dual_scale)
-    err.gap = broadcast!!(pick, err.gap, a, b, err.gap, alt.gap)
-    err.gap_scale = broadcast!!(pick, err.gap_scale, a, b, err.gap_scale, alt.gap_scale)
+    err.primal = batched_apply!!(pick, err.primal, a, b, err.primal, alt.primal)
+    err.primal_scale = batched_apply!!(pick, err.primal_scale, a, b, err.primal_scale, alt.primal_scale)
+    err.dual = batched_apply!!(pick, err.dual, a, b, err.dual, alt.dual)
+    err.dual_scale = batched_apply!!(pick, err.dual_scale, a, b, err.dual_scale, alt.dual_scale)
+    err.gap = batched_apply!!(pick, err.gap, a, b, err.gap, alt.gap)
+    err.gap_scale = batched_apply!!(pick, err.gap_scale, a, b, err.gap_scale, alt.gap_scale)
     return err
 end
 
@@ -479,10 +485,9 @@ Write the solution `(x, y) / τ` of the original (preconditioned) LP recovered f
 `Tz`, undoing the normalization of [`hsd_problem`](@ref). An instance with `τ = 0`, which sits on
 the certificate branch, gets zeros.
 
-A frozen instance of a batch (see `active_mask`) keeps the solution of its termination check:
-its `z` no longer moves, but `T(z)` is still evaluated, and its Newton roots start from warm
-starts which keep moving, so `T(z)` wanders within the Newton tolerance of the roots, which
-would set the batched solution apart from the unbatched one.
+A frozen instance of a batch (see `active_mask`) keeps the solution of its termination check.
+Its `T(z)` no longer moves either (see [`hsd_step!`](@ref)), so the mask only makes sure that
+the solution is exactly the one its termination was decided on.
 """
 function recover_solution!(sol::PrimalDualSolution, Tz::HSDPoint, ws::HSDWorkspace, active)
     # the scale factors are formed outside the broadcasts: under Reactant, a `Float32` division
@@ -507,15 +512,16 @@ function hsd_step!(
     ) where {fixed_point_error}
     (; Tz, z, z_anchor, hsd, ws, step_sizes, scratch, halpern) = state
     γ = algo.step_size.reflection_coefficient
-    hsd_operator!(Tz, z, ws, hsd, step_sizes, algo.step_size.invnorm_scaling)
+    active = active_mask(state.stats)
+    hsd_operator!(Tz, z, ws, hsd, step_sizes, algo.step_size.invnorm_scaling, active)
     if fixed_point_error
         halpern.fpe = hsd_fixed_point_error!!(halpern.fpe, ws, scratch, z, Tz, hsd.A)
         state.stats.extra_products += 1
     end
-    w = broadcast!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
-    # a frozen instance of a batch keeps its `z`, hence its `T(z)` and its solution, since the
-    # step sizes of an instance only change when it restarts (see `active_mask`)
-    active = active_mask(state.stats)
+    w = batched_apply!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
+    # a frozen instance of a batch keeps its `z`, hence its `T(z)` and its solution: its step
+    # sizes only change when it restarts, and its Newton roots stay at their warm starts, which
+    # are the roots of its last step (see `active_mask` and `boxcone_root!`)
     halpern_combine!(z.xy.x, w, γ, Tz.xy.x, z_anchor.xy.x, active)
     halpern_combine!(z.xy.y, w, γ, Tz.xy.y, z_anchor.xy.y, active)
     z.τ = halpern_combine!!(z.τ, w, γ, Tz.τ, z_anchor.τ, active)
@@ -693,67 +699,78 @@ Apply [`newton_update`](@ref) to every instance, from the residual just evaluate
 end
 
 """
-    boxcone_root!(ws, (lc, uc) or (c, lv, uv), warm, dmin)
+    boxcone_root!(ws, (lc, uc) or (c, lv, uv), warm, dmin, active = true)
 
 Find, for every instance, the `τ ≥ 0` with `g(τ) ≥ 0` and `τ g(τ) = 0` by the safeguarded Newton
 method of Algorithm 1, warm-started from `warm`, and return it (in `ws.t`).
 
 The iterations are masked per instance and the loop is a `@trace while`, whose trip count is
-data-dependent but which traces under Reactant. It stops once every instance has converged, or
-after `HSD_NEWTON_MAXITER` iterations.
+data-dependent: under Reactant, it compiles to a `while` of the XLA program, whose condition stays
+on the device (the Reactant tests compile HSDPDLP, hence this loop). It tests for convergence
+every `HSD_NEWTON_CHECK_EVERY` iterations, and stops once every instance has converged, or after
+`HSD_NEWTON_MAXITER` iterations (rounded up to the next test). The frozen instances of a batch
+(`active` false, see `active_mask`) count as converged from the start: they keep their warm
+start, and never hold the loop up. Without batching, every scalar of the loop is a host number,
+so on a KernelAbstractions GPU each residual evaluation still reads its sums back to the host.
 """
-function boxcone_root!(ws::HSDWorkspace{V}, data::NTuple{2}, warm::BatchedNumber, dmin::BatchedNumber) where {V}
-    lc, uc = data
+function boxcone_root!(
+        ws::HSDWorkspace{V}, data::Union{NTuple{2}, NTuple{3}}, warm::BatchedNumber, dmin::BatchedNumber, active = true,
+    ) where {V}
     ϵ = newton_tolerance(eltype(V))
     # start from the warm start itself: its residual sets the bracket, and its Newton step is
     # usually the root already
     ws.t = batched_apply!!(w -> max(w, zero(w)), ws.t, warm)
-    ws.g, ws.d = dual_residual!!(ws.g, ws.d, ws.by, ws.wt, ws.tt, lc, uc, ws.t)
-    newton_init!(ws, dmin)
+    newton_residual!(ws, data)
+    newton_init!(ws, dmin, active)
     count_newton!(ws)
     newton_step!(ws, dmin, ϵ)
     iter = 1
     @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
-        ws.g, ws.d = dual_residual!!(ws.g, ws.d, ws.by, ws.wt, ws.tt, lc, uc, ws.t)
-        count_newton!(ws)
-        newton_step!(ws, dmin, ϵ)
-        iter += 1
+        newton_block!(ws, data, dmin, ϵ)
+        iter += HSD_NEWTON_CHECK_EVERY
     end
     return ws.t
 end
 
-function boxcone_root!(ws::HSDWorkspace{V}, data::NTuple{3}, warm::BatchedNumber, dmin::BatchedNumber) where {V}
-    c, lv, uv = data
-    ϵ = newton_tolerance(eltype(V))
-    # start from the warm start itself: its residual sets the bracket, and its Newton step is
-    # usually the root already
-    ws.t = batched_apply!!(w -> max(w, zero(w)), ws.t, warm)
-    ws.g, ws.d = primal_residual!!(ws.g, ws.d, ws.bx, ws.xt, ws.tt, ws.μ, ws.ηx, ws.inv_ηx, c, lv, uv, ws.t)
-    newton_init!(ws, dmin)
-    count_newton!(ws)
-    newton_step!(ws, dmin, ϵ)
-    iter = 1
-    @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
-        ws.g, ws.d = primal_residual!!(ws.g, ws.d, ws.bx, ws.xt, ws.tt, ws.μ, ws.ηx, ws.inv_ηx, c, lv, uv, ws.t)
+"""
+    newton_block!(ws, data, dmin, ϵ)
+
+Run `HSD_NEWTON_CHECK_EVERY` Newton iterations of [`boxcone_root!`](@ref) without testing for
+convergence. The loop is a plain one, in a function of its own so that `@trace` leaves it alone:
+it is unrolled at trace time.
+"""
+@inline function newton_block!(ws::HSDWorkspace, data::Tuple, dmin::BatchedNumber, ϵ::Number)
+    for _ in 1:HSD_NEWTON_CHECK_EVERY
+        newton_residual!(ws, data)
         count_newton!(ws)
         newton_step!(ws, dmin, ϵ)
-        iter += 1
     end
-    return ws.t
+    return nothing
+end
+
+"Evaluate the scalar residual of the dual (`(lc, uc)`) or primal (`(c, lv, uv)`) root at `ws.t`."
+@inline function newton_residual!(ws::HSDWorkspace, (lc, uc)::NTuple{2})
+    ws.g, ws.d = dual_residual!!(ws.g, ws.d, ws.by, ws.wt, ws.tt, lc, uc, ws.t)
+    return nothing
+end
+@inline function newton_residual!(ws::HSDWorkspace, (c, lv, uv)::NTuple{3})
+    ws.g, ws.d = primal_residual!!(ws.g, ws.d, ws.bx, ws.xt, ws.tt, ws.μ, ws.ηx, ws.inv_ηx, c, lv, uv, ws.t)
+    return nothing
 end
 
 "Tolerance of Algorithm 1 in `T`: not below its precision, where the stopping tests could never hold."
 newton_tolerance(::Type{T}) where {T} = max(convert(T, HSD_NEWTON_TOL), 2 * eps(T))
 
 """
-    newton_init!(ws, dmin)
+    newton_init!(ws, dmin, active)
 
 Set up Algorithm 1 from the residual `g(t)` at the starting point `t = ws.t`: since `g` has slopes
 of at least `dmin`, the root lies in `[t, t - g(t)/dmin]` if `g(t) < 0` and in `[0, t]` otherwise.
 This is the bracket of the paper, found without evaluating `g(0)`.
 """
-@inline function newton_init!(ws::HSDWorkspace, dmin::BatchedNumber)
-    ws.done = batched_apply!!(t -> t != t, ws.done, ws.t)  # all false, typed like `ws.t`
+@inline function newton_init!(ws::HSDWorkspace, dmin::BatchedNumber, active = true)
+    # false for the running instances, typed like `ws.t`; the frozen ones are done already
+    ws.done = batched_apply!!((t, a) -> (t != t) | !a, ws.done, ws.t, active)
     ws.lo = batched_apply!!(zero, ws.lo, ws.lo)
     ws.hi = batched_apply!!((t, g, dm) -> ifelse(g < zero(g), t - g / dm, t), ws.hi, ws.t, ws.g, dmin)
     ws.hi0 = copy_into!!(ws.hi0, ws.hi)
@@ -775,7 +792,8 @@ Evaluate the PDHG operator of the embedding (eq. 28): first the dual block, a pr
 projection onto `K[lv, uv]` (eqs. 35-38). Costs one product by `A` and one by `Aᵀ`.
 """
 function hsd_operator!(
-        Tz::HSDPoint, z::HSDPoint, ws::HSDWorkspace, hsd::NamedTuple, step_sizes::StepSizes, ν::Number
+        Tz::HSDPoint, z::HSDPoint, ws::HSDWorkspace, hsd::NamedTuple, step_sizes::StepSizes, ν::Number,
+        active = true,
     )
     (; c, lv, uv, A, At, lc, uc) = hsd
     (; η, ω) = step_sizes
@@ -791,7 +809,7 @@ function hsd_operator!(
     σr = transpose(ws.σ)
     @. ws.wt = σr * Ax - z.xy.y
     ws.tt = batched_apply!!((α, σ, τ) -> σ * τ - α, ws.tt, z.α, ws.σ, z.τ)
-    τc = boxcone_root!(ws, (lc, uc), ws.warm, one(eltype(Ax)))
+    τc = boxcone_root!(ws, (lc, uc), ws.warm, one(eltype(Ax)), active)
     ws.warm = copy_into!!(ws.warm, τc)
     τcr = transpose(τc)
     @. Tz.xy.y = box_clip(ws.wt, lc, uc, τcr) - ws.wt
@@ -803,7 +821,7 @@ function hsd_operator!(
     ηr = transpose(ws.ηx)
     @. ws.xt = z.xy.x + ηr * At_y
     ws.tt = batched_apply!!((τ, μ, α⁺, α) -> τ + μ * (2α⁺ - α), ws.tt, z.τ, ws.μ, Tz.α, z.α)
-    τp = boxcone_root!(ws, (c, lv, uv), Tz.τ, ws.dmin)
+    τp = boxcone_root!(ws, (c, lv, uv), Tz.τ, ws.dmin, active)
     Tz.τ = copy_into!!(Tz.τ, τp)
     τpr = transpose(Tz.τ)
     @. Tz.xy.x = box_clip(ws.xt - ηr * c * τpr, lv, uv, τpr)
@@ -892,13 +910,13 @@ function hsd_restart!(state::HSDPDLPState{T}, algo::Algorithm{:HSDPDLP}) where {
     ws.warm = batched_apply!!(rescale, ws.warm, restart, ws.restart_scale, ws.warm)
     Tz.τ = batched_apply!!(rescale, Tz.τ, restart, ws.restart_scale, Tz.τ)
 
-    halpern.inner = broadcast!!(halpern.inner, restart, halpern.inner) do r, k
+    halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k
         ifelse(r, zero(k), k)
     end
-    halpern.restarts = broadcast!!(halpern.restarts, restart, halpern.restarts) do r, n
+    halpern.restarts = batched_apply!!(halpern.restarts, restart, halpern.restarts) do r, n
         ifelse(r, n + 1, n)
     end
-    halpern.fpe_pending = broadcast!!(identity, halpern.fpe_pending, restart)
+    halpern.fpe_pending = batched_apply!!(r -> r & true, halpern.fpe_pending, restart)
     return nothing
 end
 
