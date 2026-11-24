@@ -8,11 +8,14 @@ call `maybe_compact!` after every check: once at least half of a batch of at lea
 `COMPACTION_MIN_BATCH` instances is frozen, the instances still running are copied into a smaller
 batch of the same type, solved to the end (compacting again if need be), and scattered back.
 
-The copies are made field by field (`columns`, `scatter_columns`): in a batched state, a dense
-matrix with one column per instance and a vector with one entry per instance belong to the
-instances, everything else (sparse matrices, counters, parameters) is shared. A vector which is
-shared although its length can match the batch size is declared by its state type in
-`compaction_shared_fields`.
+The copies are made field by field (`columns`, `scatter_columns`). What belongs to the instances is
+decided from the types, never from the sizes, which cannot tell a vector of one entry per instance
+from one of `m` entries when the batch has `m` instances: in a batched state, every dense `Matrix`
+holds one column per instance and every dense `Vector` of numbers one entry per instance, while
+everything else (sparse matrices, counters, parameters) is shared. A dense array which is shared
+nonetheless is declared by the type which holds it, in `compaction_shared_fields`, and an array
+whose size does not match the batch is an error rather than silently kept or split. The fields of
+a `MILP` are restricted by `columns(milp, idx)`, which knows which of them are batched.
 
 A compiled Reactant solve never compacts, since that would change the shapes of the compiled
 program: `maybe_compact!` only acts on a host `Bool` stop flag and `Array` storage.
@@ -25,7 +28,7 @@ const COMPACTION_MIN_BATCH = 4
     compaction_shared_fields(x)
 
 Names of the fields of `x` which hold vectors shared by all the instances of a batch, and must not
-be split by [`columns`](@ref) even when their length happens to match the batch size.
+be split by [`columns`](@ref) (see the comment at the top of `compaction.jl`).
 """
 compaction_shared_fields(::Any) = ()
 
@@ -37,8 +40,18 @@ Return a copy of `x`, a part of the state of a batch of `nb` instances, restrict
 """
 columns(x::Union{Number, Symbol, Nothing, Val, Function, AbstractString}, ::Vector{Int}, ::Int) = x
 columns(x::AbstractArray, ::Vector{Int}, ::Int) = x
-columns(x::Matrix{<:Number}, idx::Vector{Int}, nb::Int) = size(x, 2) == nb ? x[:, idx] : x
-columns(x::Vector{<:Number}, idx::Vector{Int}, nb::Int) = length(x) == nb ? x[idx] : x
+columns(x::Matrix{<:Number}, idx::Vector{Int}, nb::Int) = check_batch_size(x, nb)[:, idx]
+columns(x::Vector{<:Number}, idx::Vector{Int}, nb::Int) = check_batch_size(x, nb)[idx]
+
+"Throw unless the last dimension of `x`, a part of a batched state, has one entry per instance."
+function check_batch_size(x::AbstractVecOrMat, nb::Int)
+    size(x, ndims(x)) == nb || throw(
+        DimensionMismatch(
+            "a $(typeof(x)) of size $(size(x)) in a batch of $nb instances: declare it in `compaction_shared_fields` if it is shared",
+        ),
+    )
+    return x
+end
 # the error history of the sub-batch starts empty: see the matching `scatter_columns`
 columns(x::Vector{<:Tuple{Number, KKTErrors}}, ::Vector{Int}, ::Int) = similar(x, 0)
 columns(x::Union{Tuple, NamedTuple}, idx::Vector{Int}, nb::Int) = map(v -> columns(v, idx, nb), x)
@@ -62,13 +75,11 @@ are updated in place, and `src` for the shared numbers (counters, clocks).
 scatter_columns(::Any, src::Union{Number, Symbol, Nothing, Val, Function, AbstractString}, ::Vector{Int}, ::Int) = src
 scatter_columns(::AbstractArray, src::AbstractArray, ::Vector{Int}, ::Int) = src
 function scatter_columns(dest::Matrix{<:Number}, src::Matrix{<:Number}, idx::Vector{Int}, nb::Int)
-    size(dest, 2) == nb || return src
-    dest[:, idx] .= src
+    check_batch_size(dest, nb)[:, idx] .= src
     return dest
 end
 function scatter_columns(dest::Vector{<:Number}, src::Vector{<:Number}, idx::Vector{Int}, nb::Int)
-    length(dest) == nb || return src
-    dest[idx] .= src
+    check_batch_size(dest, nb)[idx] .= src
     return dest
 end
 # each entry of the sub-batch is completed with the errors of the frozen instances, which have not
@@ -110,24 +121,26 @@ end
     columns(milp::MILP, idx)
 
 Restrict a batched `milp` to the instances `idx`, keeping the shared data (`A`, `Q`, the
-preconditioner, the bounds common to all instances) as is.
+preconditioner, the bounds common to all instances) as is. A vector of `c`, `lv`, `uv`, `lc` or
+`uc` is shared by all the instances and a matrix has one column per instance, whatever their
+sizes; `bound_scale` and `obj_scale` are numbers when shared and vectors otherwise.
 """
 function columns(milp::MILP, idx::Vector{Int})
     nb = nbinstances(milp)
     return MILP(;
-        c = columns(milp.c, idx, nb),
+        c = milp_columns(milp.c, idx, nb),
         c0 = milp.c0,
-        lv = columns(milp.lv, idx, nb),
-        uv = columns(milp.uv, idx, nb),
+        lv = milp_columns(milp.lv, idx, nb),
+        uv = milp_columns(milp.uv, idx, nb),
         A = milp.A,
         At = milp.At,
         Q = columns_quadratic(milp.Q, idx, nb),
-        lc = columns(milp.lc, idx, nb),
-        uc = columns(milp.uc, idx, nb),
+        lc = milp_columns(milp.lc, idx, nb),
+        uc = milp_columns(milp.uc, idx, nb),
         D1 = milp.D1,
         D2 = milp.D2,
-        bound_scale = columns(milp.bound_scale, idx, nb),
-        obj_scale = columns(milp.obj_scale, idx, nb),
+        bound_scale = milp_scale_columns(milp.bound_scale, idx, nb),
+        obj_scale = milp_scale_columns(milp.obj_scale, idx, nb),
         int_var = milp.int_var,
         var_names = milp.var_names,
         con_names = milp.con_names,
@@ -137,8 +150,24 @@ function columns(milp::MILP, idx::Vector{Int})
     )
 end
 
+"""
+    milp_columns(x, idx, nb)
+
+Restrict a data field of a batched `MILP` to the instances `idx`: the columns of a matrix (one
+per instance), and a vector (shared by all the instances) or a number as is.
+"""
+milp_columns(x::Number, ::Vector{Int}, ::Int) = x
+milp_columns(x::AbstractMatrix, idx::Vector{Int}, nb::Int) = check_batch_size(x, nb)[:, idx]
+milp_columns(x::AbstractVector, ::Vector{Int}, ::Int) = x
+
+# `bound_scale` and `obj_scale` hold one number per instance, when they are vectors
+function milp_scale_columns(x::AbstractVector, idx::Vector{Int}, nb::Int)
+    return check_batch_size(x, nb)[idx]
+end
+milp_scale_columns(x::Number, ::Vector{Int}, ::Int) = x
+
 columns_quadratic(Q::AbstractMatrix, ::Vector{Int}, ::Int) = Q
-columns_quadratic(S::BatchScaledMatrix, idx::Vector{Int}, nb::Int) = BatchScaledMatrix(S.Q, columns(S.scale, idx, nb))
+columns_quadratic(S::BatchScaledMatrix, idx::Vector{Int}, nb::Int) = BatchScaledMatrix(S.Q, milp_scale_columns(S.scale, idx, nb))
 
 """
     batch_status_code(codes)

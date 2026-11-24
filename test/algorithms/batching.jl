@@ -4,6 +4,7 @@ using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
     termination_status
 using MathOptBenchmarkInstances: Netlib, read_instance
 using Random
+using SparseArrays: sparse
 using Test
 
 const NBATCH = 3
@@ -226,6 +227,38 @@ end
         @test all(==(-1), state.sol.x[:, idx])
         @test !any(==(-1), state.sol.x[:, setdiff(1:B, idx)])
         @test state.stats.kkt_passes == 123
+    end
+    # what belongs to the instances is read from the types: sizes cannot tell a batch of `m` or
+    # `n` instances from the shared data
+    @testset "Batch as large as the number of $dim" for dim in ("constraints", "variables")
+        A = sparse([1.0 1 0 0; 0 1 1 0; 0 0 1 1; 1 0 0 1])
+        nb = 4
+        C = 0.5 .+ rand(Xoshiro(3), 4, nb)
+        lp = if dim == "constraints"
+            MILP(; c = C, lv = zeros(4), uv = fill(10.0, 4), A, lc = ones(4), uc = fill(5.0, 4))
+        else
+            # one more constraint, so that only the variables match the batch
+            A5 = [A; sparse([1.0 1 1 1])]
+            MILP(; c = C, lv = zeros(4), uv = fill(10.0, 4), A = A5, lc = ones(5), uc = fill(5.0, 5))
+        end
+        idx = [1, 3]
+        sub_lp = CoolPDLP.columns(lp, idx)
+        @test nbinstances(sub_lp) == length(idx)
+        @test sub_lp.c == C[:, idx]
+        @test sub_lp.lv == lp.lv && sub_lp.uv == lp.uv
+        @test sub_lp.lc == lp.lc && sub_lp.uc == lp.uc
+        algo = HPDLP()
+        milp, sol = CoolPDLP.preprocess(lp, PrimalDualSolution(lp), algo)
+        state = initialize(milp, sol, algo; starting_time = 0.0)
+        sub = CoolPDLP.columns(state, idx, nb)
+        @test sub.sol.x == state.sol.x[:, idx]
+        @test sub.step_sizes.ω == state.step_sizes.ω[idx]
+        @test nbinstances(CoolPDLP.columns(milp, idx)) == length(idx)
+        (sol0, stats0), (sol1, stats1) = map((false, true)) do batch_compaction
+            solve(lp, HPDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000, batch_compaction))
+        end
+        @test termination_status(stats1) == termination_status(stats0)
+        @test sol1.x == sol0.x
     end
     # only PDLP restarts the whole batch at once, from an average over its instances, so it is
     # the only algorithm whose iterates depend on the compaction
