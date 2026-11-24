@@ -71,6 +71,14 @@ reduces over the batch, which reads the result back to the host on a KernelAbstr
 does not run after every iteration; the extra iterations leave the converged instances as they are.
 """
 const HSD_NEWTON_CHECK_EVERY = 4
+"""
+Number of Newton iterations of [`boxcone_root!`](@ref) on a KernelAbstractions GPU, where it runs
+without any convergence test, since each test would read a flag back to the host. On 40 Netlib
+instances at `termination_reltol = 1e-6`, 99.97 % of the roots converge within 4 iterations and
+99.99 % within 8 (at most 17); the extra iterations leave a converged root as it is, and a root
+which has not converged yet stays inside its bracket and warm-starts the next step.
+"""
+const HSD_NEWTON_DEVICE_ITERS = 8
 
 """
     HSDPoint
@@ -314,6 +322,31 @@ function hsd_problem(milp::MILP{T}, sol::PrimalDualSolution{T}) where {T}
     # state with; `A` and `At` are those of `milp`, shared
     hsd = (; c = c .* γcr, lv = lv .* γbr, uv = uv .* γbr, A, At, lc = lc .* γbr, uc = uc .* γbr)
     return hsd, γb, γc
+end
+
+"""
+    internal_batch(milp, sol, algo::Algorithm{:HSDPDLP})
+
+Make a batch of one of an unbatched problem whose arrays live on a KernelAbstractions GPU.
+
+Unbatched, the scalars of HSDPDLP (the Newton roots and residuals, `τ`, `α`, the norms of the
+restarts) are host numbers, so each of the many reductions of a step would read its result back
+to the host. In a batch, they are device vectors with one entry per instance, and the batched
+kernels keep them there. [`solve`](@ref) returns the solution and the stats of the single
+instance (see `export_result`); a state built with [`initialize`](@ref) from the result of
+[`preprocess`](@ref) holds the batch of one. CPU arrays are left as they are: on the host, the
+unbatched scalars are the cheaper ones.
+"""
+internal_batch(milp::MILP, sol::PrimalDualSolution, ::Algorithm{:HSDPDLP}) = batch_of_one(milp, sol, sol.x)
+
+batch_of_one(milp::MILP, sol::PrimalDualSolution, ::AbstractMatrix) = (milp, sol)
+batch_of_one(milp::MILP, sol::PrimalDualSolution, ::Vector) = (milp, sol)
+function batch_of_one(milp::MILP, sol::PrimalDualSolution, ::AbstractVector)
+    column(v) = reshape(copy(v), :, 1)
+    # a matrix `c` is enough to make `milp` a batch, whose other data is shared by its instance
+    fields = NamedTuple{fieldnames(typeof(milp))}(ntuple(i -> getfield(milp, i), Val(fieldcount(typeof(milp)))))
+    milp1 = MILP(; merge(fields, (; c = column(milp.c)))...)
+    return milp1, PrimalDualSolution(column(sol.x), column(sol.y))
 end
 
 function initialize(
@@ -710,8 +743,13 @@ on the device (the Reactant tests compile HSDPDLP, hence this loop). It tests fo
 every `HSD_NEWTON_CHECK_EVERY` iterations, and stops once every instance has converged, or after
 `HSD_NEWTON_MAXITER` iterations (rounded up to the next test). The frozen instances of a batch
 (`active` false, see `active_mask`) count as converged from the start: they keep their warm
-start, and never hold the loop up. Without batching, every scalar of the loop is a host number,
-so on a KernelAbstractions GPU each residual evaluation still reads its sums back to the host.
+start, and never hold the loop up.
+
+On a KernelAbstractions GPU (outside a Reactant compilation), the loop runs a fixed
+`HSD_NEWTON_DEVICE_ITERS` iterations instead, so that it never reads anything back to the host:
+with the batch of one that [`preprocess`](@ref) makes of an unbatched problem on such a device
+(see `internal_batch`), all its scalars are device arrays too. On the CPU, the convergence test is
+a plain `Bool`, and the loop stops as soon as it holds.
 """
 function boxcone_root!(
         ws::HSDWorkspace{V}, data::Union{NTuple{2}, NTuple{3}}, warm::BatchedNumber, dmin::BatchedNumber, active = true,
@@ -724,10 +762,18 @@ function boxcone_root!(
     newton_init!(ws, dmin, active)
     count_newton!(ws)
     newton_step!(ws, dmin, ϵ)
-    iter = 1
-    @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
-        newton_block!(ws, data, dmin, ϵ)
-        iter += HSD_NEWTON_CHECK_EVERY
+    if V <: Array || within_compile()
+        iter = 1
+        @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
+            newton_block!(ws, data, dmin, ϵ)
+            iter += HSD_NEWTON_CHECK_EVERY
+        end
+    else
+        for _ in 2:HSD_NEWTON_DEVICE_ITERS
+            newton_residual!(ws, data)
+            count_newton!(ws)
+            newton_step!(ws, dmin, ϵ)
+        end
     end
     return ws.t
 end

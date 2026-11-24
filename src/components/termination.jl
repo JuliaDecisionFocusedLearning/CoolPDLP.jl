@@ -184,7 +184,7 @@ active_mask(::Nothing) = true
 active_mask(active::AbstractVector) = active
 
 instance_or(::Nothing, ::Int, default) = default
-instance_or(v::AbstractVector, i::Int, ::Any) = v[i]
+instance_or(v::AbstractVector, i::Int, ::Any) = instance_num(v, i)
 
 """
     batched_fill(like, val)
