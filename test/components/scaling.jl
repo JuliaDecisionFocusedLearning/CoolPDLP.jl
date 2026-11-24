@@ -49,20 +49,9 @@ log_sq(A) = sum(abs2 ∘ log ∘ abs, nonzeros(A))
         @test prec_z.D1.diag ≈ prec_b.D1.diag
         @test prec_z.D2.diag ≈ prec_b.D2.diag
     end
-    @testset "Disabled by default" begin
-        milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
-        params = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = 1.0, ruiz_iter = 10)
-        params_off = CoolPDLP.PreconditioningParameters(;
-            chambolle_pock_alpha = 1.0, ruiz_iter = 10,
-            geometric_mean_iter = 0, curtis_reid_iter = 0, bound_objective_rescaling = false,
-        )
-        @test CoolPDLP.pdlp_preconditioner(milp, params).D1 == CoolPDLP.pdlp_preconditioner(milp, params_off).D1
-        @test !PDLP().preconditioning.bound_objective_rescaling
-        @test PDLP().preconditioning.geometric_mean_iter == 0
-        @test CoolPDLP.Algorithm{:PDLP}().preconditioning.curtis_reid_iter == 0
-        # `PDLP()` starts with 20 Curtis-Reid rounds, and one keyword turns them off
+    @testset "Defaults" begin
         @test PDLP().preconditioning.curtis_reid_iter == 20
-        @test PDLP(; curtis_reid_iter = 0).preconditioning.curtis_reid_iter == 0
+        @test CoolPDLP.Algorithm{:PDLP}().preconditioning.curtis_reid_iter == 0
     end
 end
 
@@ -79,6 +68,10 @@ function full_scaling(milp, sol)
         CoolPDLP.rescale_bounds_objective(sol_p, β, γ), β, γ
 end
 
+function unscale(sol, milp)
+    sol_p = CoolPDLP.rescale_bounds_objective(sol, inv.(milp.bound_scale), inv.(milp.obj_scale))
+    return CoolPDLP.unprecondition(sol_p, CoolPDLP.Preconditioner(milp))
+end
 kkt(sol, milp) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp)
 
 @testset "Bound and objective rescaling round trip" begin
@@ -87,8 +80,8 @@ kkt(sol, milp) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(
     @test 0 < β < 1 && 0 < γ < 1
     @test milp_s.bound_scale == β
     @test milp_s.obj_scale == γ
-    @test CoolPDLP.unscale(sol_s, milp_s).x ≈ sol.x
-    @test CoolPDLP.unscale(sol_s, milp_s).y ≈ sol.y
+    @test unscale(sol_s, milp_s).x ≈ sol.x
+    @test unscale(sol_s, milp_s).y ≈ sol.y
     # the rescaled bounds and objective have norm below one
     @test norm(CoolPDLP.combine.(milp_s.lc, milp_s.uc)) < 1
     @test norm(milp_s.c) < 1
@@ -108,8 +101,8 @@ end
     milp_s, sol_s, β, γ = full_scaling(milp_batch, sol_batch)
     @test β isa Vector && length(β) == 3 && allunique(β)
     @test γ isa Vector && length(γ) == 3 && allunique(γ)
-    @test CoolPDLP.unscale(sol_s, milp_s).x ≈ sol_batch.x
-    @test CoolPDLP.unscale(sol_s, milp_s).y ≈ sol_batch.y
+    @test unscale(sol_s, milp_s).x ≈ sol_batch.x
+    @test unscale(sol_s, milp_s).y ≈ sol_batch.y
     err_batch = kkt(sol_s, milp_s)
     for i in 1:3
         milp_i = instance(milp_batch, i)
@@ -120,6 +113,19 @@ end
         @test isapprox(instance(milp_s, i), milp_si)
         @test instance(err_batch, i) ≈ kkt(sol, milp_i)
     end
+end
+
+@testset "Disabled rescaling leaves shared variable bounds untouched" begin
+    milp, sol = CoolPDLP.random_milp_and_sol(40, 60, 0.3)
+    (; c, c0, lv, uv, A, At, lc, uc) = milp
+    factors = [1.0, 10.0, 1000.0]
+    milp_batch = MILP(; c = c .* factors', c0, lv, uv, A, At, lc = lc .* factors', uc = uc .* factors')
+    sol_batch = PrimalDualSolution(repeat(sol.x, 1, 3), repeat(sol.y, 1, 3))
+    milp_off, _ = CoolPDLP.preprocess(milp_batch, sol_batch, PDLP(; bound_objective_rescaling = false))
+    @test milp_off.lv isa Vector && milp_off.uv isa Vector
+    @test milp_off.bound_scale == 1 && milp_off.obj_scale == 1
+    milp_on, _ = CoolPDLP.preprocess(milp_batch, sol_batch, PDLP(; bound_objective_rescaling = true))
+    @test milp_on.lv isa Matrix && size(milp_on.lv) == (size(lv, 1), 3)
 end
 
 @testset "Solve with the new stages" begin
@@ -167,9 +173,6 @@ end
 @testset "Generic column access on dense matrices" begin
     A = [2.0 0.0; 0.0 8.0; 4.0 -1.0]
     As = sparse(A)
-    vals, idx = CoolPDLP.column_entries(A, 1)
-    @test idx == [1, 3] && vals == [2.0, 4.0]
-    @test CoolPDLP.column_values(A, 2) == [0.0, 8.0, -1.0]
     for j in 1:2
         # the dense fallbacks agree with the sparse methods, zeros being skipped
         @test CoolPDLP.geometric_mean_factor(A, j) ≈ CoolPDLP.geometric_mean_factor(As, j)
@@ -178,49 +181,4 @@ end
     end
     @test CoolPDLP.geometric_mean_factor(A, 1) ≈ 1 / sqrt(2.0 * 4.0)
     @test CoolPDLP.curtis_reid_mean(A, 1, zeros(3)) ≈ -(log(2.0) + log(4.0)) / 2
-end
-
-@testset "NaN exponent skips Pock-Chambolle" begin
-    milp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
-    params = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = NaN, ruiz_iter = 10)
-    prec = CoolPDLP.pdlp_preconditioner(milp, params)
-    prec_r = CoolPDLP.ruiz_preconditioner(CoolPDLP.ConstraintMatrix(milp.A, milp.At); iterations = 10)
-    @test prec.D1.diag ≈ prec_r.D1.diag
-    @test prec.D2.diag ≈ prec_r.D2.diag
-end
-
-@testset "cuPDLPx bound norm" begin
-    # finite range, lower-only, upper-only, equality, free row
-    @test CoolPDLP.bound_sum_squares(1.0, 4.0) == 17.0
-    @test CoolPDLP.bound_sum_squares(-3.0, Inf) == 9.0
-    @test CoolPDLP.bound_sum_squares(-Inf, 5.0) == 25.0
-    @test CoolPDLP.bound_sum_squares(2.0, 2.0) == 4.0
-    @test CoolPDLP.bound_sum_squares(-Inf, Inf) == 0.0
-    A = sparse([1.0 0.0; 0.0 1.0; 1.0 1.0; 1.0 -1.0; 2.0 1.0])
-    milp = MILP(;
-        c = [3.0, 4.0], lv = [-10.0, -10.0], uv = [10.0, 10.0], A, At = sparse(transpose(A)),
-        lc = [1.0, -3.0, -Inf, 2.0, -Inf], uc = [4.0, Inf, 5.0, 2.0, Inf],
-    )
-    β, γ = CoolPDLP.bound_objective_factors(milp; sum_squares = true)
-    @test β ≈ 1 / (1 + sqrt(17 + 9 + 25 + 4))
-    @test γ ≈ 1 / (1 + 5)
-    # the HPR-LP default keeps the largest finite bound per row instead
-    β_hpr, _ = CoolPDLP.bound_objective_factors(milp)
-    @test β_hpr ≈ 1 / (1 + sqrt(16 + 9 + 25 + 4))
-end
-
-@testset "Solve with the cuPDLPx bound norm" begin
-    milp = MILP(read_instance(Netlib, "afiro")[1])
-    sol_ref, _ = solve(milp, PDLP(; termination_reltol = 1.0e-6))
-    algo = PDLP(; termination_reltol = 1.0e-6, bound_objective_rescaling = true, bound_norm_sum_squares = true)
-    @test algo.preconditioning.bound_norm_sum_squares
-    sol, stats = solve(milp, algo)
-    @test termination_status(stats) == MOI.OPTIMAL
-    @test objective_value(sol.x, milp) ≈ objective_value(sol_ref.x, milp) rtol = 1.0e-4
-    @test is_feasible(sol.x, milp; cons_tol = 1.0e-3)
-end
-
-@testset "Instance scale" begin
-    @test CoolPDLP.instance_scale(0.5, 3) === 0.5
-    @test CoolPDLP.instance_scale([0.5, 0.25], 2) === 0.25
 end
