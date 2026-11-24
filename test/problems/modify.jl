@@ -2,6 +2,7 @@ using Adapt
 using CoolPDLP
 using JLArrays
 using LinearAlgebra: Diagonal
+using SparseArrays
 using KernelAbstractions: CPU, get_backend
 using Test
 
@@ -22,6 +23,23 @@ milp, sol = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
         sol_T = @inferred CoolPDLP.set_eltype(T, sol)
         @test sol_T isa PrimalDualSolution{T}
     end
+
+    # stored entries which round to zero are kept, so `A` and `At` keep their sparsity pattern
+    A = sparse([1, 2], [1, 2], [1.0, 1.0e-10])
+    A_f16 = @inferred CoolPDLP.set_eltype(Float16, A)
+    @test A_f16 isa SparseMatrixCSC{Float16, Int}
+    @test nnz(A_f16) == 2
+    @test A_f16.colptr == A.colptr
+    @test A_f16.rowval == A.rowval
+
+    # conversion copies even when the element type doesn't change
+    for X in (milp.c, milp.A, milp.D1)
+        X_copy = CoolPDLP.set_eltype(Float64, X)
+        @test X_copy == X
+        @test X_copy !== X
+        @test X_copy isa typeof(X)
+    end
+    @test CoolPDLP.set_eltype(Float64, milp.D1).diag !== milp.D1.diag
 
     milp_i32 = CoolPDLP.set_indtype(Int32, milp)
     @test milp_i32 isa MILP{Float64}
