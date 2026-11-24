@@ -316,7 +316,7 @@ end
     algo = HPRQP()
     pmilp, sol = preprocess(milp, PrimalDualSolution(milp), algo)
     state = CoolPDLP.initialize(pmilp, sol, algo; starting_time = 0.0)
-    @test state.Q_diagonal
+    @test state.splitting.Q_diagonal
     aty = randn(rng, n)
     state.buf3 .= aty
     CoolPDLP.mul_quadratic!(state.scratch.z, pmilp.Q, state.buf3)
@@ -328,5 +328,5 @@ end
     # a general `Q` does not take the per-coordinate model
     milp_general = MILP(; c = milp.c, lv = milp.lv, uv = milp.uv, A, lc = milp.lc, uc = milp.uc, Q = Q + sparse([1, 2], [2, 1], [0.01, 0.01], n, n))
     pg, sg = preprocess(milp_general, PrimalDualSolution(milp_general), algo)
-    @test !CoolPDLP.initialize(pg, sg, algo; starting_time = 0.0).Q_diagonal
+    @test !CoolPDLP.initialize(pg, sg, algo; starting_time = 0.0).splitting.Q_diagonal
 end

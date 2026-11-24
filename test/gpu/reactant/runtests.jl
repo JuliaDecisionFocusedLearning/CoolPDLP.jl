@@ -307,7 +307,7 @@ end
 
 # a quadratic objective adds products by `Q` to the steps and the KKT errors; with dense
 # matrices, a sparse `Q` stays in the CSR format of this package (see `convert_matrix`)
-const QP_ALGORITHMS = (:PDHG, :PDLP, :HPDLP)
+const QP_ALGORITHMS = (:PDHG, :PDLP, :HPDLP, :HPRQP)
 qp0 = MILP(read_instance(MarosMeszaros, "HS21")[1])
 
 @testset verbose = true "Quadratic program with $A and $M" for A in QP_ALGORITHMS,

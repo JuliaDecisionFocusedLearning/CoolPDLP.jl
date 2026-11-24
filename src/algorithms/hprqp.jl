@@ -38,6 +38,24 @@ end
 supports_quadratic(::Algorithm{:HPRQP}) = true
 
 """
+    HPRQPSplitting
+
+The variant of HPR-QP chosen from the structure of the problem, once and for all at
+initialization: plain `Bool`s, which the Reactant extension keeps out of the traced numbers so
+that the branches they select are resolved at trace time.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct HPRQPSplitting
+    "whether `λ_Qv` is `diag(Q)` (a diagonal `Q`), which selects HPR-QP's per-coordinate σ model"
+    Q_diagonal::Bool
+    "whether more than 80% of the variables are free, which selects HPR-QP's \"noC\" splitting (no `Aᵀ` correction of `w`)"
+    free_splitting::Bool
+end
+
+"""
     HPRQPState
 
 The Halpern iterate is `z = (x, y, w, Aᵀy)`: carrying `Aᵀy` along saves a product by `Aᵀ` at
@@ -87,10 +105,8 @@ $(TYPEDFIELDS)
     λ_Q::N
     "diagonal of the proximal operator `Λ ⪰ Q` of the `w` step: `diag(Q)` for a diagonal `Q`, `λ_Q` everywhere otherwise"
     λ_Qv::W
-    "whether `λ_Qv` is `diag(Q)` (a diagonal `Q`), which selects HPR-QP's per-coordinate σ model"
-    Q_diagonal::Bool
-    "whether more than 80% of the variables are free, which selects HPR-QP's \"noC\" splitting (no `Aᵀ` correction of `w`)"
-    free_splitting::Bool
+    "structural choices of the variant of HPR-QP (see [`HPRQPSplitting`](@ref))"
+    splitting::HPRQPSplitting
     "per-column scratch of the golden-section search of the per-coordinate σ model"
     golden::NTuple{10, B}
     "fixed-point residual of the first check, which decides the length of the long inner loops of HPR-QP"
@@ -101,6 +117,8 @@ $(TYPEDFIELDS)
     t2::B
     "per-column scratch"
     t3::B
+    "per-column destination of the metric norm of the σ update, apart from the scratch space"
+    metric_norm::B
     "primal scratch for the σ update"
     buf3::V
     "primal scratch for the σ update"
@@ -141,7 +159,7 @@ function initialize(
     η0 = iszero(norm_A) ? one(T) : invnorm_scaling * inv(norm_A)
     # HPR-QP starts from σ = ‖b‖ / ‖c‖, which `primal_weight_init` inverts
     ω = batched_expand(sol.x, η0 .* primal_weight_init(milp, params))
-    η = broadcast!!((_, η) -> η, batched_similar(ω), ω, η0)
+    η = batched_apply!!((_, η) -> η, batched_similar(ω), ω, η0)
     step_sizes = StepSizes(; η, ω, norm_A, norm_Q)
     aty = mul!(similar(sol.x), At, sol.y)
     λ_Q = norm_Q / invnorm_scaling^2
@@ -149,9 +167,10 @@ function initialize(
     err = KKTErrors(sol)
     (; relative_kkt) = algo.termination
     (; termination_norm) = algo.generic
-    kkt_errors!(err, scratch, sol, milp, relative_kkt, termination_norm)  # TODO: count this KKT pass
+    kkt_errors!(err, scratch, sol, milp, relative_kkt, termination_norm)
     tol = algo.termination.infeasibility_tol
-    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    # the initial KKT errors cost one product by `A` and one by `Aᵀ`
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2)
     λ_Qv = proximal_diagonal(Q, convert(T, λ_Q), sol.x)
     return HPRQPState(;
         sol, z = copy(sol), z_anchor = copy(sol),
@@ -160,12 +179,11 @@ function initialize(
         buf1 = similar(sol.x), buf2 = similar(sol.x), buf3 = similar(sol.x), buf4 = similar(sol.x),
         # with `η = invnorm_scaling / ‖A‖`, `σ λ_A = 1 / (η ω)`
         λ_A = inv(η0)^2, λ_Q = λ_Q,
-        λ_Qv, Q_diagonal = is_diagonal_sparse(host_sparse(Q)),
-        free_splitting = mostly_free(milp),
+        λ_Qv, splitting = HPRQPSplitting(is_diagonal_sparse(host_sparse(Q)), mostly_free(milp)),
         golden = ntuple(_ -> batched_expand(sol.x, zero(T)), 10),
         fpe_reference = batched_expand(sol.x, convert(T, Inf)),
         t1 = batched_expand(sol.x, zero(T)), t2 = batched_expand(sol.x, zero(T)),
-        t3 = batched_expand(sol.x, zero(T)),
+        t3 = batched_expand(sol.x, zero(T)), metric_norm = batched_expand(sol.x, zero(T)),
         step_sizes, scratch, halpern = HalpernStats(sol, ω), stats,
         infeas = InfeasibilityWorkspace(sol, tol),
     )
@@ -269,7 +287,7 @@ function step!(
     mul!(aty_bar, At, sol.y)
     # second half of the `w` step, which HPR-QP's "noC" splitting for mostly free variables
     # leaves out (`unified_update_zxw_cpu!`)
-    if !state.free_splitting
+    if !state.splitting.free_splitting
         @. w_bar += σ * (aty_bar - aty) / (1 + σ * λ_Qv)
     end
 
@@ -423,10 +441,10 @@ function hprqp_restart_check!(state::HPRQPState, algo::Algorithm{:HPRQP}, must_t
     (; halpern, step_sizes) = state
     (; sufficient_decay, necessary_decay) = algo.restart
     (; total) = halpern
-    halpern.restart = broadcast!!(
+    halpern.restart = batched_apply!!(
         halpern.restart, halpern.fpe, halpern.fpe_initial, halpern.fpe_last, halpern.inner,
-        state.fpe_reference,
-    ) do r, r0, r_last, inner, ref
+        state.fpe_reference, must_terminate, total,
+    ) do r, r0, r_last, inner, ref, must_terminate, total
         first = isinf(ref)
         sufficient = r <= sufficient_decay * r0
         necessary = (r <= necessary_decay * r0) & (r > r_last)
@@ -438,21 +456,21 @@ function hprqp_restart_check!(state::HPRQPState, algo::Algorithm{:HPRQP}, must_t
     # a frozen instance of a batch never restarts
     halpern.restart = mask_and!!(halpern.restart, active_mask(state.stats))
     # the first check sets the reference, and every check updates the best residual
-    halpern.best_ω = broadcast!!(
+    halpern.best_ω = batched_apply!!(
         halpern.best_ω, halpern.fpe, halpern.best_gap, state.fpe_reference, step_sizes.ω,
         halpern.best_ω,
     ) do r, best, ref, ω, best_ω
         ifelse(isinf(ref) | (r < best), ω, best_ω)
     end
-    halpern.best_gap = broadcast!!(
+    halpern.best_gap = batched_apply!!(
         halpern.best_gap, halpern.fpe, halpern.best_gap, state.fpe_reference,
     ) do r, best, ref
         ifelse(isinf(ref) | (r < best), r, best)
     end
-    state.fpe_reference = broadcast!!(state.fpe_reference, state.fpe_reference, halpern.fpe) do ref, r
+    state.fpe_reference = batched_apply!!(state.fpe_reference, state.fpe_reference, halpern.fpe) do ref, r
         ifelse(isinf(ref), r, ref)
     end
-    halpern.fpe_last = broadcast!!(halpern.fpe_last, halpern.restart, halpern.fpe) do restart, r
+    halpern.fpe_last = batched_apply!!(halpern.fpe_last, halpern.restart, halpern.fpe) do restart, r
         ifelse(restart, oftype(r, Inf), r)
     end
     return halpern.restart
@@ -527,10 +545,10 @@ function golden_sigma_diagonal!!(state::HPRQPState{T}) where {T}
         # going right: (x1, x2) ← (x2, new), going left: (x1, x2) ← (new, x1)
         tmp = batched_apply!!((r, x2, xn) -> ifelse(r > 0, x2, xn), tmp, r, x2, xn)
         x2 = batched_apply!!((r, x1, xn) -> ifelse(r > 0, xn, x1), x2, r, x1, xn)
-        x1 = batched_apply!!(identity, x1, tmp)
+        x1 = batched_apply!!(v -> v + zero(v), x1, tmp)
         tmp = batched_apply!!((r, f2, fn) -> ifelse(r > 0, f2, fn), tmp, r, f2, fn)
         f2 = batched_apply!!((r, f1, fn) -> ifelse(r > 0, fn, f1), f2, r, f1, fn)
-        f1 = batched_apply!!(identity, f1, tmp)
+        f1 = batched_apply!!(v -> v + zero(v), f1, tmp)
     end
     return batched_apply!!((lo, hi) -> exp((lo + hi) / 2), xn, lo, hi)
 end
@@ -556,19 +574,19 @@ function hprqp_sigma_update!(
     (; sol, z_anchor, w_bar, w_anchor, aty_bar, aty_anchor, λ_Q, halpern, step_sizes) = state
     (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
     # fills `t1`, `t2` and `t3` with `a`, `b` and `c`; the norm itself is not needed
-    hprqp_metric_norm!!(
-        state.scratch.b1, state, Q, sol.x, z_anchor.x, sol.y, z_anchor.y,
+    state.metric_norm = hprqp_metric_norm!!(
+        state.metric_norm, state, Q, sol.x, z_anchor.x, sol.y, z_anchor.y,
         w_bar, w_anchor, aty_bar, aty_anchor,
     )
     d = convert(T, λ_Q)
-    diagonal = state.Q_diagonal
+    diagonal = state.splitting.Q_diagonal
     # with a diagonal `Q`, HPR-QP minimizes the per-coordinate model instead (`golden_Q_diag`)
     σ_diag = if diagonal && constrained
         golden_sigma_diagonal!!(state)
     else
         state.golden[1]
     end
-    step_sizes.ω = broadcast!!(
+    step_sizes.ω = batched_apply!!(
         step_sizes.ω, halpern.restart, state.t1, state.t2, state.t3, σ_diag, step_sizes.η,
         step_sizes.ω, halpern.fpe, halpern.best_gap, halpern.best_ω, primal, primal_scale, dual,
         dual_scale, gap, gap_scale,
@@ -620,13 +638,13 @@ function restart!(state::HPRQPState, milp::MILP, algo::Algorithm{:HPRQP})
     broadcast!!(ifelse, w, r, w_bar, w)
     broadcast!!(ifelse, aty_anchor, r, aty_bar, aty_anchor)
     broadcast!!(ifelse, aty, r, aty_bar, aty)
-    halpern.inner = broadcast!!(halpern.inner, restart, halpern.inner) do r, k
+    halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k
         ifelse(r, zero(k), k)
     end
-    halpern.restarts = broadcast!!(halpern.restarts, restart, halpern.restarts) do r, n
+    halpern.restarts = batched_apply!!(halpern.restarts, restart, halpern.restarts) do r, n
         ifelse(r, n + 1, n)
     end
     # the reference residual is refreshed at the first step of the next cycle
-    halpern.fpe_pending = broadcast!!(identity, halpern.fpe_pending, restart)
+    halpern.fpe_pending = batched_apply!!(r -> r & true, halpern.fpe_pending, restart)
     return nothing
 end
