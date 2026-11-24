@@ -278,14 +278,14 @@ function kkt_errors!(
     # quantities are divided by `β`, dual ones by `γ` and objectives by `β γ`
     β, γ = bound_scale, obj_scale
     # every norm is of a vector in the original space, so the scaled ones are unscaled first;
-    # `colmaxabs!!` overwrites its argument, which is why some products are computed twice
+    # the norms overwrite the scratch vectors they read, which is why some products are computed twice
 
     # primal residual and scale
-    err.primal_scale = colmaxabs!!(err.primal_scale, @. scratch.y = inv(D1.diag) * combine(lc, uc))
+    err.primal_scale = colnorm!!(err.primal_scale, (@. scratch.y = inv(D1.diag) * combine(lc, uc)), LInfNorm())
     A_x = mul!(scratch.y, A, x)
-    err.primal = colmaxabs!!(err.primal, @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc)))
+    err.primal = colnorm!!(err.primal, (@. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))), LInfNorm())
     A_x = mul!(scratch.y, A, x)
-    Ax_norm = colmaxabs!!(scratch.b1, @. scratch.y = inv(D1.diag) * A_x)
+    Ax_norm = colnorm!!(scratch.b1, (@. scratch.y = inv(D1.diag) * A_x), LInfNorm())
     err.primal_scale = batched_apply!!(
         (b, a, β) -> one(T) + max(b, a) / β, err.primal_scale, err.primal_scale, Ax_norm, β
     )
@@ -293,10 +293,10 @@ function kkt_errors!(
 
     # dual scale
     At_y = mul!(scratch.x, At, y)
-    At_y_norm = colmaxabs!!(scratch.b1, @. scratch.x = inv(D2.diag) * At_y)
+    At_y_norm = colnorm!!(scratch.b1, (@. scratch.x = inv(D2.diag) * At_y), LInfNorm())
     Qx = mul_quadratic!(scratch.z, Q, x)
-    Qx_norm = colmaxabs!!(scratch.b2, @. scratch.x = inv(D2.diag) * Qx)
-    err.dual_scale = colmaxabs!!(err.dual_scale, @. scratch.x = inv(D2.diag) * c)
+    Qx_norm = colnorm!!(scratch.b2, (@. scratch.x = inv(D2.diag) * Qx), LInfNorm())
+    err.dual_scale = colnorm!!(err.dual_scale, (@. scratch.x = inv(D2.diag) * c), LInfNorm())
     err.dual_scale = batched_apply!!(
         (s, a, q, γ) -> one(T) + max(s, a, q) / γ, err.dual_scale, err.dual_scale, At_y_norm, Qx_norm, γ
     )
@@ -309,7 +309,7 @@ function kkt_errors!(
     z = bound_multipliers!(scratch.z, c_At_y, lv, uv, z_given)
     # only `z` is needed for the dual objective below, so the residual overwrites the reduced costs
     @. c_At_y = inv(D2.diag) * (c_At_y - z)
-    err.dual = colmaxabs!!(err.dual, c_At_y)
+    err.dual = colnorm!!(err.dual, c_At_y, LInfNorm())
     err.dual = batched_apply!!(/, err.dual, err.dual, γ)
 
     # objectives, as in the default definition
