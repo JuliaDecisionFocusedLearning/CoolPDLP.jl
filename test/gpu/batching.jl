@@ -40,13 +40,13 @@ function test_batching(
     end
 
     @testset "KKT errors per instance" begin
-        err_batch = kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev)
+        err_batch = kkt_errors!(KKTErrors(sol_dev), Scratch(sol_dev), sol_dev, milp_dev, Val(2))
         @test length(err_batch.primal) == nbatch
         rel_batch = Array(relative(err_batch))
         for i in 1:nbatch
             milp_single, sol_single = singles[i]
             err = kkt_errors!(
-                KKTErrors(sol_single), Scratch(sol_single), sol_single, milp_single
+                KKTErrors(sol_single), Scratch(sol_single), sol_single, milp_single, Val(2)
             )
             @test Array(err_batch.primal)[i] ≈ err.primal
             @test Array(err_batch.dual)[i] ≈ err.dual

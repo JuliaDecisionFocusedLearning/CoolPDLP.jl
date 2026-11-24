@@ -372,7 +372,7 @@ const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
     # the time limit is structure too, since its finiteness decides whether the clock is read
     @test algo_r.generic.time_limit === Inf
     # and so is the termination norm, which selects the reduction of the KKT errors
-    @test algo_r.generic.termination_norm === :L2
+    @test algo_r.generic.termination_norm === Val(2)
     milp, sol = preprocess(milp0, sol0, algo)
     state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
     @test !(state_r.stats.kkt_passes isa Int)
@@ -395,11 +395,11 @@ end
         return repr(@code_hlo CoolPDLP.solve!(state_r, milp_r, algo_r))
     end
     # the norm is baked into the compiled program, so changing it compiles a different one
-    @test norm_hlo(:L2) != norm_hlo(:Linf)
+    @test norm_hlo(Val(2)) != norm_hlo(Val(Inf))
     @testset "Compiled L∞ solve agrees with the plain one" begin
         algo = PDLP(
             Float64, Int64, Matrix;
-            backend = nothing, termination_norm = :Linf, termination_reltol = 1.0e-4,
+            backend = nothing, termination_norm = Val(Inf), termination_reltol = 1.0e-4,
             max_kkt_passes = 2000,
         )
         state, state_r = solve_plain_and_compiled(algo)

@@ -129,19 +129,19 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
 end
 
 """
-    kkt_errors!(err, scratch, sol, milp, norm = :L2)
+    kkt_errors!(err, scratch, sol, milp, norm)
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
 The residuals and the norms of the bounds and the objective are measured in the norm `norm`:
-`:L2` (Euclidean, as in PDLP) or `:Linf` (largest absolute value).
+`Val(2)` (Euclidean, as in PDLP) or `Val(Inf)` (largest absolute value).
 """
 function kkt_errors!(
         err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
-        norm::Symbol = :L2,
+        norm::Val,
     ) where {T}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp

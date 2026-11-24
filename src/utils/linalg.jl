@@ -77,32 +77,12 @@ end
 """
     colnorm!!(dest, x, norm)
 
-Compute the norm of `x` selected by the symbol `norm` (`:L2` or `:Linf`), or one norm per column
-if `x` is batched, into `dest`.
-
-The choice is a plain symbol rather than a number so that Reactant does not trace it: the branch
-is resolved once, when tracing, and only the selected reduction ends up in the compiled program.
-Any other symbol throws an `ArgumentError`, rather than silently falling back to `:L2` (a
-`GenericParameters` built directly skips [`check_termination_norm`](@ref)).
+Compute the norm `Val(2)` or `Val(Inf)` of `x`, or one norm per column if `x` is batched, into
+`dest`. An empty column has norm zero.
 """
-function colnorm!!(dest, x::AbstractVecOrMat, norm::Symbol)
-    if norm === :Linf
-        return colmaxabs!!(dest, x)
-    elseif norm === :L2
-        return colnorm!!(dest, x)
-    else
-        throw(ArgumentError("unknown norm $(repr(norm)), expected :L2 or :Linf"))
-    end
-end
-
-"""
-    colmaxabs!!(dest, x)
-
-Compute the largest absolute value (the L∞ norm) of `x`, or one per column if `x` is batched,
-into `dest`. An empty column has norm zero.
-"""
-colmaxabs!!(::Number, v::AbstractVector{T}) where {T} = mapreduce(abs, max, v; init = zero(T))
-function colmaxabs!!(dest::AbstractVector, m::AbstractMatrix)
+colnorm!!(dest, x::AbstractVecOrMat, ::Val{2}) = colnorm!!(dest, x)
+colnorm!!(::Number, v::AbstractVector{T}, ::Val{Inf}) where {T} = mapreduce(abs, max, v; init = zero(T))
+function colnorm!!(dest::AbstractVector, m::AbstractMatrix, ::Val{Inf})
     # the absolute values are nonnegative, so zero is a neutral starting point for `max`
     fill!(dest, zero(eltype(dest)))
     Base.mapreducedim!(abs, max, transpose(dest), m)

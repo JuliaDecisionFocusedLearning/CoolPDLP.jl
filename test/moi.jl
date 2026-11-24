@@ -119,18 +119,18 @@ end
     JuMP.set_silent(model)
     JuMP.set_attribute(model, "termination_reltol", 1.0e-3)
     JuMP.set_attribute(model, "termination_abstol", 1.0e-6)
-    JuMP.set_attribute(model, "termination_norm", "Linf")
+    JuMP.set_attribute(model, "termination_norm", Val(Inf))
     JuMP.@variable(model, x >= 0)
     JuMP.@variable(model, 0 <= y <= 3)
     JuMP.@objective(model, Min, 12x + 20y)
     JuMP.@constraint(model, 6x + 8y >= 100)
     JuMP.optimize!(model)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
-    @test JuMP.get_attribute(model, "termination_norm") == "Linf"
+    @test JuMP.get_attribute(model, "termination_norm") === Val(Inf)
     @test 6 * JuMP.value(x) + 8 * JuMP.value(y) >= 100 - 1.0e-4
 
-    JuMP.set_attribute(model, "termination_norm", "L1")
-    @test_throws ArgumentError JuMP.optimize!(model)
+    JuMP.set_attribute(model, "termination_norm", Val(1))
+    @test_throws MethodError JuMP.optimize!(model)
 end
 
 @testset "Maximization" begin

@@ -8,7 +8,7 @@ Reactant, they are compile-time constants: see the Reactant section of the READM
 
 $(TYPEDFIELDS)
 """
-@kwdef struct GenericParameters{I <: Number, B, F <: Number}
+@kwdef struct GenericParameters{I <: Number, B, F <: Number, N <: Union{Val{2}, Val{Inf}}}
     "whether to show a progress bar"
     show_progress::B
     "frequency of restart or termination checks"
@@ -17,8 +17,8 @@ $(TYPEDFIELDS)
     record_error_history::B
     "time limit in seconds (`Inf` for none); a Reactant-compiled solve only reads the clock when it is finite"
     time_limit::F
-    "norm in which the termination check measures the primal and dual residuals, `:L2` or `:Linf`; a Reactant-compiled solve only contains the selected reduction"
-    termination_norm::Symbol = :L2
+    "norm of the termination check, `Val(2)` or `Val(Inf)`"
+    termination_norm::N
 end
 
 function Base.show(io::IO, params::GenericParameters)

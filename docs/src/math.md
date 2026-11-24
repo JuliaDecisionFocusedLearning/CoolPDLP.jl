@@ -181,7 +181,7 @@ With $\epsilon_a$ = `termination_abstol` and $\epsilon_r$ = `termination_reltol`
 |p - d| \leq \epsilon_a + \epsilon_r (|p| + |d|),
 ```
 
-where $b$ keeps the largest finite absolute bound of each constraint, $p$ and $d$ are the primal and dual objectives, and the norm is `termination_norm` (`:L2` or `:Linf`).
+where $b$ keeps the largest finite absolute bound of each constraint, $p$ and $d$ are the primal and dual objectives, and the norm is `termination_norm` (`Val(2)` or `Val(Inf)`).
 This is the criterion of cuPDLP.jl and cuOpt.
 The default $\epsilon_a = \epsilon_r$ gives back the purely relative criterion $\text{error} / (1 + \text{norm}) \leq \epsilon_r$ of PDLP.
 Every quantity is that of the original problem, whatever the preconditioning.
