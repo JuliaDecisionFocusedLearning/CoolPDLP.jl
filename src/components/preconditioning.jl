@@ -122,6 +122,17 @@ function stacked_column_norm(A::AbstractMatrix, Q::AbstractMatrix, j::Integer, p
     return norm((column_norm(A, j, p), column_norm(Q, j, p)), p)
 end
 
+"""
+    stacked_column_power_sum(A, Q, j, p)
+
+Return `∑ᵢ |Kᵢⱼ|ᵖ` over the `j`-th column of `K = [Q; A]`, which reduces to that of `A` when `Q`
+is a [`ZeroMatrix`](@ref).
+"""
+stacked_column_power_sum(A::AbstractMatrix, ::ZeroMatrix, j::Integer, p) = column_power_sum(A, j, p)
+function stacked_column_power_sum(A::AbstractMatrix, Q::AbstractMatrix, j::Integer, p)
+    return column_power_sum(A, j, p) + column_power_sum(Q, j, p)
+end
+
 function identity_preconditioner(cons::ConstraintMatrix{T}) where {T}
     (; A) = cons
     d1 = ones(T, size(A, 1))
@@ -151,7 +162,7 @@ Diagonal preconditioner from Lemma 2 of:
 > on Computer Vision. IEEE, 2011. doi:10.1109/ICCV.2011.6126441
 
 For matrix `K` of size m×n and `α ∈ [0, 2]`, the variable-side factor for
-column `j` is `(sum_i |K[i,j]|^α)^{-1/2}` and the constraint-side factor for
+column `j` is `(sum_i |K[i,j]|^α)^{-1/2}` (over the column of `[Q; A]` for a quadratic program) and the constraint-side factor for
 row `i` is `(sum_j |K[i,j]|^(2-α))^{-1/2}`. With these, `‖Σ^{1/2} K T^{1/2}‖ ≤ 1`
 where `T, Σ` are the diagonals built from those factors.
 
@@ -161,10 +172,12 @@ of Applegate et al. - this is the opposite of the convention used in
 the original Pock-Chambolle paper referenced above.
 """
 function chambolle_pock_preconditioner(cons::ConstraintMatrix{T}; alpha::Number) where {T}
-    (; A, At) = cons
+    (; A, At, Q) = cons
     α_row = T(2 - alpha)
     α_col = T(alpha)
-    col_sums = map(j -> column_power_sum(A, j, α_col), axes(A, 2))
+    # as in `diagonal_norm_preconditioner`, the columns of `Q` are scaled by the same factors as
+    # those of `A`, so they count towards the column sums
+    col_sums = map(j -> stacked_column_power_sum(A, Q, j, α_col), axes(A, 2))
     row_sums = map(i -> column_power_sum(At, i, α_row), axes(A, 1))
     d1 = map(s -> iszero(s) ? one(T) : inv(sqrt(s)), row_sums)
     d2 = map(s -> iszero(s) ? one(T) : inv(sqrt(s)), col_sums)
