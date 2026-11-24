@@ -381,21 +381,21 @@ const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
 end
 
 @testset verbose = true "Termination norm" begin
-    function norm_hlo(termination_norm)
-        algo = PDLP(
+    # the norm is a type parameter, so a loop compiled for one norm refuses another
+    algo2, algoinf = (
+        PDLP(
             Float64, Int64, Matrix;
             backend = nothing, termination_norm, max_kkt_passes = 100, check_every = 50,
             record_error_history = false,
-        )
-        milp, sol = preprocess(milp0, sol0, algo)
-        state = initialize(milp, sol, algo; starting_time = time())
-        milp_r = to_rarray(milp; track_numbers = true)
-        state_r = to_rarray(state; track_numbers = true)
-        algo_r = to_rarray(algo; track_numbers = true)
-        return repr(@code_hlo CoolPDLP.solve!(state_r, milp_r, algo_r))
-    end
-    # the norm is baked into the compiled program, so changing it compiles a different one
-    @test norm_hlo(Val(2)) != norm_hlo(Val(Inf))
+        ) for termination_norm in (Val(2), Val(Inf))
+    )
+    milp, sol = preprocess(milp0, sol0, algo2)
+    state_r = to_rarray(initialize(milp, sol, algo2; starting_time = time()); track_numbers = true)
+    milp_r = to_rarray(milp; track_numbers = true)
+    solve_r! = @compile CoolPDLP.solve!(state_r, milp_r, to_rarray(algo2; track_numbers = true))
+    @test_throws Reactant.Compiler.MisMatchedThunkTypeError solve_r!(
+        state_r, milp_r, to_rarray(algoinf; track_numbers = true)
+    )
     @testset "Compiled L∞ solve agrees with the plain one" begin
         algo = PDLP(
             Float64, Int64, Matrix;
