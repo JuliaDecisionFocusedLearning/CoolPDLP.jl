@@ -277,14 +277,16 @@ function top_singular_value!(b, K, Kᵀ, k::Integer)
     β = R(L[k + 1, k])
     all(isfinite, d) && all(isfinite, e) && isfinite(β) ||
         throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
-    F = svd(Bidiagonal(d, e, :L))
+    # the `k × k` SVD is tiny, so LAPACK in `Float64` suffices for any input precision
+    # (and avoids GenericLinearAlgebra, which pirates LinearAlgebra's `svd!` on generic types)
+    F = svd(Bidiagonal(Float64.(d), Float64.(e), :L))
     i = argmax(F.S)
     # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet `(σ, p, q)`
     # of `Bₖ` leaves the residual `β |qₖ|`, and `Uₖ p` is its left Ritz vector
     p = allocate(get_backend(b), eltype(b), k)
     copyto!(p, convert(Vector{eltype(b)}, F.U[:, i]))
     mul!(b, view(U, :, 1:k), p)
-    return F.S[i], β * abs(F.V[k, i])
+    return R(F.S[i]), β * R(abs(F.V[k, i]))
 end
 
 """
@@ -297,6 +299,9 @@ The estimate `σ` is accepted once `K` provably has a singular value within `rel
 it, and then lies below `‖K‖₂` by at most about that much when `σ` approximates the top of the
 spectrum. `maxiter` should be chosen independently of the size of `K` (see #95). The iteration
 restarts every [`SPECTRAL_NORM_KRYLOV_DIM`](@ref) steps, which bounds its memory independently of `maxiter`.
+
+In `Float16`, `K` must be well scaled: norms above about `256 / √n` overflow during the
+iteration, which the preconditioning of the solver provides.
 
 This never throws on non-convergence: it then warns (at every call, since each one is a
 different matrix that gets a conservative step size) and returns the minimum between the

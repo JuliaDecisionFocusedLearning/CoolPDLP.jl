@@ -6,7 +6,6 @@ using Atomix: Atomix
 using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
-using GenericLinearAlgebra: GenericLinearAlgebra  # `svd` of a `Bidiagonal` in any precision
 using Krylov: golub_kahan
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI

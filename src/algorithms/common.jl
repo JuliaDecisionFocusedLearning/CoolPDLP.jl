@@ -114,7 +114,7 @@ function Algorithm{A}(
         throw(ArgumentError("invnorm_scaling = $invnorm_scaling must be positive"))
     invnorm_scaling * (1 + spectral_norm_reltol) < 1 || throw(
         ArgumentError(
-            "invnorm_scaling * (1 + spectral_norm_reltol) = $(invnorm_scaling * (1 + spectral_norm_reltol)) must be < 1: the accepted spectral norm estimate σ only guarantees ‖A‖ ≤ σ (1 + spectral_norm_reltol), so the step size invnorm_scaling / σ could exceed the PDHG stability limit 1 / ‖A‖",
+            "invnorm_scaling * (1 + spectral_norm_reltol) = $(invnorm_scaling * (1 + spectral_norm_reltol)) must be < 1: the accepted spectral norm estimate σ is within spectral_norm_reltol · σ of some singular value of A, so when σ approximates the top one ‖A‖ ≤ σ (1 + spectral_norm_reltol) only approximately, so the step size invnorm_scaling / σ could exceed the PDHG stability limit 1 / ‖A‖",
         ),
     )
     step_size = StepSizeParameters(;
