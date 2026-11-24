@@ -184,9 +184,9 @@ function initialize(
     halpern = HalpernStats(sol, ω)
     # the first check restarts no matter what, as in HPR-LP: with no reference residual (`Inf`),
     # the sufficient decay criterion always holds
-    halpern.fpe_pending = broadcast!!(zero, halpern.fpe_pending, halpern.fpe_pending)
+    halpern.fpe_pending = batched_apply!!(zero, halpern.fpe_pending, halpern.fpe_pending)
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp)
+    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
     tol = algo.termination.infeasibility_tol
     stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2)
     return HPRLPState(;
@@ -317,7 +317,7 @@ function step!(
         state.stats.extra_products += 1
     end
     γ = algo.step_size.reflection_coefficient
-    w = broadcast!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
+    w = batched_apply!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
     halpern_combine!(z.x, w, γ, sol.x, z_anchor.x, active)
     halpern_combine!(z.y, w, γ, sol.y, z_anchor.y, active)
     halpern.inner = masked_apply!!(k -> k + 1, halpern.inner, active, halpern.inner)
@@ -468,12 +468,13 @@ function restart!(state::HPRLPState{T}, algo::Algorithm{:HPRLP}) where {T}
 
     batched_select!(z_anchor, restart, sol)
     batched_select!(z, restart, sol)
-    halpern.inner = broadcast!!(halpern.inner, restart, halpern.inner) do r, k
+    halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k
         ifelse(r, zero(k), k)
     end
-    halpern.restarts = broadcast!!(halpern.restarts, restart, halpern.restarts) do r, n
+    halpern.restarts = batched_apply!!(halpern.restarts, restart, halpern.restarts) do r, n
         ifelse(r, n + 1, n)
     end
-    halpern.fpe_pending = broadcast!!(identity, halpern.fpe_pending, restart)
+    # a new value, not `restart` itself (see `restart!` of HPDLP)
+    halpern.fpe_pending = batched_apply!!(r -> r & true, halpern.fpe_pending, restart)
     return nothing
 end
