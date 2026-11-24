@@ -239,8 +239,8 @@ end
     sol = PrimalDualSolution(randn(nbvar(milp)), randn(nbcons(milp)))
     scratch = CoolPDLP.Scratch(sol)
     (; c, A, lc, uc) = milp
-    err2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, Val(2))
-    errinf = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, Val(Inf))
+    err2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, L2Norm())
+    errinf = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, LInfNorm())
     Ax = A * sol.x
     @test err2.primal ≈ norm(Ax - clamp.(Ax, lc, uc))
     @test errinf.primal ≈ norm(Ax - clamp.(Ax, lc, uc), Inf)
@@ -253,21 +253,21 @@ end
     # batched columns are normed one by one
     solb = PrimalDualSolution(stack([sol.x, 2 .* sol.x]), stack([sol.y, 2 .* sol.y]))
     milpb = MILP(; c = stack([c, c]), milp.lv, milp.uv, A, lc, uc)
-    errb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(solb), CoolPDLP.Scratch(solb), solb, milpb, Val(Inf))
+    errb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(solb), CoolPDLP.Scratch(solb), solb, milpb, LInfNorm())
     @test errb.primal[1] ≈ errinf.primal
     @test errb.dual[1] ≈ errinf.dual
-    @test CoolPDLP.colnorm!!(zeros(2), zeros(0, 2), Val(Inf)) == [0.0, 0.0]
+    @test CoolPDLP.colnorm!!(zeros(2), zeros(0, 2), LInfNorm()) == [0.0, 0.0]
 
     netlib = MILP(read_instance(Netlib, "afiro")[1])
     @testset "$alg" for alg in (PDHG, PDLP)
-        sol, stats = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = Val(Inf)))
+        sol, stats = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = LInfNorm()))
         @test termination_status(stats) == MOI.OPTIMAL
         # the reported errors, which stopped the solve, are the L∞ errors of the solution
-        err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, Val(Inf))
+        err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, LInfNorm())
         @test err.primal ≈ stats.err.primal
         @test err.dual ≈ stats.err.dual
         @test err.primal <= 1.0e-4 * err.primal_scale
     end
 
-    @test_throws MethodError PDLP(; termination_norm = Val(1))
+    @test_throws MethodError PDLP(; termination_norm = 1)
 end

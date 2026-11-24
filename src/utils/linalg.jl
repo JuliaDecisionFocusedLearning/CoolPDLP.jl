@@ -75,14 +75,28 @@ function colnorm!!(dest::AbstractVector, m::AbstractMatrix)
 end
 
 """
-    colnorm!!(dest, x, norm)
+    TerminationNorm
 
-Compute the norm `Val(2)` or `Val(Inf)` of `x`, or one norm per column if `x` is batched, into
+Norm in which the termination check measures the KKT errors: [`L2Norm`](@ref) (the default, as
+in PDLP) or [`LInfNorm`](@ref).
+"""
+abstract type TerminationNorm end
+
+"Euclidean norm, see [`TerminationNorm`](@ref)."
+struct L2Norm <: TerminationNorm end
+
+"Largest absolute value, see [`TerminationNorm`](@ref)."
+struct LInfNorm <: TerminationNorm end
+
+"""
+    colnorm!!(dest, x, norm::TerminationNorm)
+
+Compute the norm `norm` of `x`, or one norm per column if `x` is batched, into
 `dest`. An empty column has norm zero.
 """
-colnorm!!(dest, x::AbstractVecOrMat, ::Val{2}) = colnorm!!(dest, x)
-colnorm!!(::Number, v::AbstractVector{T}, ::Val{Inf}) where {T} = mapreduce(abs, max, v; init = zero(T))
-function colnorm!!(dest::AbstractVector, m::AbstractMatrix, ::Val{Inf})
+colnorm!!(dest, x::AbstractVecOrMat, ::L2Norm) = colnorm!!(dest, x)
+colnorm!!(::Number, v::AbstractVector{T}, ::LInfNorm) where {T} = mapreduce(abs, max, v; init = zero(T))
+function colnorm!!(dest::AbstractVector, m::AbstractMatrix, ::LInfNorm)
     # the absolute values are nonnegative, so zero is a neutral starting point for `max`
     fill!(dest, zero(eltype(dest)))
     Base.mapreducedim!(abs, max, transpose(dest), m)

@@ -133,15 +133,14 @@ end
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
-The residuals and the norms of the bounds and the objective are measured in the norm `norm`:
-`Val(2)` (Euclidean, as in PDLP) or `Val(Inf)` (largest absolute value).
+The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
 """
 function kkt_errors!(
         err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
-        norm::Val,
+        norm::TerminationNorm,
     ) where {T}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
