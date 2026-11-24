@@ -318,3 +318,15 @@ end
         @test CoolPDLP.spectral_norm_upper_bound(m.A, m.At) ≈ bound rtol = 1.0e-5
     end
 end
+
+@testset "Spectral norm in BigFloat with GenericLinearAlgebra" begin
+    # loaded last in this file, since it extends LinearAlgebra for generic types
+    @eval using GenericLinearAlgebra: GenericLinearAlgebra
+    @test CoolPDLP.has_generic_linear_algebra()
+    rng = Xoshiro(6)
+    A = convert(SparseMatrixCSC{BigFloat, Int}, sprandn(rng, 30, 40, 0.2))
+    ref = maximum(GenericLinearAlgebra.svdvals!(Matrix(A)))
+    s = CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
+    @test s isa BigFloat
+    @test s ≈ ref rtol = 1.0e-35
+end

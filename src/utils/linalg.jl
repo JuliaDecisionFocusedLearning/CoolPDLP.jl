@@ -262,6 +262,14 @@ memory to `SPECTRAL_NORM_KRYLOV_DIM + 1` vectors of each size of `K`.
 const SPECTRAL_NORM_KRYLOV_DIM = 32
 
 """
+    has_generic_linear_algebra()
+
+Whether GenericLinearAlgebra is loaded, which provides the SVD of a `Bidiagonal` in any precision.
+"""
+has_generic_linear_algebra() =
+    !isnothing(Base.get_extension(@__MODULE__, :CoolPDLPGenericLinearAlgebraExt))
+
+"""
     top_singular_value!(b, K, Kᵀ, k)
 
 Run `k` steps of Golub–Kahan bidiagonalization of `K` from `b`, and return the largest
@@ -277,9 +285,14 @@ function top_singular_value!(b, K, Kᵀ, k::Integer)
     β = R(L[k + 1, k])
     all(isfinite, d) && all(isfinite, e) && isfinite(β) ||
         throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
-    # the `k × k` SVD is tiny, so LAPACK in `Float64` suffices for any input precision
-    # (and avoids GenericLinearAlgebra, which pirates LinearAlgebra's `svd!` on generic types)
-    F = svd(Bidiagonal(Float64.(d), Float64.(e), :L))
+    # The `k × k` SVD is tiny: LAPACK in `Float64` suffices for other precisions. We don't
+    # depend on GenericLinearAlgebra, which pirates LinearAlgebra's `svd!` on generic types,
+    # but use it in the precision of `K` if the user loaded it.
+    F = if R <: LinearAlgebra.BlasFloat || has_generic_linear_algebra()
+        svd(Bidiagonal(d, e, :L))
+    else
+        svd(Bidiagonal(Float64.(d), Float64.(e), :L))
+    end
     i = argmax(F.S)
     # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet `(σ, p, q)`
     # of `Bₖ` leaves the residual `β |qₖ|`, and `Uₖ p` is its left Ritz vector
@@ -302,6 +315,10 @@ restarts every [`SPECTRAL_NORM_KRYLOV_DIM`](@ref) steps, which bounds its memory
 
 In `Float16`, `K` must be well scaled: norms above about `256 / √n` overflow during the
 iteration, which the preconditioning of the solver provides.
+
+Outside `Float32` and `Float64`, the small bidiagonal SVD of each restart runs in `Float64`,
+which is plenty for the tolerances of a step size but overflows for entries beyond its range.
+Load GenericLinearAlgebra to run it in the precision of `K` instead.
 
 This never throws on non-convergence: it then warns (at every call, since each one is a
 different matrix that gets a conservative step size) and returns the minimum between the
