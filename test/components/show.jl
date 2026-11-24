@@ -27,7 +27,7 @@ end
 
 @testset "KKT errors" begin
     sol = PrimalDualSolution(milp)
-    err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
+    err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, L2Norm())
     str = sprint(show, err)
     @test occursin("KKT relative errors", str)
     @test occursin("primal", str) && occursin("dual", str) && occursin("gap", str)
