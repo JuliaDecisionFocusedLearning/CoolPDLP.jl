@@ -31,6 +31,8 @@ end
     A = sprandn(Xoshiro(2), 30, 40, 0.3)
     λ = hprlp_power_iteration(A, sparse(A'))
     @test λ ≈ opnorm(Matrix(A))^2 rtol = 1.0e-3
+    # stopped before the first check, it returns the initial estimate
+    @test hprlp_power_iteration(A, sparse(A'); maxiter = 3) == 1
 end
 
 @testset "Sigma update" begin
