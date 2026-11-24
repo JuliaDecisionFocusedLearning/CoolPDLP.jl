@@ -6,7 +6,6 @@ using Atomix: Atomix
 using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
-using GenericLinearAlgebra: GenericLinearAlgebra  # `svd` of a `Bidiagonal` in any precision
 using Krylov: golub_kahan
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
@@ -16,10 +15,10 @@ using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
-using LinearAlgebra: LinearAlgebra, Bidiagonal, Diagonal, axpby!, diag, dot, mul!, norm, svd
+using LinearAlgebra: LinearAlgebra, Bidiagonal, Diagonal, axpby!, diag, dot, mul!, norm
 using Logging: NullLogger, with_logger
 using Printf: @sprintf
-using Random: Random, randn!
+using Random: Random
 using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
 include("public.jl")
@@ -62,6 +61,11 @@ include("public.jl")
 end
 
 include("MOI_wrapper.jl")
+
+function __init__()
+    Base.Experimental.register_error_hint(svd_error_hint, MethodError)
+    return nothing
+end
 
 @public sametype_transpose
 

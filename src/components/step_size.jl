@@ -6,7 +6,7 @@
 $(TYPEDFIELDS)
 """
 @kwdef struct StepSizeParameters{T <: Number, I <: Number}
-    "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size; must be positive with `invnorm_scaling * (1 + spectral_norm_reltol) < 1`"
+    "scaling of the inverse spectral norm of `A` when defining the non-adaptive step size"
     invnorm_scaling::T
     "primal weight update damping"
     primal_weight_damping::T

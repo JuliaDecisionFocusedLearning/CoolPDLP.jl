@@ -74,11 +74,11 @@ function sametype_transpose(A::GPUSparseMatrixCSR)
 end
 
 @kernel function spmv_csr!(
-        c::DenseVector{T},
+        c::AbstractVector{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseVector{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -92,12 +92,12 @@ end
 end
 
 function sparse_mul!(
-        c::V,
-        A::GPUSparseMatrixCSR{T, Ti, V},
-        b::V,
+        c::AbstractVector{T},
+        A::GPUSparseMatrixCSR{T, Ti},
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
+    ) where {T <: Number, Ti}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_csr!(backend)

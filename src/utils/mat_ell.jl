@@ -88,10 +88,10 @@ function sametype_transpose(A::GPUSparseMatrixELL)
 end
 
 @kernel function spmv_ell!(
-        c::DenseVector{T},
+        c::AbstractVector{T},
         A_colval::AbstractMatrix{Ti},
         A_nzval::AbstractMatrix{T},
-        b::DenseVector{T},
+        b::AbstractVector{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -107,12 +107,12 @@ end
 end
 
 function sparse_mul!(
-        c::V,
+        c::AbstractVector{T},
         A::GPUSparseMatrixELL{T, Ti},
-        b::V,
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
+    ) where {T <: Number, Ti}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
