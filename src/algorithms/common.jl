@@ -392,6 +392,14 @@ end
     solve!(state, milp, algo)
 
 Modify `state` in-place to solve the continuous relaxation of `milp` using the algorithm defined by `algo`.
+
+Unlike [`solve`](@ref), `solve!` does not look for crossed bounds (some `l > u`, see
+[`crossed_bounds`](@ref)): that check reads the bounds on the host, so it cannot run inside a
+loop compiled by Reactant. An instance with crossed bounds has no ray certificate, so `solve!`
+alone runs it to an iteration or time limit. When calling `solve!` directly (e.g. to compile it),
+call `CoolPDLP.try_solve_crossed_bounds!(state, milp)` first, outside the compiled function, and
+skip `solve!` when it returns `true`: it then marks the state `MOI.INFEASIBLE`, and otherwise
+freezes the instances of a batch which have crossed bounds.
 """
 function solve! end
 
