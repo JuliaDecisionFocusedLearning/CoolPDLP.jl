@@ -56,13 +56,13 @@ end
     end
 
     @testset "KKT errors per instance" begin
-        err_batch = kkt_errors!(KKTErrors(sol_batch), Scratch(sol_batch), sol_batch, milp_batch)
+        err_batch = kkt_errors!(KKTErrors(sol_batch), Scratch(sol_batch), sol_batch, milp_batch, L2Norm())
         @test err_batch.primal isa Vector{Float64}
         @test length(err_batch.primal) == NBATCH
         # guard against a vacuous comparison: the instances must not all be the same problem
         @test allunique(err_batch.primal)
         for i in 1:NBATCH
-            err = kkt_errors!(KKTErrors(sols[i]), Scratch(sols[i]), sols[i], milps[i])
+            err = kkt_errors!(KKTErrors(sols[i]), Scratch(sols[i]), sols[i], milps[i], L2Norm())
             @test instance(err_batch, i) ≈ err
             @test relative(err_batch)[i] ≈ relative(err)
         end
@@ -159,7 +159,7 @@ end
     algo = PDLP()
     @testset "batch size $(nbinstances(milp))" for milp in (milps[1], milp_batch)
         state = initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
-        kkt_errors!(state.stats.err, state.scratch, state.sol, milp)
+        kkt_errors!(state.stats.err, state.scratch, state.sol, milp, L2Norm())
         values = prog_showvalues(state)
         @test map(first, values) == ("primal", "dual", "gap")
         for (_, value) in values
