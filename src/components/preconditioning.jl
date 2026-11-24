@@ -350,7 +350,7 @@ and `u²` over the finite bounds, counting an equality row once (the cuPDLPx def
 
 Each factor is a vector with one value per instance when the quantity it is computed from is
 batched, and a single number shared by the whole batch otherwise. With `enabled = false` they
-are ones of the same shapes, so that the rescaled problem has the same type either way.
+are ones of the same shapes (`preprocess` then skips the rescaling altogether).
 """
 function bound_objective_factors(
         milp::MILP{T}; enabled::Bool = true, sum_squares::Bool = false

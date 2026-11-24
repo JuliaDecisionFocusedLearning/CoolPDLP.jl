@@ -213,7 +213,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 
 Return a tuple `(milp, sol)`.
 """
-function preprocess(
+@stable default_union_limit = 2 function preprocess(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
@@ -222,18 +222,26 @@ function preprocess(
     prec = pdlp_preconditioner(milp_init_cpu, algo.preconditioning)
     milp_cpu = precondition(milp_init_cpu, prec)
     sol_cpu = precondition(sol_init_cpu, prec)
-    # always applied, with unit factors when disabled, so that the problem type does not
-    # depend on the value of the option
-    enabled = algo.preconditioning.bound_objective_rescaling
-    sum_squares = algo.preconditioning.bound_norm_sum_squares
-    β, γ = bound_objective_factors(milp_cpu; enabled, sum_squares)
-    milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
-    sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
+    # when disabled, the problem is left untouched: unit factors would still turn shared
+    # variable bounds into one column per instance when the constraint bounds are batched.
+    # The two problem types differ, hence a small union, split by the callers
+    if algo.preconditioning.bound_objective_rescaling
+        sum_squares = algo.preconditioning.bound_norm_sum_squares
+        β, γ = bound_objective_factors(milp_cpu; sum_squares)
+        return convert_problem(
+            rescale_bounds_objective(milp_cpu, β, γ),
+            rescale_bounds_objective(sol_cpu, β, γ),
+            algo,
+        )
+    else
+        return convert_problem(milp_cpu, sol_cpu, algo)
+    end
+end
 
-    # moving to GPU
+# moving to GPU
+function convert_problem(milp_cpu::MILP, sol_cpu::PrimalDualSolution, algo::Algorithm)
     milp = perform_conversion(milp_cpu, algo.conversion)
     sol = perform_conversion(sol_cpu, algo.conversion)
-
     return milp, sol
 end
 

@@ -122,6 +122,19 @@ end
     end
 end
 
+@testset "Disabled rescaling leaves shared variable bounds untouched" begin
+    milp, sol = CoolPDLP.random_milp_and_sol(40, 60, 0.3)
+    (; c, c0, lv, uv, A, At, lc, uc) = milp
+    factors = [1.0, 10.0, 1000.0]
+    milp_batch = MILP(; c = c .* factors', c0, lv, uv, A, At, lc = lc .* factors', uc = uc .* factors')
+    sol_batch = PrimalDualSolution(repeat(sol.x, 1, 3), repeat(sol.y, 1, 3))
+    milp_off, _ = CoolPDLP.preprocess(milp_batch, sol_batch, PDLP(; bound_objective_rescaling = false))
+    @test milp_off.lv isa Vector && milp_off.uv isa Vector
+    @test milp_off.bound_scale == 1 && milp_off.obj_scale == 1
+    milp_on, _ = CoolPDLP.preprocess(milp_batch, sol_batch, PDLP(; bound_objective_rescaling = true))
+    @test milp_on.lv isa Matrix && size(milp_on.lv) == (size(lv, 1), 3)
+end
+
 @testset "Solve with the new stages" begin
     for name in ["afiro", "sc50a"]
         qps, path = read_instance(Netlib, name)
