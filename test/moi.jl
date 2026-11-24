@@ -140,6 +140,9 @@ end
     @test JuMP.get_attribute(model, "termination_norm") == "Linf"
     @test 6 * JuMP.value(x) + 8 * JuMP.value(y) >= 100 - 1.0e-4
 
+    JuMP.set_attribute(model, "termination_norm", L2Norm())
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == MOI.OPTIMAL
     JuMP.set_attribute(model, "termination_norm", "L1")
     @test_throws ArgumentError JuMP.optimize!(model)
 end
