@@ -171,6 +171,14 @@ LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = m
 bidiagonal_svd(d, e) = LinearAlgebra.svd!(Bidiagonal(d, e, :L))
 bidiagonal_svd(d::Vector{Float16}, e::Vector{Float16}) = bidiagonal_svd(Float32.(d), Float32.(e))
 
+# registered in `__init__`: suggest GenericLinearAlgebra when `bidiagonal_svd` lacks a method
+function svd_error_hint(io::IO, exc::MethodError, argtypes, kwargs)
+    if exc.f === LinearAlgebra.svd! && length(argtypes) == 1 && argtypes[1] <: Bidiagonal
+        print(io, "\nCoolPDLP's `spectral_norm` needs this SVD in $(eltype(argtypes[1])): load GenericLinearAlgebra to provide it.")
+    end
+    return nothing
+end
+
 """
     spectral_norm(K, Kᵀ; reltol, maxiter)
 

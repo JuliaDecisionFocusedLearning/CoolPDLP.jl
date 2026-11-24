@@ -156,7 +156,13 @@ end
     @test s ≈ ref rtol = 1.0e-2
     # BigFloat needs GenericLinearAlgebra: loaded last, since it extends LinearAlgebra
     A = convert(SparseMatrixCSC{BigFloat, Int}, S)
-    @test_throws MethodError CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-30, maxiter = 1000)
+    err = try
+        CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-30, maxiter = 1000)
+    catch e
+        e
+    end
+    @test err isa MethodError
+    @test occursin("load GenericLinearAlgebra", sprint(showerror, err))
     @eval using GenericLinearAlgebra: GenericLinearAlgebra
     s = Base.invokelatest(CoolPDLP.spectral_norm, A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
     @test s isa BigFloat
