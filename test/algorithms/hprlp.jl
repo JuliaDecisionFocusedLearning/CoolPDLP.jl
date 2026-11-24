@@ -129,6 +129,14 @@ end
     @test isnothing(stats.ray)
 end
 
+@testset "PDQP relative KKT error with the z̄ of the splitting" begin
+    # `kkt_errors!` gets HPRLP's `z̄`, which only the default definition accepted at first
+    milp = MILP(read_instance(Netlib, "afiro")[1])
+    sol, stats = solve(milp, HPRLP(; relative_kkt = Val(:pdqp), termination_reltol = 1.0e-6))
+    @test termination_status(stats) == MOI.OPTIMAL
+    @test objective_value(sol.x, milp) ≈ -464.75314286 rtol = 1.0e-5
+end
+
 @testset "HPRLP σ stays finite on an exactly converged instance" begin
     # `fpe = best_fpe = 0` used to give `exp(-0.05 * 0 / 0) = NaN`
     σ = CoolPDLP.hprlp_sigma(true, 1.0, 2.0, 1.0, 0.5, 0.0, 0.0, 0.7, 1.0e-3, 1.0e-3, 1.0e-3)

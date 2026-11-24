@@ -15,7 +15,7 @@ using Reactant: Reactant, @reactant_overlay
 # number tracking would try (and fail) to turn into traced numbers.
 const Structural = Union{
     CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters, CoolPDLP.ZeroMatrix,
-    CoolPDLP.PreconditioningParameters, CoolPDLP.ConversionParameters,
+    CoolPDLP.PreconditioningParameters, CoolPDLP.ConversionParameters, CoolPDLP.HPRQPSplitting,
 }
 
 function Reactant.traced_type_inner(

@@ -42,20 +42,22 @@ const DEFAULT_INFEASIBILITY_TOL = 1.0e-8
 
 $(TYPEDFIELDS)
 """
-@kwdef struct TerminationParameters{T <: Number, I <: Number, E <: Union{Nothing, Number}}
+@kwdef struct TerminationParameters{T <: Number, I <: Number, DS <: Val, E <: Union{Nothing, Number}}
     "relative tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
     termination_reltol::T
     "absolute tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
     termination_abstol::T = termination_reltol
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
+    "definition of the relative KKT error: `Val(:pdlp)` (the norm `termination_norm`, PDLP scales) or `Val(:pdqp)` (infinity norms and max-type scales of PDQP and HPR-QP, whatever `termination_norm`), see [`kkt_errors!`](@ref)"
+    relative_kkt::DS = Val(:pdlp)
     "relative tolerance for infeasibility certificates, see [`infeasibility_check!`](@ref); `nothing` disables the detection altogether (no ray buffers, no extra KKT passes), which is decided by the type and therefore at trace time under Reactant"
     infeasibility_tol::E = oftype(termination_reltol, DEFAULT_INFEASIBILITY_TOL)
 end
 
 function Base.show(io::IO, params::TerminationParameters)
-    (; termination_reltol, termination_abstol, max_kkt_passes, infeasibility_tol) = params
-    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, max_kkt_passes=$max_kkt_passes, infeasibility_tol=$infeasibility_tol")
+    (; termination_reltol, termination_abstol, max_kkt_passes, relative_kkt, infeasibility_tol) = params
+    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, max_kkt_passes=$max_kkt_passes, relative_kkt=$relative_kkt, infeasibility_tol=$infeasibility_tol")
 end
 
 """
@@ -147,6 +149,14 @@ other product (initial KKT errors, termination and restart checks). It is compar
 algorithms, whereas `kkt_passes` leaves out the work that differs between them.
 """
 matrix_products(stats::ConvergenceStats) = 2 * (stats.kkt_passes + stats.ray_passes) + stats.extra_products
+
+"""
+    kkt_products(relative_kkt)
+
+Products by `A` or `Aᵀ` of one evaluation of [`kkt_errors!`](@ref): two, or four for the PDQP form.
+"""
+kkt_products(::Val) = 2
+kkt_products(::Val{:pdqp}) = 4
 
 """
     batched_tracker(like, val)

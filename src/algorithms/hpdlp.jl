@@ -169,12 +169,12 @@ function initialize(
     halpern = HalpernStats(sol, ω)
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
+    kkt_errors!(err, scratch, sol, milp, algo.termination.relative_kkt, algo.generic.termination_norm)
     tol = algo.termination.infeasibility_tol
     # the initial KKT errors cost one product by `A` and one by `Aᵀ`
     stats = ConvergenceStats(
         err; ray = ray_buffer(sol, tol), starting_time,
-        extra_products = 2,
+        extra_products = kkt_products(algo.termination.relative_kkt),
     )
     infeas = InfeasibilityWorkspace(sol, tol)
     return HPDLPState(; sol, z, z_anchor, step_sizes, scratch, halpern, stats, infeas)

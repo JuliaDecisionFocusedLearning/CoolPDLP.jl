@@ -93,12 +93,13 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, L2Norm())
+    kkt_errors!(err, scratch, sol, milp, algo.termination.relative_kkt, L2Norm())
     # Restarts stay in L2 whatever `termination_norm` is: PDLP's decay factors in
     # `should_restart` assume it, and the stopping test alone must not change the iterates.
     restart_stats.err_restart = copy(err)
     (; termination_norm) = algo.generic
-    termination_norm isa L2Norm || kkt_errors!(err, scratch, sol, milp, termination_norm)
+    termination_norm isa L2Norm ||
+        kkt_errors!(err, scratch, sol, milp, algo.termination.relative_kkt, termination_norm)
     tol = algo.termination.infeasibility_tol
     # each evaluation of the initial KKT errors costs one product by `A` and one by `Aᵀ`
     extra_products = termination_norm isa L2Norm ? 2 : 4
@@ -207,9 +208,10 @@ function restart_check!(
     ) = state
     (; ω) = step_sizes
     (; err_current, err_avg, err_last, err_avg_last, err_restart) = restart_stats
+    rk = algo.termination.relative_kkt
 
     restart_stats.abs_candidate, abs1, abs2 = best_error!!(
-        restart_stats.abs_candidate, err_current, err_avg, scratch, sol, sol_avg, milp, ω,
+        restart_stats.abs_candidate, err_current, err_avg, scratch, sol, sol_avg, milp, ω, rk,
     )
     # a frozen instance never moves to its average
     restart_stats.restart_from_avg = mask_and!!(
@@ -217,11 +219,11 @@ function restart_check!(
     )
     restart_stats.abs_candidate_last, _, _ = best_error!!(
         restart_stats.abs_candidate_last, err_last, err_avg_last,
-        scratch, sol_last, sol_avg_last, milp, ω,
+        scratch, sol_last, sol_avg_last, milp, ω, rk,
     )
 
     # `err_restart` stays valid between restarts, only the primal weight `ω` moves
-    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
+    restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω, rk)
     # the four KKT errors of `best_error!!`, two products each
     state.stats.extra_products += 8
 
@@ -229,22 +231,22 @@ function restart_check!(
 end
 
 """
-    best_error!!(abs_err, err1, err2, scratch, sol1, sol2, milp, ω)
+    best_error!!(abs_err, err1, err2, scratch, sol1, sol2, milp, ω, relative_kkt)
 
-Fill `err1` and `err2` with the KKT errors of `sol1` and `sol2`, then keep the smaller of their absolute errors, column by column, in `abs_err`.
+Fill `err1` and `err2` with the KKT errors of `sol1` and `sol2`, then keep the smaller of their restart metrics (see [`absolute!!`](@ref)), column by column, in `abs_err`.
 
 Return `abs_err` together with both absolute errors, which live in the scratch space and stay valid only until the next call.
 """
 function best_error!!(
         abs_err::BatchedNumber, err1::KKTErrors, err2::KKTErrors,
         scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
-        milp::MILP, ω::BatchedNumber,
+        milp::MILP, ω::BatchedNumber, relative_kkt::Val,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err1, scratch, sol1, milp, L2Norm())
-    kkt_errors!(err2, scratch, sol2, milp, L2Norm())
-    abs1 = absolute!!(scratch.b1, err1, ω)
-    abs2 = absolute!!(scratch.b2, err2, ω)
+    kkt_errors!(err1, scratch, sol1, milp, relative_kkt, L2Norm())
+    kkt_errors!(err2, scratch, sol2, milp, relative_kkt, L2Norm())
+    abs1 = absolute!!(scratch.b1, err1, ω, relative_kkt)
+    abs2 = absolute!!(scratch.b2, err2, ω, relative_kkt)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2
 end
 

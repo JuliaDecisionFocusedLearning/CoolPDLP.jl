@@ -35,6 +35,7 @@ qp_algorithms(; kwargs...) = (
     PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
     PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
     HPDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
+    HPRQP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
 )
 
 @testset "Linear programs keep a ZeroMatrix" begin
@@ -121,6 +122,27 @@ end
     end
 end
 
+@testset "PDQP relative KKT error" begin
+    milp = random_qp(StableRNG(7), 10, 15)
+    sol = PrimalDualSolution(randn(StableRNG(8), 15), randn(StableRNG(9), 10))
+    err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, L2Norm())
+    err_pdqp = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, Val(:pdqp), LInfNorm())
+    (; x, y) = sol
+    (; c, Q, A, lv, uv, lc, uc) = milp
+    Ax = A * x
+    b = CoolPDLP.combine.(lc, uc)
+    r = c + Q * x - A' * y
+    z = CoolPDLP.proj_multiplier.(r, lv, uv)
+    @test err_pdqp.primal ≈ norm(Ax - clamp.(Ax, lc, uc), Inf)
+    @test err_pdqp.primal_scale ≈ 1 + max(norm(b, Inf), norm(Ax, Inf))
+    @test err_pdqp.dual ≈ norm(r - z, Inf)
+    @test err_pdqp.dual_scale ≈ 1 + max(norm(c, Inf), norm(Q * x, Inf), norm(A' * y, Inf))
+    @test err_pdqp.gap ≈ err.gap
+    @test err_pdqp.gap_scale <= err.gap_scale
+    sol_opt, stats = solve(milp, PDLP(; relative_kkt = Val(:pdqp), termination_reltol = 1.0e-6))
+    @test termination_status(stats) == MOI.OPTIMAL
+end
+
 @testset "Random convex QPs against HiGHS" begin
     rng = StableRNG(42)
     instances = [
@@ -154,6 +176,7 @@ end
         for algo in (
                 PDLP(T, Int, M; backend, termination_reltol = tol),
                 HPDLP(T, Int, M; backend, termination_reltol = tol),
+                HPRQP(T, Int, M; backend, termination_reltol = tol),
             )
             sol, stats = solve(milp, algo)
             @test termination_status(stats) == MOI.OPTIMAL
@@ -161,6 +184,25 @@ end
             @test objective_value(Array{Float64}(Array(sol.x)), milp) ≈ obj_ref rtol = 10tol
         end
     end
+end
+
+@testset "HPRQP handles a diagonal Q exactly on every format" begin
+    milp = random_qp(StableRNG(5), 10, 15)
+    diag_qp = MILP(; milp.c, Q = sparse(Diagonal(diag(milp.Q))), milp.lv, milp.uv, milp.A, milp.lc, milp.uc)
+    x = zeros(15)
+    λ = 7.0
+    @test CoolPDLP.proximal_diagonal(diag_qp.Q, λ, x) == diag(milp.Q)
+    @test CoolPDLP.proximal_diagonal(milp.Q, λ, x) == fill(λ, 15)
+    for M in (GPUSparseMatrixCSR, GPUSparseMatrixCOO, GPUSparseMatrixELL)
+        Q_M = M(diag_qp.Q)
+        @test Array(CoolPDLP.proximal_diagonal(Q_M, λ, x)) == diag(milp.Q)
+        @test Array(CoolPDLP.proximal_diagonal(M(milp.Q), λ, x)) == fill(λ, 15)
+    end
+    # the same iterates as with `SparseMatrixCSC`, hence the same number of passes
+    _, stats_csc = solve(diag_qp, HPRQP(; termination_reltol = 1.0e-6))
+    _, stats_csr = solve(diag_qp, HPRQP(Float64, Int, GPUSparseMatrixCSR; backend = JLBackend(), termination_reltol = 1.0e-6))
+    @test termination_status(stats_csc) == termination_status(stats_csr) == MOI.OPTIMAL
+    @test stats_csc.kkt_passes == stats_csr.kkt_passes
 end
 
 @testset "Batched QPs" begin
@@ -206,6 +248,7 @@ end
     @testset "$(algname(algo)) on $M" for (M, backend) in configs, algo in (
                 PDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
                 HPDLP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
+                HPRQP(Float64, Int, M; backend, termination_reltol = 1.0e-6, max_kkt_passes = 10^6, bound_objective_rescaling = true),
             )
         sol, stats = solve(batch, algo)
         @test termination_status(stats) == MOI.OPTIMAL
@@ -245,6 +288,47 @@ end
     @test !CoolPDLP.supports_quadratic(algo)
     qp = MILP(; c = [1.0], Q = sparse([1.0;;]), lv = [0.0], uv = [1.0], A = sparse([1.0;;]), lc = [0.0], uc = [1.0])
     @test_throws ArgumentError solve(qp, algo)
+end
+
+@testset "HPRQP follows HPR-QP on DUAL2" begin
+    # without HPR-QP's symmetric Gauss-Seidel correction of the dual step, the iteration
+    # oscillated on DUAL2 instead of converging in about 600 steps like HPR-QP.jl does
+    milp = MILP(read_instance(MarosMeszaros, "DUAL2")[1])
+    algo = HPRQP(; termination_reltol = 1.0e-6, relative_kkt = Val(:pdqp), max_kkt_passes = 2000)
+    sol, stats = solve(milp, algo)
+    @test termination_status(stats) == MOI.OPTIMAL
+    @test stats.kkt_passes <= 1000
+    @test objective_value(sol.x, milp) ≈ 3.37336761e-2 rtol = 1.0e-5
+end
+
+@testset "HPRQP σ models against a brute-force minimum" begin
+    grid = exp.(range(log(1.0e-6), log(1.0e6), length = 400_001))
+    brute(f) = grid[argmin(f.(grid))]
+    # scalar model (general `Q`)
+    a, b, c, d = 3.0, 0.5, 2.0, 4.0
+    @test CoolPDLP.golden_sigma(a, b, c, d) ≈ brute(s -> a * s + b / s + c * s^2 / (1 + d * s)) rtol = 1.0e-3
+    # per-coordinate model (diagonal `Q`), on the state of a diagonal QP, batched and not
+    rng = StableRNG(0)
+    n, m = 6, 3
+    Q = sparse(Diagonal(rand(rng, n) .+ 0.1))
+    A = sprandn(rng, m, n, 0.8) + sparse(I, m, n)
+    milp = MILP(; c = randn(rng, n), lv = fill(-1.0, n), uv = fill(1.0, n), A, lc = fill(-1.0, m), uc = fill(1.0, m), Q)
+    algo = HPRQP()
+    pmilp, sol = preprocess(milp, PrimalDualSolution(milp), algo)
+    state = CoolPDLP.initialize(pmilp, sol, algo; starting_time = 0.0)
+    @test state.splitting.Q_diagonal
+    aty = randn(rng, n)
+    state.buf3 .= aty
+    CoolPDLP.mul_quadratic!(state.scratch.z, pmilp.Q, state.buf3)
+    qaty = copy(state.scratch.z)
+    state.t1, state.t2 = 3.0, 0.5
+    σ = CoolPDLP.golden_sigma_diagonal!!(state)
+    f(s) = 3.0 * s + 0.5 / s + s^2 * sum(aty .* qaty ./ (1 .+ s .* state.λ_Qv))
+    @test σ ≈ brute(f) rtol = 1.0e-3
+    # a general `Q` does not take the per-coordinate model
+    milp_general = MILP(; c = milp.c, lv = milp.lv, uv = milp.uv, A, lc = milp.lc, uc = milp.uc, Q = Q + sparse([1, 2], [2, 1], [0.01, 0.01], n, n))
+    pg, sg = preprocess(milp_general, PrimalDualSolution(milp_general), algo)
+    @test !CoolPDLP.initialize(pg, sg, algo; starting_time = 0.0).splitting.Q_diagonal
 end
 
 @testset "Quadratic helpers" begin

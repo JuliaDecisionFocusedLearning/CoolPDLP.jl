@@ -304,7 +304,7 @@ end
         A = sparse([1.0 1.0; 1.0 1.0]), lc = [3.0, -Inf], uc = [Inf, 1.0],
     )
     @testset "$(typeof(algo).parameters[1])" for algo in (
-            PDHG(), PDLP(), HPDLP(),
+            PDHG(), PDLP(), HPDLP(), HPRQP(),
         )
         sol, stats = solve(unbounded_qp, algo)
         @test termination_status(stats) == MOI.DUAL_INFEASIBLE
