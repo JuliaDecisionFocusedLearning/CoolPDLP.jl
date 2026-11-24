@@ -53,7 +53,6 @@ end
         geometric_mean_iter = 0,
         curtis_reid_iter = 0,
         bound_objective_rescaling = false,
-        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -77,14 +76,8 @@ end
 
 Constructor for algorithm configs.
 
-The diagonal preconditioner applies, in this order, `curtis_reid_iter` Curtis-Reid iterations,
-`geometric_mean_iter` geometric-mean passes, `ruiz_iter` Ruiz passes and a Pock-Chambolle step
-(skipped when `chambolle_pock_alpha` is `NaN`). With `bound_objective_rescaling`, the bounds and
-the objective of the preconditioned problem are then divided by `1 + ‖b‖₂` and `1 + ‖c‖₂`
-respectively (per instance), and PDLP starts from a primal weight of one.
-`bound_norm_sum_squares` selects the cuPDLPx definition of `‖b‖` instead of the HPR-LP one (see
-[`bound_objective_factors`](@ref)). Errors and solutions are always reported for the original
-problem.
+The preconditioning stages and the bound and objective rescaling are described on the math page
+of the documentation.
 """
 function Algorithm{A}(
         # conversion
@@ -98,7 +91,6 @@ function Algorithm{A}(
         geometric_mean_iter = 0,
         curtis_reid_iter = 0,
         bound_objective_rescaling = false,
-        bound_norm_sum_squares = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -129,7 +121,6 @@ function Algorithm{A}(
         geometric_mean_iter,
         curtis_reid_iter,
         bound_objective_rescaling,
-        bound_norm_sum_squares,
     )
     step_size = StepSizeParameters(;
         invnorm_scaling = _T(invnorm_scaling),
@@ -222,26 +213,17 @@ Return a tuple `(milp, sol)`.
     prec = pdlp_preconditioner(milp_init_cpu, algo.preconditioning)
     milp_cpu = precondition(milp_init_cpu, prec)
     sol_cpu = precondition(sol_init_cpu, prec)
-    # when disabled, the problem is left untouched: unit factors would still turn shared
-    # variable bounds into one column per instance when the constraint bounds are batched.
-    # The two problem types differ, hence a small union, split by the callers
+    # per-instance factors turn shared variable bounds into batched ones, hence a small union
     if algo.preconditioning.bound_objective_rescaling
-        sum_squares = algo.preconditioning.bound_norm_sum_squares
-        β, γ = bound_objective_factors(milp_cpu; sum_squares)
-        return convert_problem(
-            rescale_bounds_objective(milp_cpu, β, γ),
-            rescale_bounds_objective(sol_cpu, β, γ),
-            algo,
-        )
-    else
-        return convert_problem(milp_cpu, sol_cpu, algo)
+        β, γ = bound_objective_factors(milp_cpu)
+        milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
+        sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
     end
-end
 
-# moving to GPU
-function convert_problem(milp_cpu::MILP, sol_cpu::PrimalDualSolution, algo::Algorithm)
+    # moving to GPU
     milp = perform_conversion(milp_cpu, algo.conversion)
     sol = perform_conversion(sol_cpu, algo.conversion)
+
     return milp, sol
 end
 
@@ -377,5 +359,7 @@ finish_progress!(prog) = finish!(prog)
 finish_progress!(::NoProgress) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
-    return unscale(state.sol, milp)
+    (; bound_scale, obj_scale) = milp
+    sol = rescale_bounds_objective(state.sol, inv.(bound_scale), inv.(obj_scale))
+    return unprecondition(sol, Preconditioner(milp))
 end

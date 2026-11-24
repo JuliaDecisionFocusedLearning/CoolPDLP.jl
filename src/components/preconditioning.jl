@@ -163,50 +163,37 @@ end
 """
     SCALING_FACTOR_BOUNDS
 
-Range `(lo, hi)` to which the factors of each geometric-mean and Curtis-Reid pass are clamped,
-that of cuPDLPx. Both ends stay finite and nonzero in `Float32`.
+Range `(lo, hi)` to which the geometric-mean and Curtis-Reid factors are clamped, as in cuPDLPx.
 """
 const SCALING_FACTOR_BOUNDS = (1.0e-20, 1.0e20)
 
 """
     geometric_mean_preconditioner(cons; iterations)
 
-Geometric-mean scaling (Tomlin, 1975), as in cuPDLPx: alternately divide every row and then
-every column by `sqrt(min * max)` of the absolute values of its nonzeros, `iterations` times.
+Geometric-mean scaling (Tomlin, 1975): alternately divide every row and then every column by
+`sqrt(min * max)` of the absolute values of its nonzeros, `iterations` times.
 """
-function geometric_mean_preconditioner(cons::ConstraintMatrix; iterations::Integer)
+function geometric_mean_preconditioner(cons::ConstraintMatrix{T}; iterations::Integer) where {T}
+    m, n = size(cons.A)
     prec = identity_preconditioner(cons)
     for _ in 1:iterations
-        prec_rows = geometric_mean_step(cons, Val(:rows))
+        d1 = geometric_mean_factors(cons.At)
+        prec_rows = Preconditioner(Diagonal(d1), Diagonal(ones(T, n)))
         cons = precondition(cons, prec_rows)
-        prec_cols = geometric_mean_step(cons, Val(:cols))
+        d2 = geometric_mean_factors(cons.A)
+        prec_cols = Preconditioner(Diagonal(ones(T, m)), Diagonal(d2))
         cons = precondition(cons, prec_cols)
         prec = prec_cols * prec_rows * prec
     end
     return prec
 end
 
-function geometric_mean_step(cons::ConstraintMatrix{T}, ::Val{side}) where {T, side}
-    (; A, At) = cons
-    if side == :rows
-        d1 = map(i -> geometric_mean_factor(At, i), axes(A, 1))
-        d2 = ones(T, size(A, 2))
-    else
-        d1 = ones(T, size(A, 1))
-        d2 = map(j -> geometric_mean_factor(A, j), axes(A, 2))
-    end
-    return Preconditioner(Diagonal(d1), Diagonal(d2))
-end
+geometric_mean_factors(A::AbstractMatrix) = map(j -> geometric_mean_factor(A, j), axes(A, 2))
 
-"""
-    geometric_mean_factor(A, j)
-
-Return `1 / sqrt(min * max)` over the finite nonzero absolute values of column `j` of `A`,
-clamped to [`SCALING_FACTOR_BOUNDS`](@ref) like cuPDLPx, or one if the column is empty.
-"""
+# `1 / sqrt(min * max)` over the finite nonzero magnitudes of column `j`, or one if there are none
 function geometric_mean_factor(A::AbstractMatrix{T}, j::Integer) where {T}
     lo, hi = T(Inf), zero(T)
-    for a in column_values(A, j)
+    for a in first(column_entries(A, j))
         v = abs(a)
         (v > 0 && isfinite(v)) || continue
         lo, hi = min(lo, v), max(hi, v)
@@ -216,18 +203,11 @@ function geometric_mean_factor(A::AbstractMatrix{T}, j::Integer) where {T}
     return clamp(inv(sqrt(lo) * sqrt(hi)), T(flo), T(fhi))
 end
 
-column_values(A::AbstractMatrix, j::Integer) = view(A, :, j)
-column_values(A::SparseMatrixCSC, j::Integer) = view(nonzeros(A), nzrange(A, j))
-
 """
     curtis_reid_preconditioner(cons; iterations)
 
-Least-squares scaling with the objective of Curtis and Reid (1972): approximately minimize
-`∑ᵢⱼ (log|aᵢⱼ| + rᵢ + sⱼ)²` over the nonzeros, by `iterations` rounds of block coordinate descent
-(exact minimization in all of `r`, then in all of `s`). This is not the conjugate-gradient
-method of Curtis and Reid, which converges faster: the descent decreases the objective at every
-round but may stop well short of its minimum on badly scaled matrices. The scaled matrix is
-`Diagonal(exp.(r)) * A * Diagonal(exp.(s))`, with factors clamped to [`SCALING_FACTOR_BOUNDS`](@ref).
+Curtis-Reid least-squares scaling by `iterations` rounds of block coordinate descent (see the
+math page of the documentation): the scaled matrix is `Diagonal(exp.(r)) * A * Diagonal(exp.(s))`.
 """
 function curtis_reid_preconditioner(cons::ConstraintMatrix{T}; iterations::Integer) where {T}
     (; A, At) = cons
@@ -248,13 +228,8 @@ function curtis_reid_preconditioner(cons::ConstraintMatrix{T}; iterations::Integ
     return Preconditioner(Diagonal(d1), Diagonal(d2))
 end
 
-"""
-    curtis_reid_mean(A, j, other)
-
-Return the mean of `-log|aᵢⱼ| - otherᵢ` over the nonzeros of column `j` of `A`, or zero if the
-column has none. Explicitly stored zeros are skipped, as in [`geometric_mean_factor`](@ref):
-their logarithm is `-Inf`, which would send the scaling factor of the column to its clamp.
-"""
+# mean of `-log|aᵢⱼ| - otherᵢ` over the finite nonzeros of column `j`, or zero if there are none.
+# Stored zeros are skipped: their `-Inf` logarithm would send the factor to its clamp
 function curtis_reid_mean(A::AbstractMatrix{T}, j::Integer, other::AbstractVector{T}) where {T}
     vals, idx = column_entries(A, j)
     acc, k = zero(T), 0
@@ -288,113 +263,55 @@ $(TYPEDFIELDS)
     chambolle_pock_alpha::T
     "iteration parameter in the Ruiz preconditioner"
     ruiz_iter::I
-    "number of geometric-mean passes, applied before Ruiz (0 to disable, cuPDLPx uses 12)"
+    "number of geometric-mean passes before Ruiz"
     geometric_mean_iter::I = 0
-    "number of rounds of Curtis-Reid least-squares scaling, by block coordinate descent, applied before Ruiz (0 to disable, HPR-LP uses 20)"
+    "number of Curtis-Reid rounds before the geometric mean"
     curtis_reid_iter::I = 0
-    "whether to rescale bounds by `1 / (1 + ‖b‖)` and the objective by `1 / (1 + ‖c‖)` at the end"
+    "whether to rescale the bounds and the objective after preconditioning"
     bound_objective_rescaling::Bool = false
-    "whether `‖b‖` in bound rescaling sums `l² + u²` over the finite bounds of each row (cuPDLPx) instead of taking the largest finite `|l|`, `|u|` per row (HPR-LP)"
-    bound_norm_sum_squares::Bool = false
 end
 
 function Base.show(io::IO, params::PreconditioningParameters)
-    (;
-        chambolle_pock_alpha, ruiz_iter, geometric_mean_iter, curtis_reid_iter,
-        bound_objective_rescaling, bound_norm_sum_squares,
-    ) = params
-    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter, geometric_mean_iter=$geometric_mean_iter, curtis_reid_iter=$curtis_reid_iter, bound_objective_rescaling=$bound_objective_rescaling, bound_norm_sum_squares=$bound_norm_sum_squares")
+    (; chambolle_pock_alpha, ruiz_iter, geometric_mean_iter, curtis_reid_iter, bound_objective_rescaling) = params
+    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter, geometric_mean_iter=$geometric_mean_iter, curtis_reid_iter=$curtis_reid_iter, bound_objective_rescaling=$bound_objective_rescaling")
 end
 
-"""
-    pdlp_preconditioner(milp, params)
-
-Build the diagonal preconditioner: Curtis-Reid, then geometric mean, then Ruiz, then Pock-Chambolle
-(each stage computed on the matrix scaled by the previous ones).
-"""
 function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
     (; A, At) = milp
     (; chambolle_pock_alpha, ruiz_iter, geometric_mean_iter, curtis_reid_iter) = params
     cons = ConstraintMatrix(A, At)
-    prec = identity_preconditioner(cons)
-    if curtis_reid_iter > 0
-        prec_cr = curtis_reid_preconditioner(cons; iterations = curtis_reid_iter)
-        cons = precondition(cons, prec_cr)
-        prec = prec_cr * prec
-    end
-    if geometric_mean_iter > 0
-        prec_gm = geometric_mean_preconditioner(cons; iterations = geometric_mean_iter)
-        cons = precondition(cons, prec_gm)
-        prec = prec_gm * prec
-    end
+    prec_cr = curtis_reid_preconditioner(cons; iterations = curtis_reid_iter)
+    cons = precondition(cons, prec_cr)
+    prec_gm = geometric_mean_preconditioner(cons; iterations = geometric_mean_iter)
+    cons = precondition(cons, prec_gm)
     prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
     cons_r = precondition(cons, prec_r)
-    # a `NaN` exponent skips the Pock-Chambolle step
-    prec_cp = if isnan(chambolle_pock_alpha)
-        identity_preconditioner(cons_r)
-    else
-        chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
-    end
-    return prec_cp * prec_r * prec
+    prec_cp = chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
+    prec = prec_cp * prec_r * prec_gm * prec_cr
+    return prec
 end
 
-# Bound and objective rescaling
-
 """
-    bound_objective_factors(milp; enabled = true, sum_squares = false)
+    bound_objective_factors(milp)
 
-Return the factors `(β, γ) = (1 / (1 + ‖b‖₂), 1 / (1 + ‖c‖₂))`. By default `bᵢ = combine(lcᵢ, ucᵢ)`
-keeps the largest finite absolute bound of each constraint (the HPR-LP definition of `‖b‖`,
-also used for the relative primal error). With `sum_squares = true`, `‖b‖₂²` instead sums `l²`
-and `u²` over the finite bounds, counting an equality row once (the cuPDLPx definition).
-
-Each factor is a vector with one value per instance when the quantity it is computed from is
-batched, and a single number shared by the whole batch otherwise. With `enabled = false` they
-are ones of the same shapes (`preprocess` then skips the rescaling altogether).
+Return the factors `(β, γ) = (1 / (1 + ‖b‖₂), 1 / (1 + ‖c‖₂))`, with `bᵢ = combine(lcᵢ, ucᵢ)` as
+in the relative primal error, one per instance when the bounds or the objective are batched.
 """
-function bound_objective_factors(
-        milp::MILP{T}; enabled::Bool = true, sum_squares::Bool = false
-    ) where {T}
+function bound_objective_factors(milp::MILP{T}) where {T}
     (; c, lc, uc) = milp
-    b_norm = if sum_squares
-        colnorm(sqrt.(bound_sum_squares.(lc, uc)))
-    else
-        colnorm(combine.(lc, uc))
-    end
-    c_norm = colnorm(c)
-    β = broadcast(n -> enabled ? inv(one(T) + n) : one(T), b_norm)
-    γ = broadcast(n -> enabled ? inv(one(T) + n) : one(T), c_norm)
+    β = inv.(one(T) .+ colnorm(combine.(lc, uc)))
+    γ = inv.(one(T) .+ colnorm(c))
     return β, γ
 end
 
-"""
-    bound_sum_squares(l, u)
-
-Return the contribution `l² + u²` of one constraint to `‖b‖₂²` in cuPDLPx, over its finite bounds,
-with an equality constraint counted once.
-"""
-function bound_sum_squares(l::Number, u::Number)
-    ls = ifelse(isfinite(l) & (l != u), l^2, zero(l))
-    us = ifelse(isfinite(u), u^2, zero(u))
-    return ls + us
-end
-
-"""
-    scale_columns(x, s)
-
-Multiply each column of `x` by the corresponding per-instance factor in `s` (a number or a vector).
-"""
-scale_columns(x::AbstractVecOrMat, s::Number) = x .* s
-scale_columns(x::AbstractVecOrMat, s::AbstractVector) = x .* reshape(s, 1, :)
+# multiply each column of `x` by its per-instance factor in `s` (a number or a vector)
+scale_columns(x::AbstractVecOrMat, s::BatchedNumber) = x .* transpose(s)
 
 """
     rescale_bounds_objective(milp, β, γ)
 
-Return the problem with bounds `lc, uc, lv, uv` multiplied by `β` and objective `c` multiplied by
-`γ`, recording both factors in `milp.bound_scale` and `milp.obj_scale`.
-
-A solution `(x, y)` of `milp` corresponds to the solution `(β x, γ y)` of the rescaled problem,
-whose objective is `β γ` times the original one, up to the constant `c0` which is left untouched.
+Return `milp` with bounds multiplied by `β` and objective by `γ`, factors recorded in
+`milp.bound_scale` and `milp.obj_scale`. A solution `(x, y)` of `milp` becomes `(β x, γ y)`.
 """
 function rescale_bounds_objective(milp::MILP, β::BatchedNumber, γ::BatchedNumber)
     (;
@@ -425,16 +342,4 @@ end
 
 function rescale_bounds_objective(sol::PrimalDualSolution, β::BatchedNumber, γ::BatchedNumber)
     return PrimalDualSolution(scale_columns(sol.x, β), scale_columns(sol.y, γ))
-end
-
-"""
-    unscale(sol, milp)
-
-Map a solution of the preconditioned and rescaled `milp` back to the original problem.
-"""
-function unscale(sol::PrimalDualSolution, milp::MILP)
-    (; D1, D2, bound_scale, obj_scale) = milp
-    x = D2 * scale_columns(sol.x, inv.(bound_scale))
-    y = D1 * scale_columns(sol.y, inv.(obj_scale))
-    return PrimalDualSolution(x, y)
 end
