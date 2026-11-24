@@ -48,29 +48,8 @@ end
 @testset "mul! with mismatched storage throws $M" for M in (
         GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
     )
-    A = sprand(7, 5, 0.5)
     # `c` is a `JLArray` but `A` and `b` are on the CPU: no silent generic `mul!`
-    @test_throws ArgumentError mul!(jl(zeros(7)), M(A), rand(5), 1.0, 0.0)
-    @test_throws ArgumentError mul!(jl(zeros(7, 2)), M(A), rand(5, 2), 1.0, 0.0)
-end
-
-@testset "mul! on strided views $M" for M in (
-        GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
-    )
-    A = sprand(8, 6, 0.35)
-    B, C = rand(6, 4), rand(8, 4)
-    for to in (identity, jl)
-        A_d = adapt(to === jl ? JLBackend() : CPU(), M(A))
-        B_d, C_d = to(B), to(copy(C))
-        # a column view `view(V, :, i)`, as Krylov.jl multiplies, and a block of columns
-        @test which(mul!, typeof.((view(C_d, :, 2), A_d, view(B_d, :, 3), α, β))).module == CoolPDLP
-        mul!(view(C_d, :, 2), A_d, view(B_d, :, 3), α, β)
-        @test Array(C_d)[:, 2] ≈ α * A * B[:, 3] + β * C[:, 2]
-        @test Array(C_d)[:, [1, 3, 4]] == C[:, [1, 3, 4]]
-        @test which(mul!, typeof.((view(C_d, :, 1:2), A_d, view(B_d, :, 3:4), α, β))).module == CoolPDLP
-        mul!(view(C_d, :, 1:2), A_d, view(B_d, :, 3:4), α, 0.0)
-        @test Array(C_d)[:, 1:2] ≈ α * A * B[:, 3:4]
-    end
+    @test_throws ArgumentError mul!(jl(zeros(7)), M(sprand(7, 5, 0.5)), rand(5), 1.0, 0.0)
 end
 
 @testset "spmm! $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)

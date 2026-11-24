@@ -97,11 +97,11 @@ function sparse_mul!(
 end
 
 @kernel function spmm_coo!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
     ) where {T, Ti}
     k, batch_idx = @index(Global, NTuple)
@@ -110,9 +110,9 @@ end
 end
 
 function sparse_mul!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A::GPUSparseMatrixCOO{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
         β::Number;
         workgroupsize = nothing,

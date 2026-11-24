@@ -5,10 +5,9 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
-# The formats implement `sparse_mul!`, and `mul!` forwards to it for strided vectors and
-# matrices, which include the column views `view(V, :, i)` that Krylov.jl multiplies. Arguments
-# on different backends (e.g. a `JLArray` and a `Vector`) throw an `ArgumentError` rather than
-# fall back to LinearAlgebra's generic `mul!`, which would read `A` entry by entry.
+# The formats implement `sparse_mul!`, and `mul!` forwards to it. Vectors may be strided, like
+# the column views that Krylov.jl multiplies: those on different backends throw an
+# `ArgumentError` rather than fall back to the generic `mul!`, which reads `A` entry by entry.
 for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
     @eval begin
         function LinearAlgebra.mul!(
@@ -17,27 +16,12 @@ for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
             return sparse_mul!(c, A, b, α, β)
         end
         function LinearAlgebra.mul!(
-                c::StridedMatrix{T}, A::$M{T}, b::StridedMatrix{T}, α::Number, β::Number
+                c::DenseMatrix{T}, A::$M{T}, b::DenseMatrix{T}, α::Number, β::Number
             ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end
     end
 end
-
-"""
-    map(f, A::GPUSparseMatrix)
-
-Apply `f` to the stored entries of `A`, keeping its sparsity structure. Unlike `map` on a
-`SparseMatrixCSC`, the implicit zeros are left alone, so this requires `f(0) == 0`.
-"""
-function Base.map(f, A::GPUSparseMatrix)
-    iszero(f(zero(eltype(A)))) ||
-        throw(ArgumentError("map on a CoolPDLP sparse matrix needs a function that maps zero to zero"))
-    return _map_nzval(f, A)
-end
-_map_nzval(f, A::GPUSparseMatrixCSR) = GPUSparseMatrixCSR(A.m, A.n, A.rowptr, A.colval, map(f, A.nzval))
-_map_nzval(f, A::GPUSparseMatrixCOO) = GPUSparseMatrixCOO(A.m, A.n, A.rowval, A.colval, map(f, A.nzval))
-_map_nzval(f, A::GPUSparseMatrixELL) = GPUSparseMatrixELL(A.m, A.n, A.colval, map(f, A.nzval))
 
 """
     sametype_transpose(A::AbstractMatrix)
@@ -168,168 +152,29 @@ function combine(l::Number, u::Number)
     return max(zero(l), ls, us)
 end
 
-"""
-    Symmetrized
-
-Represent a symmetric matrix `Kᵀ * K` lazily.
-"""
-struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}, Mt <: AbstractMatrix{T}}
-    K::M
-    Kᵀ::Mt
-    scratch::V
-end
-
-function Symmetrized(K::AbstractMatrix, Kᵀ::AbstractMatrix)
-    scratch = allocate(get_backend(K), eltype(K), size(K, 1))
-    return Symmetrized(K, Kᵀ, scratch)
-end
-
-Base.eltype(sym::Symmetrized) = eltype(sym.K)
-Base.size(sym::Symmetrized) = (n = size(sym.K, 2); (n, n))
-Base.size(sym::Symmetrized, d::Int) = d in (1, 2) ? size(sym.K, 2) : 1
-
-function LinearAlgebra.mul!(y, sym::Symmetrized, x)
-    check_mul_dims(y, sym, x)
-    (; K, Kᵀ, scratch) = sym
-    mul!(scratch, K, x)
-    mul!(y, Kᵀ, scratch)
-    return y
-end
-
-"""
-    spectral_norm_upper_bound(K, Kᵀ)
-
-Return the cheap and rigorous upper bound `sqrt(‖K‖₁ ‖K‖∞) ≥ ‖K‖₂`, computed with two
-matrix-vector products by `map(abs, K)` and `map(abs, Kᵀ)` so that it works on every backend.
-"""
-function spectral_norm_upper_bound(K::AbstractMatrix{T}, Kᵀ::AbstractMatrix{T}) where {T <: Number}
-    m, n = size(K)
-    (m == 0 || n == 0) && return zero(real(T))
-    backend = get_backend(K)
-    ones_n = allocate(backend, T, n)
-    ones_m = allocate(backend, T, m)
-    fill!(ones_n, one(T))
-    fill!(ones_m, one(T))
-    row_sums = allocate(backend, T, m)
-    col_sums = allocate(backend, T, n)
-    mul!(row_sums, map(abs, K), ones_n)
-    mul!(col_sums, map(abs, Kᵀ), ones_m)
-    norm_inf = real(maximum(row_sums))
-    norm_1 = real(maximum(col_sums))
-    return sqrt(norm_1 * norm_inf)
-end
-
-"""
-    KrylovOperator
-
-The linear operator `K` with its explicit transpose `Kᵀ`, for Krylov.jl, which multiplies by
-`K'`: `adjoint` swaps them, so that only `mul!(y, K, x)` and `mul!(y, Kᵀ, x)` are needed.
-"""
+# `K` with its explicit transpose, since Krylov.jl multiplies by `K'`
 struct KrylovOperator{M, Mt}
     K::M
     Kᵀ::Mt
 end
-
 Base.size(op::KrylovOperator) = size(op.K)
-Base.size(op::KrylovOperator, d::Integer) = size(op.K, d)
 Base.eltype(op::KrylovOperator) = eltype(op.K)
 Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
 LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
-"""
-    SPECTRAL_NORM_KRYLOV_DIM
-
-Number of Golub–Kahan steps between two restarts of [`spectral_norm`](@ref), which bounds its
-memory to `SPECTRAL_NORM_KRYLOV_DIM + 1` vectors of each size of `K`.
-"""
-const SPECTRAL_NORM_KRYLOV_DIM = 32
-
-"""
-    bidiagonal_svd(d, e)
-
-Return the SVD of the lower `Bidiagonal` matrix with diagonal `d` and subdiagonal `e`, reusing
-their storage. LAPACK serves `Float32` and `Float64`, and `Float16` through `Float32`, which
-holds it exactly. Other precisions need GenericLinearAlgebra: without it, this throws a
-`MethodError`, with a hint to load it (see [`svd_error_hint`](@ref)).
-"""
+# SVD of the small bidiagonal matrix: LAPACK in `Float32` and `Float64` (and `Float16` through
+# `Float32`), GenericLinearAlgebra for other precisions, or a `MethodError` without it
+bidiagonal_svd(d, e) = LinearAlgebra.svd!(Bidiagonal(d, e, :L))
 bidiagonal_svd(d::Vector{Float16}, e::Vector{Float16}) = bidiagonal_svd(Float32.(d), Float32.(e))
-bidiagonal_svd(d::Vector, e::Vector) = LinearAlgebra.svd!(Bidiagonal(d, e, :L))
-
-with_eltype(::Type{T}, A::Matrix{T}) where {T} = A
-with_eltype(::Type{T}, A::Matrix) where {T} = convert(Matrix{T}, A)
-
-"""
-    svd_error_hint(io, exc, argtypes, kwargs)
-
-Suggest loading GenericLinearAlgebra when the SVD of a `Bidiagonal` matrix, which
-[`spectral_norm`](@ref) needs, is missing for its precision. Registered in `__init__`.
-"""
-function svd_error_hint(io::IO, exc::MethodError, argtypes, kwargs)
-    if exc.f === LinearAlgebra.svd! && length(argtypes) == 1 && argtypes[1] <: Bidiagonal
-        print(
-            io, "\nCoolPDLP's `spectral_norm` needs the SVD of a small `Bidiagonal` matrix in ",
-            eltype(argtypes[1]), ", which LinearAlgebra lacks: load GenericLinearAlgebra ",
-            "(`using GenericLinearAlgebra`) to provide it.",
-        )
-    end
-    return nothing
-end
-
-"""
-    top_singular_value!(b, K, Kᵀ, k)
-
-Run `k` steps of Golub–Kahan bidiagonalization of `K` from `b`, and return the largest
-singular value `σ` of the `k × k` bidiagonal matrix together with the bound `residual` such
-that `K` has a singular value within `residual` of `σ`. Overwrite `b` with the corresponding
-left Ritz vector, to restart from.
-"""
-function top_singular_value!(b, K, Kᵀ, k::Integer)
-    R = real(eltype(K))
-    _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
-    # Krylov.jl stores the lower bidiagonal `L` column by column, so its nonzeros alternate
-    # between the diagonal `αᵢ = L[i, i]` and the subdiagonal `βᵢ₊₁ = L[i + 1, i]`
-    nz = nonzeros(L)
-    d = nz[1:2:(2k - 1)]
-    e = nz[2:2:(2k - 2)]
-    β = nz[2k]
-    all(isfinite, d) && all(isfinite, e) && isfinite(β) ||
-        throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
-    F = bidiagonal_svd(d, e)
-    i = argmax(F.S)
-    # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet `(σ, p, q)`
-    # of `Bₖ` leaves the residual `β |qₖ|`, and `Uₖ p` is its left Ritz vector
-    p = allocate(get_backend(b), eltype(b), k)
-    copyto!(p, 1, with_eltype(eltype(b), F.U), (i - 1) * k + 1, k)
-    mul!(b, view(U, :, 1:k), p)
-    return R(F.S[i]), β * R(abs(F.V[k, i]))
-end
 
 """
     spectral_norm(K, Kᵀ; reltol, maxiter)
 
-Return an iterative estimate of the spectral norm `‖K‖₂`, starting from a deterministic
-random vector and using at most `maxiter` products by both `K` and `Kᵀ`.
+Return an iterative estimate `σ` of the spectral norm `‖K‖₂`, from a deterministic start and
+with at most `maxiter` products by each of `K` and `Kᵀ`, accepted once `K` has a singular
+value within `reltol * σ` of it. `maxiter` should not depend on the size of `K` (#95).
 
-The estimate `σ` is accepted once `K` provably has a singular value within `reltol * σ` of
-it, and then lies below `‖K‖₂` by at most about that much when `σ` approximates the top of the
-spectrum. `maxiter` should be chosen independently of the size of `K` (see #95). The iteration
-restarts every [`SPECTRAL_NORM_KRYLOV_DIM`](@ref) steps, which bounds its memory independently of `maxiter`.
-
-In `Float16`, `K` must be well scaled: norms above about `256 / √n` overflow during the
-iteration, which the preconditioning of the solver provides.
-
-The small bidiagonal SVD of each restart runs with LAPACK in `Float32` and `Float64` (and in
-`Float32` for `Float16`). Other precisions, such as `BigFloat`, need GenericLinearAlgebra to be
-loaded, and otherwise throw a `MethodError` that suggests loading it.
-
-This never throws on non-convergence: it then warns (at every call, since each one is a
-different matrix that gets a conservative step size) and returns the minimum between the
-inflated estimate `1.01 * (σ + residual)` and the rigorous bound `sqrt(‖K‖₁ ‖K‖∞)`, so as to
-err on the large side (a smaller, safe step size) rather than the small side (a divergent
-step size).
-
-This runs with data-dependent control flow and is not meant to be traced by Reactant: it is
-only called from `initialize`, outside of the traced `solve!` loop. An `ArgumentError` is thrown if `K` has a NaN or infinite entry.
+On non-convergence, warn and return the conservative estimate `σ + residual`.
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},
@@ -338,24 +183,23 @@ function spectral_norm(
         maxiter::Integer,
     )
     T = eltype(K)
-    R = real(T)
     m, n = size(K)
-    (m == 0 || n == 0) && return zero(R)
-    b = allocate(get_backend(K), T, m)
-    b_cpu = adapt(CPU(), b)  # StableRNGs doesn't work on GPU
-    randn!(StableRNG(0), b_cpu)
-    copyto!(b, b_cpu)
-    σ, residual = zero(R), typemax(R)
-    remaining = maxiter
-    while remaining > 0
-        k = min(SPECTRAL_NORM_KRYLOV_DIM, remaining)
-        σ, residual = top_singular_value!(b, K, Kᵀ, k)
-        residual <= R(reltol) * σ && return σ
-        remaining -= k
+    (m == 0 || n == 0) && return zero(T)
+    b = copyto!(allocate(get_backend(K), T, m), randn(StableRNG(0), T, m))
+    σ, residual = zero(T), typemax(T)
+    for start in 1:32:maxiter
+        # restart Golub–Kahan every `k ≤ 32` steps, from the top left Ritz vector
+        k = min(32, maxiter - start + 1)
+        _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
+        nz = nonzeros(L)  # stored column by column: `αᵢ = L[i, i]` and `βᵢ₊₁ = L[i + 1, i]`
+        F = bidiagonal_svd(nz[1:2:(2k - 1)], nz[2:2:(2k - 2)])
+        i = argmax(F.S)
+        σ, residual = T(F.S[i]), nz[2k] * T(abs(F.V[k, i]))
+        residual <= reltol * σ && return σ
+        mul!(b, view(U, :, 1:k), copyto!(similar(b, k), T.(F.U[:, i])))
     end
-    bound = R(spectral_norm_upper_bound(K, Kᵀ))
-    estimate = min(R(1.01) * (σ + residual), bound)
-    @warn "Spectral norm estimation did not converge within $maxiter iterations (relative residual $(residual / σ) > reltol = $reltol), using the conservative estimate $estimate (iterative value $σ, rigorous bound $bound)"
+    estimate = σ + residual
+    @warn "Spectral norm estimate did not converge within $maxiter iterations (residual $residual > $(reltol * σ)), using the conservative estimate $estimate"
     return estimate
 end
 

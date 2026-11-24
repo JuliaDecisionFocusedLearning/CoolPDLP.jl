@@ -36,17 +36,3 @@ end
         @test updated == ω
     end
 end
-
-@testset "Step size scaling must leave room for the spectral norm tolerance" begin
-    for Alg in (PDHG, PDLP)
-        reltol = 1.0e-3
-        limit = 1 / (1 + reltol)
-        @test Alg(; invnorm_scaling = prevfloat(limit), spectral_norm_reltol = reltol) isa CoolPDLP.Algorithm
-        @test Alg(; invnorm_scaling = 0.99, spectral_norm_reltol = 0.0) isa CoolPDLP.Algorithm
-        @test_throws ArgumentError Alg(; invnorm_scaling = nextfloat(limit), spectral_norm_reltol = reltol)
-        @test_throws ArgumentError Alg(; invnorm_scaling = 0.9995, spectral_norm_reltol = reltol)
-        @test_throws ArgumentError Alg(; invnorm_scaling = 1.0, spectral_norm_reltol = 0.0)
-        @test_throws ArgumentError Alg(; invnorm_scaling = 0.0)
-        @test_throws ArgumentError Alg(; invnorm_scaling = -0.5)
-    end
-end

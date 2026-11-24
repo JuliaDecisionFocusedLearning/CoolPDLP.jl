@@ -116,11 +116,11 @@ function sparse_mul!(
 end
 
 @kernel function spmm_csr!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A_rowptr::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
         β::Number
     ) where {T, Ti}
@@ -134,9 +134,9 @@ end
 end
 
 function sparse_mul!(
-        c::AbstractMatrix{T},
+        c::DenseMatrix{T},
         A::GPUSparseMatrixCSR{T},
-        b::AbstractMatrix{T},
+        b::DenseMatrix{T},
         α::Number,
         β::Number;
         workgroupsize = nothing,

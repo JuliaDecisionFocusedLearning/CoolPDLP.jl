@@ -170,11 +170,3 @@ The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}
 ```math
 D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
 ```
-
-## Step size
-
-The fixed step size is $\eta = s / \|\tilde{A}\|_2$, where $s$ is `invnorm_scaling` and PDHG needs $\eta \|\tilde{A}\|_2 < 1$ to converge.
-The spectral norm is an iterative estimate $\sigma$, accepted once $\tilde{A}$ provably has a singular value within $\tau \sigma$ of it, with $\tau$ = `spectral_norm_reltol`.
-When $\sigma$ approximates the top of the spectrum, it lies below $\|\tilde{A}\|_2$ by at most about $\tau$ relative, a margin absorbed by $s \leq 1 - \tau$, which holds comfortably for the default $s = 0.9$.
-
-If the estimate does not converge within `spectral_norm_maxiter` iterations, a warning is shown and the estimate falls back to the smaller of $1.01 (\sigma + \text{residual})$ and the rigorous bound $\sqrt{\|\tilde{A}\|_1 \|\tilde{A}\|_\infty}$.
