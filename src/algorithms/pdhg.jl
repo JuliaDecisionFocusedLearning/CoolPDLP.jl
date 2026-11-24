@@ -72,14 +72,28 @@ function solve!(
     prog = init_progress("PDHG iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
-        @trace for _ in 1:algo.generic.check_every
-            step!(state, milp)
-            next_progress!(prog, state)
-        end
-        must_terminate = termination_check!(state, milp, algo)
+        must_terminate = check_pass!(state, milp, algo, prog)
     end
     finish_progress!(prog)
     return state
+end
+
+"""
+    check_pass!(state, milp, algo, prog = NoProgress())
+
+Run `check_every` iterations and the termination check; return whether to stop.
+"""
+function check_pass!(
+        state::PDHGState,
+        milp::MILP,
+        algo::Algorithm{:PDHG},
+        prog = NoProgress()
+    )
+    @trace for _ in 1:algo.generic.check_every
+        step!(state, milp)
+        next_progress!(prog, state)
+    end
+    return termination_check!(state, milp, algo)
 end
 
 function step!(

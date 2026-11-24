@@ -276,16 +276,42 @@ Modify `state` in-place to solve the continuous relaxation of `milp` using the a
 """
 function solve! end
 
+"""
+    run_checks!(state, milp, algo, max_passes)
+
+Run [`check_pass!`](@ref) until it says to stop, or at most `max_passes` times, and return
+`nothing`.
+
+This is one launch of a host-driven compiled solve (see the Reactant extension): the host then
+reads `state.stats.termination_status_code` to tell whether the solve stopped, checks the clock
+itself, and launches again. The stop flag is not returned, since its type changes as the traced
+loop rebinds it, which would make the return type unstable.
+"""
+function run_checks!(
+        state::AbstractState,
+        milp::MILP,
+        algo::Algorithm,
+        max_passes::Number
+    )
+    must_terminate = false
+    passes = zero(max_passes)
+    @trace while !must_terminate & (passes < max_passes)
+        must_terminate = check_pass!(state, milp, algo)
+        passes += one(passes)
+    end
+    return nothing
+end
+
 function termination_check!(
         state::AbstractState,
         milp::MILP,
         algo::Algorithm
     )
     (; sol, scratch, stats) = state
-    update_time_elapsed!(stats, algo.generic.time_limit)
+    is_time_limit = check_time_limit!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp)
     record_error_history!(stats, algo.generic.record_error_history)
-    return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
+    return set_termination_status!!(stats, scratch.b1, algo.termination, is_time_limit)
 end
 
 """
