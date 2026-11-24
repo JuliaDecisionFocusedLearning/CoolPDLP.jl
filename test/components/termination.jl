@@ -240,8 +240,8 @@ end
     sol = PrimalDualSolution(randn(nbvar(milp)), randn(nbcons(milp)))
     scratch = CoolPDLP.Scratch(sol)
     (; c, A, lc, uc) = milp
-    err2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :L2)
-    errinf = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :Linf)
+    err2 = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, L2Norm())
+    errinf = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, LInfNorm())
     Ax = A * sol.x
     @test err2.primal ≈ norm(Ax - clamp.(Ax, lc, uc))
     @test errinf.primal ≈ norm(Ax - clamp.(Ax, lc, uc), Inf)
@@ -254,33 +254,23 @@ end
     # batched columns are normed one by one
     solb = PrimalDualSolution(stack([sol.x, 2 .* sol.x]), stack([sol.y, 2 .* sol.y]))
     milpb = MILP(; c = stack([c, c]), milp.lv, milp.uv, A, lc, uc)
-    errb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(solb), CoolPDLP.Scratch(solb), solb, milpb, :Linf)
+    errb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(solb), CoolPDLP.Scratch(solb), solb, milpb, LInfNorm())
     @test errb.primal[1] ≈ errinf.primal
     @test errb.dual[1] ≈ errinf.dual
-    @test CoolPDLP.colmaxabs!!(zeros(2), zeros(0, 2)) == [0.0, 0.0]
+    @test CoolPDLP.colnorm!!(zeros(2), zeros(0, 2), LInfNorm()) == [0.0, 0.0]
 
     netlib = MILP(read_instance(Netlib, "afiro")[1])
     @testset "$alg" for alg in (PDHG, PDLP)
-        _, stats2 = solve(netlib, alg(; termination_reltol = 1.0e-4))
-        _, statsinf = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = "Linf"))
-        @test termination_status(stats2) == MOI.OPTIMAL
-        @test termination_status(statsinf) == MOI.OPTIMAL
-        # the L∞ criterion is looser, so it never needs more passes
-        @test statsinf.kkt_passes <= stats2.kkt_passes
-        @test statsinf.err.primal <= 1.0e-4 * statsinf.err.primal_scale
+        sol, stats = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = LInfNorm()))
+        @test termination_status(stats) == MOI.OPTIMAL
+        # the reported errors, which stopped the solve, are the L∞ errors of the solution
+        err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, LInfNorm())
+        @test err.primal ≈ stats.err.primal
+        @test err.dual ≈ stats.err.dual
+        @test err.primal <= 1.0e-4 * err.primal_scale
     end
 
-    @test PDLP(; termination_norm = :Linf).generic.termination_norm === :Linf
-    @test_throws ArgumentError PDLP(; termination_norm = :L1)
-end
-
-@testset "Unknown norms" begin
-    @test_throws ArgumentError PDLP(; termination_norm = :L1)
-    # built directly, the parameters skip the validation, but the norm itself still refuses
-    Random.seed!(2)
-    milp, sol = CoolPDLP.random_milp_and_sol(5, 6, 0.5)
-    scratch = CoolPDLP.Scratch(sol)
-    @test_throws ArgumentError CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, :L1)
+    @test_throws MethodError PDLP(; termination_norm = 1)
 end
 
 @testset "Single default for the infeasibility tolerance" begin

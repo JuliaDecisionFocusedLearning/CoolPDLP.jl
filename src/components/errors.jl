@@ -129,12 +129,11 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
 end
 
 """
-    kkt_errors!(err, scratch, sol, milp, norm = :L2)
+    kkt_errors!(err, scratch, sol, milp, norm)
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
-The residuals and the norms of the bounds and the objective are measured in the norm `norm`:
-`:L2` (Euclidean, as in PDLP) or `:Linf` (largest absolute value).
+The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
 
 The errors are those of the original problem, before preconditioning and bound and objective
 rescaling. For a quadratic program, the reduced costs are `c + Q x - Aᵀ y`, the primal
@@ -145,13 +144,13 @@ function kkt_errors!(
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP,
-        norm::Symbol = :L2,
+        norm::TerminationNorm,
     )
     return kkt_errors!(err, scratch, sol, nothing, milp, norm)
 end
 
 """
-    kkt_errors!(err, scratch, sol, z, milp, norm = :L2)
+    kkt_errors!(err, scratch, sol, z, milp, norm)
 
 Same as `kkt_errors!(err, scratch, sol, milp, norm)`, with the reduced costs (multipliers of
 the variable bounds) given by `z` rather than chosen as the projection of `c - Aᵀy` onto the
@@ -166,13 +165,14 @@ function kkt_errors!(
         sol::PrimalDualSolution,
         z_given::Union{Nothing, AbstractVecOrMat},
         milp::MILP{T},
-        norm::Symbol = :L2,
+        norm::TerminationNorm,
     ) where {T}
     (; x, y) = sol
-    (; c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale) = milp
+    (; c, c0, lv, uv, A, At, Q, lc, uc, D1, D2) = milp
     # the rescaled problem has bounds `β b`, objective `γ c`, quadratic term `(γ / β) Q` and
     # solution `(β x, γ y)`
-    β, γ = bound_scale, obj_scale
+    β, γ = milp.bound_scale, milp.obj_scale
+    βr, γr = transpose(β), transpose(γ)
 
     A_x = mul!(scratch.y, A, x)
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
@@ -182,21 +182,19 @@ function kkt_errors!(
     c_At_y .+= c
     z = bound_multipliers!(scratch.z, c_At_y, lv, uv, z_given)
 
-    primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
+    primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc)) / βr
     err.primal = colnorm!!(err.primal, primal_diff, norm)
-    err.primal = broadcast!!(/, err.primal, err.primal, β)
 
-    rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
+    rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc) / βr
     err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds, norm)
-    err.primal_scale = broadcast!!((n, b) -> one(T) + n / b, err.primal_scale, err.primal_scale, β)
+    err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
+    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z) / γr
     err.dual = colnorm!!(err.dual, dual_diff, norm)
-    err.dual = broadcast!!(/, err.dual, err.dual, γ)
 
-    rescaled_obj = @. scratch.x = inv(D2.diag) * c
+    rescaled_obj = @. scratch.x = inv(D2.diag) * c / γr
     err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj, norm)
-    err.dual_scale = broadcast!!((n, g) -> one(T) + n / g, err.dual_scale, err.dual_scale, γ)
+    err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0
     #    We reformulate to ∑ⱼ (l⋅|y|⁺ - u⋅|y|⁻)ⱼ + ∑ᵢ (lᵥ⋅|z|⁺ - uᵥ⋅|z|⁻)ᵢ

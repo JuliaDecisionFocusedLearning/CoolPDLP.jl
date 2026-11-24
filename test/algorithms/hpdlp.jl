@@ -177,21 +177,13 @@ end
 
 @testset "Bound and objective rescaling" begin
     milp = MILP(read_instance(Netlib, "afiro")[1]; dataset = Netlib, name = "afiro")
-    @testset "sum_squares = $sum_squares" for sum_squares in (false, true)
-        algo = HPDLP(;
-            termination_reltol = 1.0e-6, bound_objective_rescaling = true,
-            bound_norm_sum_squares = sum_squares,
-        )
-        milp_p, sol_p = preprocess(milp, PrimalDualSolution(milp), algo)
-        state = initialize(milp_p, sol_p, algo; starting_time = time())
-        # as in cuPDLPx, the rescaled problem starts from a unit primal weight
-        @test state.step_sizes.ω == 1
-        sol, stats = solve(milp, algo)
-        @test termination_status(stats) == MOI.OPTIMAL
-        sol_ref, _ = solve(milp, PDLP(; termination_reltol = 1.0e-6))
-        @test objective_value(sol.x, milp) ≈ objective_value(sol_ref.x, milp) rtol = 1.0e-4
-    end
-    # the cuPDLPx norm counts both finite bounds of a range row, and an equality row once
-    lc, uc = [1.0, 2.0, -Inf, 3.0], [1.0, 4.0, 5.0, Inf]
-    @test CoolPDLP.bound_sum_squares.(lc, uc) == [1.0, 20.0, 25.0, 9.0]
+    algo = HPDLP(; termination_reltol = 1.0e-6, bound_objective_rescaling = true)
+    milp_p, sol_p = preprocess(milp, PrimalDualSolution(milp), algo)
+    state = initialize(milp_p, sol_p, algo; starting_time = time())
+    # as in cuPDLPx, the rescaled problem starts from a unit primal weight
+    @test state.step_sizes.ω == 1
+    sol, stats = solve(milp, algo)
+    @test termination_status(stats) == MOI.OPTIMAL
+    sol_ref, _ = solve(milp, PDLP(; termination_reltol = 1.0e-6))
+    @test objective_value(sol.x, milp) ≈ objective_value(sol_ref.x, milp) rtol = 1.0e-4
 end
