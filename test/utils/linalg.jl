@@ -108,6 +108,7 @@ end
     U = zeros(30, 3)
     for M in (CoolPDLP.GPUSparseMatrixCSR, CoolPDLP.GPUSparseMatrixCOO, CoolPDLP.GPUSparseMatrixELL)
         op = CoolPDLP.KrylovOperator(M(A), M(sparse(transpose(A))))
+        @test which(mul!, typeof.((view(U, :, 2), op.K, view(V, :, 2), true, false))).module == CoolPDLP
         mul!(view(U, :, 2), op, view(V, :, 2))
         @test view(U, :, 2) ≈ A * V[:, 2]
     end
@@ -286,7 +287,7 @@ end
     rng = Xoshiro(5)
     S = sprandn(rng, 60, 80, 0.1)
     ref = opnorm(Matrix(S), 2)
-    for (T, reltol, rtol) in ((Float16, 1.0e-2, 1.0e-2), (Float32, 1.0e-5, 1.0e-4), (BigFloat, 1.0e-30, 1.0e-12))
+    for (T, reltol, rtol) in ((Float16, 1.0e-2, 1.0e-2), (Float32, 1.0e-5, 1.0e-4))
         A = convert(SparseMatrixCSC{T, Int}, S)
         s = CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = T(reltol), maxiter = 1000)
         @test s isa T
@@ -319,14 +320,27 @@ end
     end
 end
 
+@testset "Spectral norm in BigFloat errors without GenericLinearAlgebra" begin
+    A = convert(SparseMatrixCSC{BigFloat, Int}, sprandn(Xoshiro(6), 30, 40, 0.2))
+    err = try
+        CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = BigFloat(1.0e-30), maxiter = 100)
+        nothing
+    catch e
+        e
+    end
+    @test err isa MethodError
+    @test occursin("using GenericLinearAlgebra", sprint(showerror, err))
+    # the hint is only for the SVD of a `Bidiagonal`
+    @test !occursin("GenericLinearAlgebra", sprint(showerror, MethodError(LinearAlgebra.svd!, ("a",))))
+end
+
 @testset "Spectral norm in BigFloat with GenericLinearAlgebra" begin
     # loaded last in this file, since it extends LinearAlgebra for generic types
     @eval using GenericLinearAlgebra: GenericLinearAlgebra
-    @test CoolPDLP.has_generic_linear_algebra()
     rng = Xoshiro(6)
     A = convert(SparseMatrixCSC{BigFloat, Int}, sprandn(rng, 30, 40, 0.2))
     ref = maximum(GenericLinearAlgebra.svdvals!(Matrix(A)))
-    s = CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
+    s = Base.invokelatest(CoolPDLP.spectral_norm, A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
     @test s isa BigFloat
     @test s ≈ ref rtol = 1.0e-35
 end

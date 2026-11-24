@@ -5,22 +5,19 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
-# The formats implement `sparse_mul!`, and `mul!` forwards to it with exactly the signatures of
-# `sparse_mul!`: a broader one would be ambiguous with LinearAlgebra's generic `mul!`, and would
-# also catch the products with mismatched storage that this generic `mul!` used to serve.
-for (M, AV) in (
-        (:GPUSparseMatrixCOO, :(GPUSparseMatrixCOO{T, Ti, V})),
-        (:GPUSparseMatrixCSR, :(GPUSparseMatrixCSR{T, Ti, V})),
-        (:GPUSparseMatrixELL, :(GPUSparseMatrixELL{T, Ti})),
-    )
+# The formats implement `sparse_mul!`, and `mul!` forwards to it for strided vectors and
+# matrices, which include the column views `view(V, :, i)` that Krylov.jl multiplies. Arguments
+# on different backends (e.g. a `JLArray` and a `Vector`) throw an `ArgumentError` rather than
+# fall back to LinearAlgebra's generic `mul!`, which would read `A` entry by entry.
+for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
     @eval begin
         function LinearAlgebra.mul!(
-                c::V, A::$AV, b::V, α::Number, β::Number
-            ) where {T <: Number, Ti, V <: DenseVector{T}}
+                c::StridedVector{T}, A::$M{T}, b::StridedVector{T}, α::Number, β::Number
+            ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end
         function LinearAlgebra.mul!(
-                c::DenseMatrix{T}, A::$M{T}, b::DenseMatrix{T}, α::Number, β::Number
+                c::StridedMatrix{T}, A::$M{T}, b::StridedMatrix{T}, α::Number, β::Number
             ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end
@@ -237,21 +234,7 @@ Base.size(op::KrylovOperator) = size(op.K)
 Base.size(op::KrylovOperator, d::Integer) = size(op.K, d)
 Base.eltype(op::KrylovOperator) = eltype(op.K)
 Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
-LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = krylov_mul!(y, op.K, x)
-
-krylov_mul!(y, K, x) = mul!(y, K, x)
-
-# Krylov.jl multiplies columns of its bases, `view(V, :, i)`. On the GPU these are device
-# arrays, but on the CPU (and JLArrays) they are `SubArray`s, which are not `DenseVector`s and
-# would miss the kernels of our formats for LinearAlgebra's generic `mul!`, that reads `K`
-# entry by entry (a full scan of the entries per `getindex` for COO).
-function krylov_mul!(y, K::GPUSparseMatrix, x)
-    (x isa DenseVector && y isa DenseVector) && return mul!(y, K, x)
-    xc = copyto!(similar(K.nzval, length(x)), x)  # a vector even for the `nzval` matrix of ELL
-    yc = similar(xc, length(y))
-    mul!(yc, K, xc)
-    return copyto!(y, yc)
-end
+LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
 """
     SPECTRAL_NORM_KRYLOV_DIM
@@ -262,12 +245,35 @@ memory to `SPECTRAL_NORM_KRYLOV_DIM + 1` vectors of each size of `K`.
 const SPECTRAL_NORM_KRYLOV_DIM = 32
 
 """
-    has_generic_linear_algebra()
+    bidiagonal_svd(d, e)
 
-Whether GenericLinearAlgebra is loaded, which provides the SVD of a `Bidiagonal` in any precision.
+Return the SVD of the lower `Bidiagonal` matrix with diagonal `d` and subdiagonal `e`, reusing
+their storage. LAPACK serves `Float32` and `Float64`, and `Float16` through `Float32`, which
+holds it exactly. Other precisions need GenericLinearAlgebra: without it, this throws a
+`MethodError`, with a hint to load it (see [`svd_error_hint`](@ref)).
 """
-has_generic_linear_algebra() =
-    !isnothing(Base.get_extension(@__MODULE__, :CoolPDLPGenericLinearAlgebraExt))
+bidiagonal_svd(d::Vector{Float16}, e::Vector{Float16}) = bidiagonal_svd(Float32.(d), Float32.(e))
+bidiagonal_svd(d::Vector, e::Vector) = LinearAlgebra.svd!(Bidiagonal(d, e, :L))
+
+with_eltype(::Type{T}, A::Matrix{T}) where {T} = A
+with_eltype(::Type{T}, A::Matrix) where {T} = convert(Matrix{T}, A)
+
+"""
+    svd_error_hint(io, exc, argtypes, kwargs)
+
+Suggest loading GenericLinearAlgebra when the SVD of a `Bidiagonal` matrix, which
+[`spectral_norm`](@ref) needs, is missing for its precision. Registered in `__init__`.
+"""
+function svd_error_hint(io::IO, exc::MethodError, argtypes, kwargs)
+    if exc.f === LinearAlgebra.svd! && length(argtypes) == 1 && argtypes[1] <: Bidiagonal
+        print(
+            io, "\nCoolPDLP's `spectral_norm` needs the SVD of a small `Bidiagonal` matrix in ",
+            eltype(argtypes[1]), ", which LinearAlgebra lacks: load GenericLinearAlgebra ",
+            "(`using GenericLinearAlgebra`) to provide it.",
+        )
+    end
+    return nothing
+end
 
 """
     top_singular_value!(b, K, Kᵀ, k)
@@ -280,24 +286,20 @@ left Ritz vector, to restart from.
 function top_singular_value!(b, K, Kᵀ, k::Integer)
     R = real(eltype(K))
     _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
-    d = R[L[i, i] for i in 1:k]
-    e = R[L[i + 1, i] for i in 1:(k - 1)]
-    β = R(L[k + 1, k])
+    # Krylov.jl stores the lower bidiagonal `L` column by column, so its nonzeros alternate
+    # between the diagonal `αᵢ = L[i, i]` and the subdiagonal `βᵢ₊₁ = L[i + 1, i]`
+    nz = nonzeros(L)
+    d = nz[1:2:(2k - 1)]
+    e = nz[2:2:(2k - 2)]
+    β = nz[2k]
     all(isfinite, d) && all(isfinite, e) && isfinite(β) ||
         throw(ArgumentError("spectral_norm: the matrix has NaN or infinite entries (or overflows in $(eltype(K)))"))
-    # The `k × k` SVD is tiny: LAPACK in `Float64` suffices for other precisions. We don't
-    # depend on GenericLinearAlgebra, which pirates LinearAlgebra's `svd!` on generic types,
-    # but use it in the precision of `K` if the user loaded it.
-    F = if R <: LinearAlgebra.BlasFloat || has_generic_linear_algebra()
-        svd(Bidiagonal(d, e, :L))
-    else
-        svd(Bidiagonal(Float64.(d), Float64.(e), :L))
-    end
+    F = bidiagonal_svd(d, e)
     i = argmax(F.S)
     # `K Vₖ = Uₖ Bₖ + β uₖ₊₁ eₖᵀ` and `Kᵀ Uₖ = Vₖ Bₖᵀ`: the top singular triplet `(σ, p, q)`
     # of `Bₖ` leaves the residual `β |qₖ|`, and `Uₖ p` is its left Ritz vector
     p = allocate(get_backend(b), eltype(b), k)
-    copyto!(p, convert(Vector{eltype(b)}, F.U[:, i]))
+    copyto!(p, 1, with_eltype(eltype(b), F.U), (i - 1) * k + 1, k)
     mul!(b, view(U, :, 1:k), p)
     return R(F.S[i]), β * R(abs(F.V[k, i]))
 end
@@ -316,9 +318,9 @@ restarts every [`SPECTRAL_NORM_KRYLOV_DIM`](@ref) steps, which bounds its memory
 In `Float16`, `K` must be well scaled: norms above about `256 / √n` overflow during the
 iteration, which the preconditioning of the solver provides.
 
-Outside `Float32` and `Float64`, the small bidiagonal SVD of each restart runs in `Float64`,
-which is plenty for the tolerances of a step size but overflows for entries beyond its range.
-Load GenericLinearAlgebra to run it in the precision of `K` instead.
+The small bidiagonal SVD of each restart runs with LAPACK in `Float32` and `Float64` (and in
+`Float32` for `Float16`). Other precisions, such as `BigFloat`, need GenericLinearAlgebra to be
+loaded, and otherwise throw a `MethodError` that suggests loading it.
 
 This never throws on non-convergence: it then warns (at every call, since each one is a
 different matrix that gets a conservative step size) and returns the minimum between the
@@ -327,8 +329,7 @@ err on the large side (a smaller, safe step size) rather than the small side (a 
 step size).
 
 This runs with data-dependent control flow and is not meant to be traced by Reactant: it is
-only called from `initialize`, outside of the traced `solve!` loop. Any element type is
-supported, and an `ArgumentError` is thrown if `K` has a NaN or infinite entry.
+only called from `initialize`, outside of the traced `solve!` loop. An `ArgumentError` is thrown if `K` has a NaN or infinite entry.
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},

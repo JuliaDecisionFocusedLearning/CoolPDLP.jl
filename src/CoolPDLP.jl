@@ -15,7 +15,7 @@ using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
-using LinearAlgebra: LinearAlgebra, Bidiagonal, Diagonal, axpby!, diag, dot, mul!, norm, svd
+using LinearAlgebra: LinearAlgebra, Bidiagonal, Diagonal, axpby!, diag, dot, mul!, norm
 using Logging: NullLogger, with_logger
 using Printf: @sprintf
 using Random: Random, randn!
@@ -54,6 +54,11 @@ include("public.jl")
 end
 
 include("MOI_wrapper.jl")
+
+function __init__()
+    Base.Experimental.register_error_hint(svd_error_hint, MethodError)
+    return nothing
+end
 
 @public sametype_transpose
 

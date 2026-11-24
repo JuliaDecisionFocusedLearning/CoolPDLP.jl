@@ -28,14 +28,12 @@ StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
-GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 cuSPARSE = "b26da814-b3bc-49ef-b0ee-c816305aa060"
 
 [extensions]
 CoolPDLPCUDAExt = ["CUDA", "cuSPARSE"]
 CoolPDLPGPUArraysExt = "GPUArrays"
-CoolPDLPGenericLinearAlgebraExt = "GenericLinearAlgebra"
 CoolPDLPReactantExt = "Reactant"
 
 [compat]
@@ -45,7 +43,6 @@ BangBang = "0.4.9"
 CUDA = "6.0.0"
 DispatchDoctor = "0.4.26"
 DocStringExtensions = "0.9.5"
-GenericLinearAlgebra = "0.3.19, 0.4"
 # KernelAbstractions 0.9 and GPUArrays 11 are only allowed for Reactant, which does not support
 # KernelAbstractions 0.10 yet: drop them once https://github.com/EnzymeAD/Reactant.jl/pull/3581
 # is released.
