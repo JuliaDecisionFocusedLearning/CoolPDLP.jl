@@ -3,9 +3,11 @@
 
 Change the element type of floating-point containers inside `milp` to `T`.
 """
-set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = map(T, A)
-# `map` on a `Diagonal` only keeps it diagonal if `T(0)` is zero, which inference can't
-# prove for every `T` (e.g. `BigFloat`), so it would return `Union{Diagonal, Matrix}`
+# `map` would not preserve structure for every `T`: on a `Diagonal` it can return a dense
+# `Matrix` (type-unstable for e.g. `BigFloat`), and on a sparse matrix it drops the stored
+# entries which round to zero (e.g. underflow in `Float16`), changing the sparsity pattern
+set_eltype(::Type{T}, A::AbstractArray{<:AbstractFloat}) where {T} = AbstractArray{T}(A)
+# on Julia 1.10, `AbstractArray{T}(D)` aliases `D.diag` when its eltype is already `T`
 set_eltype(::Type{T}, D::Diagonal{<:AbstractFloat}) where {T} = Diagonal(set_eltype(T, D.diag))
 
 function set_eltype(::Type{T}, sol::PrimalDualSolution) where {T}
