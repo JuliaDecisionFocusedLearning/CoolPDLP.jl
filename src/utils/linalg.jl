@@ -5,6 +5,10 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
+# The formats are not wrappers around another array: say so, so that packages walking the
+# wrapper chain (e.g. Reactant's `ancestor`) do not have to guess, and warn.
+Adapt.parent_type(::Type{M}) where {M <: GPUSparseMatrix} = M
+
 # The formats implement `sparse_mul!`, and `mul!` forwards to it with exactly the signatures of
 # `sparse_mul!`: a broader one would be ambiguous with LinearAlgebra's generic `mul!`, and would
 # also catch the products with mismatched storage that this generic `mul!` used to serve.

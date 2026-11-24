@@ -2,10 +2,14 @@ using Chairmarks
 using CoolPDLP
 using CoolPDLP: nbinstances, restart!, restart_check!, save_last!, step!, termination_check!
 using MathOptBenchmarkInstances
+using Preferences: load_preference
 using ProgressMeter
 using Random
 using SparseArrays
 using Test
+
+# allocations are measured on the code users get, without DispatchDoctor's wrappers
+@test load_preference(CoolPDLP, "dispatch_doctor_mode") == "disable"
 
 prepstate(milp, algo) = initialize(
     milp, PrimalDualSolution(milp), algo; starting_time = time()
