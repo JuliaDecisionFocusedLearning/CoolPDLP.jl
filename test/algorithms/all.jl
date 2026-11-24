@@ -23,7 +23,9 @@ function test_optimizer(
         obj_rtol::Float64 = 1.0e-2, cons_tol::Float64 = 1.0e-2, int_tol::Float64 = Inf,
     )
     qps, path = read_instance(dataset, name)
-    milp = MILP(qps; dataset, path)
+    # `read_instance` returns the path as `Any`: left as is, the MILP and the whole solve
+    # below are inferred on abstract types, which takes minutes to compile
+    milp = MILP(qps; dataset, path = path::String)
 
     jump_model = JuMP.read_from_file(path; format = MOI.FileFormats.FORMAT_MPS)
     JuMP.set_optimizer(jump_model, HiGHS.Optimizer)

@@ -5,6 +5,10 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
+# The formats are not wrappers around another array: say so, so that packages walking the
+# wrapper chain (e.g. Reactant's `ancestor`) do not have to guess, and warn.
+Adapt.parent_type(::Type{M}) where {M <: GPUSparseMatrix} = M
+
 # The formats implement `sparse_mul!`, and `mul!` forwards to it. Vectors may be strided, like
 # the column views that Krylov.jl multiplies: those on different backends throw an
 # `ArgumentError` rather than fall back to the generic `mul!`, which reads `A` entry by entry.

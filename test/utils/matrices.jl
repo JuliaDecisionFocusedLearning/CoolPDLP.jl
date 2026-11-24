@@ -85,3 +85,8 @@ end
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
 end
+
+@testset "parent_type $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+    A = M(sprand(10, 8, 0.3))
+    @test Adapt.parent_type(typeof(A)) == typeof(A)
+end

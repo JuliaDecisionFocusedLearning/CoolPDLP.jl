@@ -23,7 +23,10 @@ using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz,
 
 include("public.jl")
 
-@stable begin
+# DispatchDoctor's checks are off unless the `dispatch_doctor_mode` preference turns them on
+# (the test suite sets it to "error"): left on, their wrappers can stop hot-path broadcasts
+# from inlining and make them allocate, so users get the plain code
+@stable default_mode = "disable" begin
     include("utils/device.jl")
     include("utils/mat_coo.jl")
     include("utils/mat_csr.jl")

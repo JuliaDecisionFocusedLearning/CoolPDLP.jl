@@ -77,18 +77,23 @@ MOI.supports(::Optimizer, ::MOI.Silent) = true
 MOI.supports(::Optimizer, ::MOI.TimeLimitSec) = true
 MOI.supports(::Optimizer, ::MOI.RawOptimizerAttribute) = true
 
-MOI.get(model::Optimizer, ::MOI.TimeLimitSec) = get(model.options, :time_limit, nothing)
+function MOI.get(model::Optimizer, ::MOI.TimeLimitSec)
+    haskey(model.options, :time_limit) || return nothing
+    # a `RawOptimizerAttribute("time_limit")` may have stored any real number
+    return convert(Float64, model.options[:time_limit])
+end
 function MOI.set(model::Optimizer{T}, ::MOI.TimeLimitSec, value) where {T}
-    return if isnothing(value)
+    if isnothing(value)
         delete!(model.options, :time_limit)
     else
         model.options[:time_limit] = Float64(value)
     end
+    return nothing
 end
 MOI.get(model::Optimizer, ::MOI.Silent) = model.silent
-MOI.set(model::Optimizer, ::MOI.Silent, value::Bool) = (model.silent = value;)
+MOI.set(model::Optimizer, ::MOI.Silent, value::Bool) = (model.silent = value; nothing)
 MOI.get(model::Optimizer, attr::MOI.RawOptimizerAttribute) = model.options[Symbol(attr.name)]
-MOI.set(model::Optimizer, attr::MOI.RawOptimizerAttribute, value) = (model.options[Symbol(attr.name)] = value;)
+MOI.set(model::Optimizer, attr::MOI.RawOptimizerAttribute, value) = (model.options[Symbol(attr.name)] = value; nothing)
 
 MOI.get(::Optimizer, ::MOI.SolverName) = "CoolPDLP"
 MOI.get(::Optimizer, ::MOI.SolverVersion) = string(pkgversion(CoolPDLP))
@@ -238,7 +243,11 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     end
     algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
 
-    sol, stats = solve(milp, algo)
+    # `algo` comes from untyped options, so it is inferred as `Any`: with a direct call, the
+    # compiler would still infer the only matching `solve` method on the abstract `Algorithm`,
+    # which takes many minutes (the whole solver over abstract types). `invokelatest` keeps that
+    # call opaque, and `solve` gets compiled at run time for the concrete algorithm instead.
+    sol, stats = Base.invokelatest(solve, milp, algo)
 
     dest.x = Array(sol.x)
     dest.y = Array(sol.y)
