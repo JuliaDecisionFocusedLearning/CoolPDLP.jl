@@ -58,11 +58,6 @@ end
 
 include("MOI_wrapper.jl")
 
-function __init__()
-    Base.Experimental.register_error_hint(svd_error_hint, MethodError)
-    return nothing
-end
-
 @public sametype_transpose
 
 export GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL

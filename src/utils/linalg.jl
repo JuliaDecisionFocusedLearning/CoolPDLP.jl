@@ -166,17 +166,15 @@ Base.eltype(op::KrylovOperator) = eltype(op.K)
 Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
 LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
-# SVD of the small bidiagonal matrix: LAPACK in `Float32` and `Float64` (and `Float16` through
-# `Float32`), GenericLinearAlgebra for other precisions, or a `MethodError` without it
-bidiagonal_svd(d, e) = LinearAlgebra.svd!(Bidiagonal(d, e, :L))
-bidiagonal_svd(d::Vector{Float16}, e::Vector{Float16}) = bidiagonal_svd(Float32.(d), Float32.(e))
-
-# registered in `__init__`: suggest GenericLinearAlgebra when `bidiagonal_svd` lacks a method
-function svd_error_hint(io::IO, exc::MethodError, argtypes, kwargs)
-    if exc.f === LinearAlgebra.svd! && length(argtypes) == 1 && argtypes[1] <: Bidiagonal
-        print(io, "\nCoolPDLP's `spectral_norm` needs this SVD in $(eltype(argtypes[1])): load GenericLinearAlgebra to provide it.")
+# SVD of the small bidiagonal matrix: LAPACK in `Float32` and `Float64`, GenericLinearAlgebra
+# for other precisions
+function bidiagonal_svd(d, e)
+    B = Bidiagonal(d, e, :L)
+    if !applicable(LinearAlgebra.svd!, B)
+        msg = "`spectral_norm` needs the SVD of a `Bidiagonal{$(eltype(B))}`: load GenericLinearAlgebra to provide it"
+        throw(ArgumentError(msg))
     end
-    return nothing
+    return LinearAlgebra.svd!(B)
 end
 
 """

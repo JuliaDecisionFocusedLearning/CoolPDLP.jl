@@ -150,20 +150,15 @@ end
 @testset "Spectral norm in other precisions" begin
     S = sprandn(Xoshiro(6), 30, 40, 0.2)
     ref = opnorm(Matrix(S), 2)
-    A = convert(SparseMatrixCSC{Float16, Int}, S)
-    s = CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-2, maxiter = 1000)
+    A16 = convert(SparseMatrixCSC{Float16, Int}, S)
+    A = convert(SparseMatrixCSC{BigFloat, Int}, S)
+    # precisions outside LAPACK need GenericLinearAlgebra: loaded last, since it extends LinearAlgebra
+    @test_throws "load GenericLinearAlgebra" CoolPDLP.spectral_norm(A16, sparse(transpose(A16)); reltol = 1.0e-2, maxiter = 1000)
+    @test_throws "load GenericLinearAlgebra" CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-2, maxiter = 1000)
+    @eval using GenericLinearAlgebra: GenericLinearAlgebra
+    s = Base.invokelatest(CoolPDLP.spectral_norm, A16, sparse(transpose(A16)); reltol = 1.0e-2, maxiter = 1000)
     @test s isa Float16
     @test s ≈ ref rtol = 1.0e-2
-    # BigFloat needs GenericLinearAlgebra: loaded last, since it extends LinearAlgebra
-    A = convert(SparseMatrixCSC{BigFloat, Int}, S)
-    err = try
-        CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-30, maxiter = 1000)
-    catch e
-        e
-    end
-    @test err isa MethodError
-    @test occursin("load GenericLinearAlgebra", sprint(showerror, err))
-    @eval using GenericLinearAlgebra: GenericLinearAlgebra
     s = Base.invokelatest(CoolPDLP.spectral_norm, A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
     @test s isa BigFloat
     @test s ≈ maximum(GenericLinearAlgebra.svdvals!(Matrix(A))) rtol = 1.0e-35
