@@ -218,8 +218,8 @@ function momentum_update!(state::PDLPState{T}, milp::MILP, params::StepSizeParam
         ifelse(iszero(denominator), one(ω), scaling * kp / denominator)
     end
     (; η, ω) = step_sizes
-    τ = transpose(primal_dual_steps!!(/, scratch.b1, η, ω))
-    σ = transpose(primal_dual_steps!!(*, scratch.b2, η, ω))
+    τ = transpose(batched_apply!!(/, scratch.b1, η, ω))
+    σ = transpose(batched_apply!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c + Q * x_md - At * y), lv, uv)
     x_md = @. scratch.x = (1 - β) * sol_avg.x + β * x
@@ -231,7 +231,7 @@ function momentum_update!(state::PDLPState{T}, milp::MILP, params::StepSizeParam
     masked_copyto!(x, active, xp)
 
     A_xdiff = mul!(scratch.y, A, xdiff)
-    masked_dual_update!(y, active, y, σ, A_xdiff, lc, uc)
+    masked_broadcast!(dual_update, y, active, y, σ, A_xdiff, lc, uc)
     return sol
 end
 
