@@ -296,8 +296,8 @@ function step!(
     (; sol, z, z_anchor, z_bar, step_sizes, scratch, halpern) = state
     (; c, lv, uv, A, At, lc, uc) = milp
     (; η, ω) = step_sizes
-    σ = transpose(primal_dual_steps!!(/, scratch.b1, η, ω))
-    σd = transpose(primal_dual_steps!!(*, scratch.b2, η, ω))
+    σ = transpose(batched_apply!!(/, scratch.b1, η, ω))
+    σd = transpose(batched_apply!!(*, scratch.b2, η, ω))
 
     # a frozen instance of a batch keeps its `(x̄, ȳ)`, `z̄` and `z` (see `active_mask`)
     active = active_mask(state.stats)
