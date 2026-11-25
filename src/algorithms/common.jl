@@ -80,11 +80,6 @@ specific_parameters(::Val, ::Type) = NoParameters()
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        reflection_coefficient = 1.0,
-        pid_kp = 0.99,
-        pid_ki = 0.01,
-        pid_kd = 0.0,
-        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -140,11 +135,6 @@ function Algorithm{A}(
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        reflection_coefficient = 1.0,
-        pid_kp = 0.99,
-        pid_ki = 0.01,
-        pid_kd = 0.0,
-        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -180,11 +170,6 @@ function Algorithm{A}(
         zero_tol = _T(zero_tol),
         spectral_norm_tol = _T(spectral_norm_tol),
         spectral_norm_maxiter,
-        reflection_coefficient = _T(reflection_coefficient),
-        pid_kp = _T(pid_kp),
-        pid_ki = _T(pid_ki),
-        pid_kd = _T(pid_kd),
-        pid_integral_discount = _T(pid_integral_discount),
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),
