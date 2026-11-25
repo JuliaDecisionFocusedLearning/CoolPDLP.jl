@@ -30,6 +30,35 @@ function HPDLP(args...; kwargs...)
 end
 
 """
+    HalpernParameters
+
+Parameters of [`HPDLP`](@ref) that the other algorithms do not read.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct HalpernParameters{T <: Number}
+    "reflection coefficient `γ` of the Halpern iteration (`1` is fully reflected, `1/2` is plain Halpern on the PDHG operator)"
+    reflection_coefficient::T
+    "proportional gain of the PID primal weight controller"
+    pid_kp::T
+    "integral gain of the PID primal weight controller"
+    pid_ki::T
+    "derivative gain of the PID primal weight controller"
+    pid_kd::T
+    "discount applied to the integral term of the PID primal weight controller at each restart"
+    pid_integral_discount::T
+end
+
+function specific_parameters(
+        ::Val{:HPDLP}, ::Type{T}; reflection_coefficient = 1.0, pid_kp = 0.99, pid_ki = 0.01,
+        pid_kd = 0.0, pid_integral_discount = 0.3,
+    ) where {T}
+    return HalpernParameters{T}(reflection_coefficient, pid_kp, pid_ki, pid_kd, pid_integral_discount)
+end
+
+"""
     HalpernStats
 
 Per-instance bookkeeping of [`HPDLP`](@ref): Halpern counters, fixed-point residuals and the
@@ -263,7 +292,7 @@ function step!(
         ::Val{fixed_point_error},
     ) where {T, fixed_point_error}
     (; sol, z, z_anchor, step_sizes, scratch, halpern) = state
-    γ = algo.step_size.reflection_coefficient
+    γ = algo.specific.reflection_coefficient
     # a frozen instance keeps `T(z)` and `z` as they were when it terminated
     active = active_mask(state.stats)
     masked_copy!(sol, active, z)
@@ -391,7 +420,7 @@ The other instances are left untouched, since every update is masked column by c
 function restart!(state::HPDLPState{T}, milp::MILP, algo::Algorithm{:HPDLP}) where {T}
     (; sol, z, z_anchor, step_sizes, scratch, halpern, stats) = state
     (; restart) = halpern
-    pid_update!(halpern, step_sizes, scratch, sol, z_anchor, stats.err, algo.step_size)
+    pid_update!(halpern, step_sizes, scratch, sol, z_anchor, stats.err, algo.specific)
     batched_select!(z_anchor, restart, sol)
     batched_select!(z, restart, sol)
     halpern.inner = batched_apply!!(halpern.inner, restart, halpern.inner) do r, k
@@ -418,7 +447,7 @@ back to the one which balanced the residuals best so far and the controller is r
 function pid_update!(
         halpern::HalpernStats, step_sizes::StepSizes, scratch::Scratch,
         sol::PrimalDualSolution, z_anchor::PrimalDualSolution, err::KKTErrors,
-        params::StepSizeParameters,
+        params::HalpernParameters,
     )
     (; restart) = halpern
     (; pid_kp, pid_ki, pid_kd, pid_integral_discount) = params
