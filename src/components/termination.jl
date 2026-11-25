@@ -39,7 +39,7 @@ $(TYPEDFIELDS)
     "relative tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
     termination_reltol::T
     "absolute tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
-    termination_abstol::T = termination_reltol
+    termination_abstol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
 end

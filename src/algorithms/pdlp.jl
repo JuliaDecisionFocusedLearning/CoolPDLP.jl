@@ -10,6 +10,12 @@ function PDLP(args...; kwargs...)
     )
 end
 
+# the errors in the termination norm, reusing the L2 errors of the restarts when they coincide
+termination_errors(err_l2::KKTErrors, scratch, sol, milp, ::L2Norm) = copy(err_l2)
+function termination_errors(::KKTErrors, scratch, sol, milp, norm::TerminationNorm)
+    return kkt_errors!(KKTErrors(sol), scratch, sol, milp, norm)
+end
+
 """
     PDLPState
 
@@ -82,13 +88,11 @@ function initialize(
     restart_stats = RestartStats(sol)
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
-    err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, L2Norm())  # TODO: count this KKT pass
     # Restarts stay in L2 whatever `termination_norm` is: PDLP's decay factors in
     # `should_restart` assume it, and the stopping test alone must not change the iterates.
-    restart_stats.err_restart = copy(err)
-    (; termination_norm) = algo.generic
-    termination_norm isa L2Norm || kkt_errors!(err, scratch, sol, milp, termination_norm)
+    err_restart = kkt_errors!(KKTErrors(sol), scratch, sol, milp, L2Norm())  # TODO: count this KKT pass
+    restart_stats.err_restart = err_restart
+    err = termination_errors(err_restart, scratch, sol, milp, algo.generic.termination_norm)
     stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,

@@ -180,8 +180,8 @@ end
         primal = 0.5, primal_scale = 100.0, dual = 0.04, dual_scale = 10.0,
         gap = 1.0e-3, gap_scale = 1.0,
     )
-    function converged(; kwargs...)
-        params = TerminationParameters(; max_kkt_passes = 10^9, kwargs...)
+    function converged(; termination_reltol, termination_abstol = termination_reltol)
+        params = TerminationParameters(; termination_reltol, termination_abstol, max_kkt_passes = 10^9)
         stats = ConvergenceStats(copy(err))
         stop = set_termination_status!!(stats, 0.0, params, Inf)
         @test stop == (termination_status(stats) == MOI.OPTIMAL)
@@ -199,9 +199,7 @@ end
     @test !converged(; termination_reltol = 0.0051, termination_abstol = 0.9e-3)
     @test !converged(; termination_reltol = 0.005, termination_abstol = 1.0e-3)
     # the default absolute tolerance is the relative one
-    @test TerminationParameters(;
-        termination_reltol = 1.0e-3, max_kkt_passes = 1
-    ).termination_abstol == 1.0e-3
+    @test PDLP(; termination_reltol = 1.0e-3).termination.termination_abstol == 1.0e-3
     # NaN errors never count as converged
     err.primal = NaN
     @test !converged(; termination_reltol = 1.0)

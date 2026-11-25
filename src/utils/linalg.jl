@@ -77,8 +77,8 @@ end
 """
     TerminationNorm
 
-Norm in which the termination check measures the KKT errors: [`L2Norm`](@ref) (the default, as
-in PDLP) or [`LInfNorm`](@ref).
+Norm in which the termination check measures the KKT errors: [`L2Norm`](@ref) (the default)
+or [`LInfNorm`](@ref).
 """
 abstract type TerminationNorm end
 
