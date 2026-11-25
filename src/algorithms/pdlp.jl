@@ -14,6 +14,22 @@ function PDLP(args...; kwargs...)
 end
 
 """
+    PDLPParameters
+
+Parameters of [`PDLP`](@ref) that the other algorithms do not read.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct PDLPParameters
+    "whether to linearize a quadratic objective at the momentum point of PDQP (see [`momentum_update!`](@ref)), ignored for a linear program"
+    quadratic_momentum::Bool
+end
+
+specific_parameters(::Val{:PDLP}, ::Type; quadratic_momentum = false) = PDLPParameters(quadratic_momentum)
+
+"""
     PDLPState
 
 # Fields
@@ -163,7 +179,7 @@ end
 """
     step!(state::PDLPState, milp, algo)
 
-Apply one PDLP step, with the momentum of PDQP if `algo.generic.quadratic_momentum` is set and
+Apply one PDLP step, with the momentum of PDQP if `algo.specific.quadratic_momentum` is set and
 `milp` is a quadratic program (see [`momentum_update!`](@ref)).
 
 `isquadratic` is decided by the type of `milp.Q` for a [`ZeroMatrix`](@ref), and by its number of
@@ -173,7 +189,7 @@ baked into the traced sparse wrapper, so the branch is still resolved at trace t
 function step!(state::PDLPState, milp::MILP, algo::Algorithm{:PDLP})
     # the plain step is spelled out rather than delegated to `step!(state, milp)`: that call
     # boxed `milp` at every KKT pass
-    if isquadratic(milp.Q) && algo.generic.quadratic_momentum
+    if isquadratic(milp.Q) && algo.specific.quadratic_momentum
         momentum_update!(state, milp, algo.step_size)
         state.stats.kkt_passes += 1
         momentum_average!(state)
