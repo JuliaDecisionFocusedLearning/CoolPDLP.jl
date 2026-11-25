@@ -44,7 +44,7 @@ configs = [(SparseMatrixCSC, CPU()), (GPUSparseMatrixCSR, JLBackend())]
 
 @testset "PDHG" begin
     @testset for (M, backend) in configs
-        algo = PDHG(Float64, Int, M; backend, termination_reltol = 1.0e-1, max_kkt_passes = 10^7, show_progress = false)
+        algo = PDHG(Float64, Int, M; backend, termination_reltol = 1.0e-2, max_kkt_passes = 10^7, show_progress = false)
         dataset = Netlib
         @testset for name in small_names
             test_optimizer(dataset, name, algo; cons_tol = 1.0e-1, obj_rtol = 1.0e-1)

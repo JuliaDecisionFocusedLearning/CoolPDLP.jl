@@ -18,14 +18,6 @@ log_sq(A) = sum(abs2 ∘ log ∘ abs, nonzeros(A))
     A = sprand(rng, 30, 50, 0.2)
     A = Diagonal(exp.(4 .* randn(rng, 30))) * A * Diagonal(exp.(4 .* randn(rng, 50)))
     cons = CoolPDLP.ConstraintMatrix(A, sparse(transpose(A)))
-    @testset "Geometric mean" begin
-        prec = CoolPDLP.geometric_mean_preconditioner(cons; iterations = 12)
-        A_p = CoolPDLP.precondition(cons, prec).A
-        @test all(>(0), prec.D1.diag) && all(>(0), prec.D2.diag)
-        @test nz_spread(A_p) < nz_spread(A) / 100
-        # the transposed matrix is scaled consistently
-        @test CoolPDLP.precondition(cons, prec).At ≈ sparse(transpose(A_p))
-    end
     @testset "Curtis-Reid" begin
         prec = CoolPDLP.curtis_reid_preconditioner(cons; iterations = 20)
         A_p = CoolPDLP.precondition(cons, prec).A
@@ -51,15 +43,16 @@ log_sq(A) = sum(abs2 ∘ log ∘ abs, nonzeros(A))
     end
     @testset "Defaults" begin
         @test PDLP().preconditioning.curtis_reid_iter == 20
-        @test CoolPDLP.Algorithm{:PDLP}().preconditioning.curtis_reid_iter == 0
+        @test CoolPDLP.Algorithm{:PDLP}().preconditioning.curtis_reid_iter == 20
+        @test PDHG().preconditioning.curtis_reid_iter == 20
     end
 end
 
-"Precondition with every stage on, then rescale bounds and objective, like `preprocess`."
+"Precondition with every default stage, then rescale bounds and objective, like `preprocess`."
 function full_scaling(milp, sol)
     params = CoolPDLP.PreconditioningParameters(;
         chambolle_pock_alpha = 1.0, ruiz_iter = 10,
-        geometric_mean_iter = 12, curtis_reid_iter = 20, bound_objective_rescaling = true,
+        curtis_reid_iter = 20, bound_objective_rescaling = true,
     )
     prec = CoolPDLP.pdlp_preconditioner(milp, params)
     milp_p, sol_p = CoolPDLP.precondition(milp, prec), CoolPDLP.precondition(sol, prec)
@@ -139,10 +132,8 @@ end
         obj_highs = JuMP.objective_value(jump_model)
         sol_ref, _ = solve(milp, PDLP(; termination_reltol = 1.0e-6))
         @testset "$name $kw" for kw in [
-                (; geometric_mean_iter = 12),
-                (; curtis_reid_iter = 20),
+                (; curtis_reid_iter = 0),
                 (; bound_objective_rescaling = true),
-                (; geometric_mean_iter = 12, bound_objective_rescaling = true),
             ]
             sol, stats = solve(milp, PDLP(; termination_reltol = 1.0e-6, kw...))
             @test termination_status(stats) == MOI.OPTIMAL
@@ -175,10 +166,8 @@ end
     As = sparse(A)
     for j in 1:2
         # the dense fallbacks agree with the sparse methods, zeros being skipped
-        @test CoolPDLP.geometric_mean_factor(A, j) ≈ CoolPDLP.geometric_mean_factor(As, j)
         @test CoolPDLP.curtis_reid_mean(A, j, [0.1, 0.2, 0.3]) ≈
             CoolPDLP.curtis_reid_mean(As, j, [0.1, 0.2, 0.3])
     end
-    @test CoolPDLP.geometric_mean_factor(A, 1) ≈ 1 / sqrt(2.0 * 4.0)
     @test CoolPDLP.curtis_reid_mean(A, 1, zeros(3)) ≈ -(log(2.0) + log(4.0)) / 2
 end

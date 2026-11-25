@@ -163,45 +163,9 @@ end
 """
     SCALING_FACTOR_BOUNDS
 
-Range `(lo, hi)` to which the geometric-mean and Curtis-Reid factors are clamped, as in cuPDLPx.
+Range `(lo, hi)` to which the Curtis-Reid factors are clamped.
 """
 const SCALING_FACTOR_BOUNDS = (1.0e-20, 1.0e20)
-
-"""
-    geometric_mean_preconditioner(cons; iterations)
-
-Geometric-mean scaling (Tomlin, 1975): alternately divide every row and then every column by
-`sqrt(min * max)` of the absolute values of its nonzeros, `iterations` times.
-"""
-function geometric_mean_preconditioner(cons::ConstraintMatrix{T}; iterations::Integer) where {T}
-    m, n = size(cons.A)
-    prec = identity_preconditioner(cons)
-    for _ in 1:iterations
-        d1 = geometric_mean_factors(cons.At)
-        prec_rows = Preconditioner(Diagonal(d1), Diagonal(ones(T, n)))
-        cons = precondition(cons, prec_rows)
-        d2 = geometric_mean_factors(cons.A)
-        prec_cols = Preconditioner(Diagonal(ones(T, m)), Diagonal(d2))
-        cons = precondition(cons, prec_cols)
-        prec = prec_cols * prec_rows * prec
-    end
-    return prec
-end
-
-geometric_mean_factors(A::AbstractMatrix) = map(j -> geometric_mean_factor(A, j), axes(A, 2))
-
-# `1 / sqrt(min * max)` over the finite nonzero magnitudes of column `j`, or one if there are none
-function geometric_mean_factor(A::AbstractMatrix{T}, j::Integer) where {T}
-    lo, hi = T(Inf), zero(T)
-    for a in first(column_entries(A, j))
-        v = abs(a)
-        (v > 0 && isfinite(v)) || continue
-        lo, hi = min(lo, v), max(hi, v)
-    end
-    iszero(hi) && return one(T)
-    flo, fhi = SCALING_FACTOR_BOUNDS
-    return clamp(inv(sqrt(lo) * sqrt(hi)), T(flo), T(fhi))
-end
 
 """
     curtis_reid_preconditioner(cons; iterations)
@@ -263,31 +227,27 @@ $(TYPEDFIELDS)
     chambolle_pock_alpha::T
     "iteration parameter in the Ruiz preconditioner"
     ruiz_iter::I
-    "number of geometric-mean passes before Ruiz"
-    geometric_mean_iter::I = 0
-    "number of Curtis-Reid rounds before the geometric mean"
-    curtis_reid_iter::I = 0
+    "number of Curtis-Reid rounds before Ruiz"
+    curtis_reid_iter::I = 20
     "whether to rescale the bounds and the objective after preconditioning"
     bound_objective_rescaling::Bool = false
 end
 
 function Base.show(io::IO, params::PreconditioningParameters)
-    (; chambolle_pock_alpha, ruiz_iter, geometric_mean_iter, curtis_reid_iter, bound_objective_rescaling) = params
-    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter, geometric_mean_iter=$geometric_mean_iter, curtis_reid_iter=$curtis_reid_iter, bound_objective_rescaling=$bound_objective_rescaling")
+    (; chambolle_pock_alpha, ruiz_iter, curtis_reid_iter, bound_objective_rescaling) = params
+    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter, curtis_reid_iter=$curtis_reid_iter, bound_objective_rescaling=$bound_objective_rescaling")
 end
 
 function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
     (; A, At) = milp
-    (; chambolle_pock_alpha, ruiz_iter, geometric_mean_iter, curtis_reid_iter) = params
+    (; chambolle_pock_alpha, ruiz_iter, curtis_reid_iter) = params
     cons = ConstraintMatrix(A, At)
     prec_cr = curtis_reid_preconditioner(cons; iterations = curtis_reid_iter)
     cons = precondition(cons, prec_cr)
-    prec_gm = geometric_mean_preconditioner(cons; iterations = geometric_mean_iter)
-    cons = precondition(cons, prec_gm)
     prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
     cons_r = precondition(cons, prec_r)
     prec_cp = chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
-    prec = prec_cp * prec_r * prec_gm * prec_cr
+    prec = prec_cp * prec_r * prec_cr
     return prec
 end
 

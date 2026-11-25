@@ -50,8 +50,7 @@ end
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
-        geometric_mean_iter = 0,
-        curtis_reid_iter = 0,
+        curtis_reid_iter = 20,
         bound_objective_rescaling = false,
         # step sizes
         invnorm_scaling = 0.9,
@@ -88,8 +87,7 @@ function Algorithm{A}(
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
-        geometric_mean_iter = 0,
-        curtis_reid_iter = 0,
+        curtis_reid_iter = 20,
         bound_objective_rescaling = false,
         # step sizes
         invnorm_scaling = 0.9,
@@ -118,7 +116,6 @@ function Algorithm{A}(
     preconditioning = PreconditioningParameters(;
         chambolle_pock_alpha = _T(chambolle_pock_alpha),
         ruiz_iter,
-        geometric_mean_iter,
         curtis_reid_iter,
         bound_objective_rescaling,
     )

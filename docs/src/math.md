@@ -168,12 +168,11 @@ The Ruiz iteration alternately rescales each row and each column of $A$ by the s
 The diagonal preconditioner chains the following stages in this order, each acting on the matrix scaled by the previous ones:
 
 - `curtis_reid_iter` rounds of Curtis–Reid least-squares scaling, which minimizes $\sum_{ij} (\log|a_{ij}| + r_i + s_j)^2$ over the nonzeros by block coordinate descent (not the faster conjugate-gradient method of Curtis and Reid, so it may stop short of the minimum on badly scaled matrices);
-- `geometric_mean_iter` passes of geometric-mean scaling, dividing each row, then each column, by $\sqrt{\min |a| \cdot \max |a|}$;
 - `ruiz_iter` Ruiz passes and the Pock–Chambolle step above.
 
-`Algorithm` turns the first two off by default, while `PDLP()` runs 20 Curtis–Reid rounds. Their factors are clamped to $[10^{-20}, 10^{20}]$.
+Curtis–Reid runs 20 rounds by default, and its factors are clamped to $[10^{-20}, 10^{20}]$.
 
-With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
+With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance.
 A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, PDLP starts from a primal weight of one, and errors and solutions are still reported for the original problem.
 
 The factors of the stages multiply: if stage $k$ produces $D_1^{(k)}, D_2^{(k)}$, the final scaling is

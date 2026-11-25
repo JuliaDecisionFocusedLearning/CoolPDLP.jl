@@ -2,13 +2,10 @@
     PDLP(args...; kwargs...)
 
 Shortcut for [`Algorithm{:PDLP}`](@ref).
-
-Unlike `Algorithm{:PDLP}`, it defaults to `curtis_reid_iter = 20`, as in HPR-LP.
 """
 function PDLP(args...; kwargs...)
     return Algorithm{:PDLP}(
         args...;
-        curtis_reid_iter = 20,
         kwargs...
     )
 end
@@ -78,7 +75,7 @@ function initialize(
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
     η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    # after bound and objective rescaling both norms are below one, and cuPDLPx starts from ω = 1
+    # after bound and objective rescaling both norms are below one, so start from ω = 1
     rescaled = algo.preconditioning.bound_objective_rescaling
     ω_init = rescaled ? one(T) : primal_weight_init(milp, algo.step_size)
     ω = batched_expand(sol.x, ω_init)
