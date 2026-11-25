@@ -9,7 +9,7 @@ using Random
 using SparseArrays
 using Test
 
-@testset "Defaults follow cuPDLPx" begin
+@testset "Defaults" begin
     algo = HPDLP()
     @test algo isa CoolPDLP.Algorithm{:HPDLP}
     @test algo.step_size.invnorm_scaling == 0.998
@@ -180,7 +180,7 @@ end
     algo = HPDLP(; termination_reltol = 1.0e-6, bound_objective_rescaling = true)
     milp_p, sol_p = preprocess(milp, PrimalDualSolution(milp), algo)
     state = initialize(milp_p, sol_p, algo; starting_time = time())
-    # as in cuPDLPx, the rescaled problem starts from a unit primal weight
+    # the rescaled problem starts from a unit primal weight
     @test state.step_sizes.ω == 1
     sol, stats = solve(milp, algo)
     @test termination_status(stats) == MOI.OPTIMAL

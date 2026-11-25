@@ -240,32 +240,33 @@ $T$ is the PDHG step of `pdhg_update!`, with $\tau = \eta/\omega$ and $\sigma = 
 
 At a restart, PID control in log space sets the primal weight. The error is $e = \log(\|\Delta y\| / (\omega \|\Delta x\|))$, measured between $T(z)$ and the previous anchor. The update is $\omega \leftarrow \omega \exp(k_P e + k_I s + k_D (e - e_{\text{prev}}))$, with $s \leftarrow \zeta s + e$.
 
-| | cuPDLPx | `HPDLP()` |
-|---|---|---|
-| step size | $0.998/\|A\|_2$ | same |
-| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 | same |
-| check frequency | 200 | same |
-| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) | same |
-| preconditioning | Ruiz 10 + Pock-Chambolle | **Curtis-Reid 20** + Ruiz 10 + Pock-Chambolle |
-| bound/objective rescaling | on | **off** (on costs about 15 % more passes on Netlib) |
-| ray candidates | $T(z) - z^0$, $T(z)$, $T(z) - z$ | first two only |
+This is the method of [Lu, Peng & Yang (2025)](https://arxiv.org/abs/2507.14051), whose step size $0.998/\|A\|_2$ `HPDLP()` keeps. Its other defaults are:
+
+| | `HPDLP()` |
+|---|---|
+| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 |
+| check frequency | 200 |
+| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) |
+| preconditioning | Curtis-Reid 20 + Ruiz 10 + Pock-Chambolle |
+| bound/objective rescaling | off (on costs about 15 % more passes on Netlib) |
+| ray candidates | $T(z) - z^0$, $T(z)$ |
 
 ### HPRLP: HPR-LP
 
 With $T_1 = \lambda I - AA^\top$ and $\lambda \geq \lambda_{\max}(AA^\top)$, an HPR-LP step is a PDHG step. Its primal step is $\sigma$ and its dual step is $1/(\lambda\sigma)$, so the code uses $\eta = 1/\sqrt\lambda$ and $\omega = \eta/\sigma$.
 The metric $M$ of the splitting gives $\|\Delta\|_M^2 = \|\Delta x\|^2/\sigma + \sigma\lambda \|\Delta y\|^2 + 2\langle A\Delta x, \Delta y\rangle$, which is the PDHG metric above divided by $\eta$.
-The implementation follows the reference code (v0.1.7) rather than the paper where the two differ. On Netlib, its restart iterations and values of $\sigma$ match the reference code's exactly.
+The method is that of [Chen, Sun, Yuan, Zhang & Zhao (2025)](https://doi.org/10.1007/s12532-025-00292-0), and `HPRLP()` differs from the paper as follows.
 
-| | paper | reference code | `HPRLP()` |
-|---|---|---|---|
-| $\lambda$ | power method | 1.01 × power method, grown on the fly when $\|\Delta\|_M^2 < 0$ | as the code (never for a frozen instance) |
-| $\sigma_0$ | 1 | $\|b\|/\|c\|$ of the scaled problem | as the code |
-| $\sigma$ update | $\|\Delta x\|/(\|\Delta y\|\sqrt\lambda)$ | blended in log space with the $\sigma$ of the best residual, plus a correction near $10^{-9}$ | as the code |
-| first check | rule-based | always restarts | as the code |
-| preconditioning | Ruiz 10 + Pock-Chambolle + $b, c$ scaling | Curtis-Reid 20 first | as the code |
-| termination | every 150 steps | also on the logging schedule | every 150 steps |
-| dual residual | | uses $\bar z$ of the splitting | as the code |
-| infeasibility | none | none | ray certificates |
+| | paper | `HPRLP()` |
+|---|---|---|
+| $\lambda$ | power method | 1.01 × power method, grown on the fly when $\|\Delta\|_M^2 < 0$ (never for a frozen instance) |
+| $\sigma_0$ | 1 | $\|b\|/\|c\|$ of the scaled problem |
+| $\sigma$ update | $\|\Delta x\|/(\|\Delta y\|\sqrt\lambda)$ | blended in log space with the $\sigma$ of the best residual, plus a correction near $10^{-9}$ |
+| first check | rule-based | always restarts |
+| preconditioning | Ruiz 10 + Pock-Chambolle + $b, c$ scaling | Curtis-Reid 20, then the same |
+| termination | every 150 steps | every 150 steps |
+| dual residual | | uses $\bar z$ of the splitting |
+| infeasibility | none | ray certificates |
 
 ## Quadratic programs
 
