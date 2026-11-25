@@ -29,7 +29,7 @@ function highs_solution(milp::MILP)
     return JuMP.value.(x), JuMP.objective_value(model)
 end
 
-algname(algo::CoolPDLP.Algorithm{A}) where {A} = algo.generic.quadratic_momentum ? "$A with momentum" : "$A"
+algname(algo::CoolPDLP.Algorithm{A}) where {A} = algo.specific == CoolPDLP.PDLPParameters(true) ? "$A with momentum" : "$A"
 
 qp_algorithms(; kwargs...) = (
     PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),

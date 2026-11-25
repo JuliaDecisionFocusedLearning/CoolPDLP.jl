@@ -13,6 +13,7 @@ struct Algorithm{
         R <: RestartParameters,
         G <: GenericParameters,
         T <: TerminationParameters,
+        X,
     }
     conversion::C
     preconditioning::P
@@ -20,6 +21,8 @@ struct Algorithm{
     restart::R
     generic::G
     termination::T
+    "parameters that only algorithm `A` reads, built by [`specific_parameters`](@ref)"
+    specific::X
 
     function Algorithm{A}(
             conversion::C,
@@ -28,17 +31,35 @@ struct Algorithm{
             restart::R,
             generic::G,
             termination::T,
-        ) where {A, C, P, S, R, G, T}
-        return new{A, C, P, S, R, G, T}(
+            specific::X,
+        ) where {A, C, P, S, R, G, T, X}
+        return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
             step_size,
             restart,
             generic,
             termination,
+            specific,
         )
     end
 end
+
+"""
+    NoParameters
+
+Placeholder for the specific parameters of an algorithm that has none.
+"""
+struct NoParameters end
+
+"""
+    specific_parameters(::Val{A}, ::Type{T}; kwargs...)
+
+Build the parameters that only algorithm `A` reads, in float type `T`, from the keyword arguments of [`Algorithm`](@ref) that the common parameters do not take.
+
+Algorithms without such parameters fall back on [`NoParameters`](@ref) and reject any extra keyword argument.
+"""
+specific_parameters(::Val, ::Type) = NoParameters()
 
 """
     Algorithm{:ALGNAME}(
@@ -59,11 +80,6 @@ end
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        reflection_coefficient = 1.0,
-        pid_kp = 0.99,
-        pid_ki = 0.01,
-        pid_kd = 0.0,
-        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -73,7 +89,6 @@ end
         show_progress = false,
         check_every = 100,
         record_error_history = true,
-        quadratic_momentum = false,
         batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
@@ -82,6 +97,8 @@ end
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        # specific to algorithm `A`, see `specific_parameters`
+        kwargs...
     )
 
 Constructor for algorithm configs.
@@ -124,11 +141,6 @@ function Algorithm{A}(
         zero_tol = 1.0e-8,
         spectral_norm_tol = 1.0e-3,
         spectral_norm_maxiter = 1000,
-        reflection_coefficient = 1.0,
-        pid_kp = 0.99,
-        pid_ki = 0.01,
-        pid_kd = 0.0,
-        pid_integral_discount = 0.3,
         # restart
         sufficient_decay = 0.2,
         necessary_decay = 0.8,
@@ -138,7 +150,6 @@ function Algorithm{A}(
         show_progress = false,
         check_every = 100,
         record_error_history = true,
-        quadratic_momentum = false,
         batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
@@ -147,6 +158,7 @@ function Algorithm{A}(
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        kwargs...
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -165,11 +177,6 @@ function Algorithm{A}(
         zero_tol = _T(zero_tol),
         spectral_norm_tol = _T(spectral_norm_tol),
         spectral_norm_maxiter,
-        reflection_coefficient = _T(reflection_coefficient),
-        pid_kp = _T(pid_kp),
-        pid_ki = _T(pid_ki),
-        pid_kd = _T(pid_kd),
-        pid_integral_discount = _T(pid_integral_discount),
     )
     restart = RestartParameters(;
         sufficient_decay = _T(sufficient_decay),
@@ -181,7 +188,6 @@ function Algorithm{A}(
         show_progress,
         check_every,
         record_error_history,
-        quadratic_momentum,
         batch_compaction = Bool(batch_compaction),
         time_limit,
         termination_norm,
@@ -193,18 +199,21 @@ function Algorithm{A}(
         infeasibility_tol = convert_tol(_T, infeasibility_tol),
     )
 
+    specific = specific_parameters(Val(A), _T; kwargs...)
+
     return Algorithm{A}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        specific,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, specific) = algo
     return print(
         io, """
         $A algorithm:
@@ -213,7 +222,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $specific"""
     )
 end
 

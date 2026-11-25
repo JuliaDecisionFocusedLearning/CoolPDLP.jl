@@ -44,6 +44,23 @@ function HPRLP(args...; kwargs...)
 end
 
 """
+    HPRLPParameters
+
+Parameters of [`HPRLP`](@ref) that the other algorithms do not read.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct HPRLPParameters{T <: Number}
+    "reflection coefficient `γ` of the Halpern iteration, as in [`HalpernParameters`](@ref)"
+    reflection_coefficient::T
+end
+
+specific_parameters(::Val{:HPRLP}, ::Type{T}; reflection_coefficient = 1.0) where {T} =
+    HPRLPParameters{T}(reflection_coefficient)
+
+"""
     HPRLPState
 
 The step sizes are those of PDHG, `η = 1 / √λ` and `ω = η / σ`, so that the primal step `η / ω`
@@ -316,7 +333,7 @@ function step!(
         hprlp_fixed_point_error!(state, milp, true)
         state.stats.extra_products += 1
     end
-    γ = algo.step_size.reflection_coefficient
+    γ = algo.specific.reflection_coefficient
     w = batched_apply!!(k -> (k + 1) / (k + 2), scratch.b1, halpern.inner)
     halpern_combine!(z.x, w, γ, sol.x, z_anchor.x, active)
     halpern_combine!(z.y, w, γ, sol.y, z_anchor.y, active)
