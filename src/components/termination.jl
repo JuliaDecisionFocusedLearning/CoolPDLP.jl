@@ -55,7 +55,7 @@ end
 
 $(TYPEDFIELDS)
 """
-mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number, S <: Number}
+mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number, S <: Number, X}
     "current KKT error"
     err::KKTErrors{T}
     "time at which the algorithm started, in seconds"
@@ -68,6 +68,8 @@ mutable struct ConvergenceStats{T <: BatchedNumber, F <: Number, I <: Number, S 
     termination_status_code::S
     "history of KKT errors, indexed by number of KKT passes"
     error_history::Vector{Tuple{I, KKTErrors{T}}}
+    "statistics that only the algorithm in use records, or `nothing`"
+    algorithm::X
 end
 
 function ConvergenceStats(
@@ -76,16 +78,18 @@ function ConvergenceStats(
         time_elapsed = 0.0,
         kkt_passes::I = 0,
         termination_status_code::S = status_code(MOI.OPTIMIZE_NOT_CALLED),
-        error_history = [(kkt_passes, copy(err))]
-    ) where {T, I, S}
+        error_history = [(kkt_passes, copy(err))],
+        algorithm::X = nothing,
+    ) where {T, I, S, X}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
-    return ConvergenceStats{T, F, I, S}(
+    return ConvergenceStats{T, F, I, S, X}(
         err,
         starting_time,
         time_elapsed,
         kkt_passes,
         termination_status_code,
-        error_history
+        error_history,
+        algorithm,
     )
 end
 
@@ -121,8 +125,11 @@ function instance(stats::ConvergenceStats, i::Int)
         kkt_passes = stats.kkt_passes,
         termination_status_code = stats.termination_status_code,
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
+        algorithm = instance(stats.algorithm, i),
     )
 end
+
+instance(::Nothing, ::Int) = nothing
 
 function Base.show(io::IO, stats::ConvergenceStats)
     (; err, time_elapsed, kkt_passes) = stats

@@ -19,10 +19,16 @@ milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
     @test occursin("RestartParameters", str)
     @test occursin("GenericParameters", str)
     @test occursin("TerminationParameters", str)
+    @test occursin(sprint(show, algo.specific), str)
     # the settings above must survive into the printed configuration
     @test occursin("types=(Float64, Int64, SparseMatrixCSC)", str)
     @test occursin("check_every=42", str)
     @test occursin("max_kkt_passes=314", str)
+end
+
+@testset "$alg rejects unknown keywords" for alg in (PDHG, PDLP)
+    @test alg().specific === CoolPDLP.NoParameters()
+    @test_throws MethodError alg(; not_a_parameter = 1)
 end
 
 @testset "KKT errors" begin
@@ -40,4 +46,5 @@ end
     @test occursin(string(termination_status(stats)), str)
     @test occursin("KKT passes: $(stats.kkt_passes)", str)
     @test occursin("KKT relative errors", str)
+    @test isnothing(stats.algorithm)
 end
