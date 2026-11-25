@@ -192,7 +192,7 @@ Called by the solve loops after every check. When at least half of a host batch 
 batch, write them back into `state` and return `true`; otherwise return `must_terminate`.
 
 Only a host `Bool` stop flag and `Array` iterates qualify, so a compiled Reactant solve and the
-device backends are untouched. Disabled by `batch_compaction = false`.
+device backends are untouched. Enabled by `batch_compaction = true`.
 """
 maybe_compact!(::AbstractState, ::MILP, ::Algorithm, prog, must_terminate) = must_terminate
 function maybe_compact!(state::AbstractState, milp::MILP, algo::Algorithm, prog, must_terminate::Bool)

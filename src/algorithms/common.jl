@@ -74,7 +74,7 @@ end
         check_every = 100,
         record_error_history = true,
         quadratic_momentum = false,
-        batch_compaction = true,
+        batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -139,7 +139,7 @@ function Algorithm{A}(
         check_every = 100,
         record_error_history = true,
         quadratic_momentum = false,
-        batch_compaction = true,
+        batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,

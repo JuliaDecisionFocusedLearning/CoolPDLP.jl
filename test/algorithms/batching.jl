@@ -287,7 +287,7 @@ end
         @test stats1.active == stats0.active
     end
     @testset "PDLP" begin
-        sol, stats = solve(batch, PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000))
+        sol, stats = solve(batch, PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000, batch_compaction = true))
         @test termination_status(stats) == CoolPDLP.MOI.OPTIMAL
         @test all(relative(instance(stats, i).err) <= 1.0e-6 for i in 1:B)
     end
