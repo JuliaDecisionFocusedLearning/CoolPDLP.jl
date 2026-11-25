@@ -252,3 +252,39 @@ end
     @allowscalar @test termination_status(instance(stats, 1)) == MOI.OPTIMAL
     @allowscalar @test termination_status(instance(stats, 2)) == MOI.ITERATION_LIMIT
 end
+
+@testset "Quadratic programs" begin
+    # min ½x₁² - x₂ with x₁ - x₂ ≤ 1 and x ≥ 0: unbounded along d = (0, 1), which has Qd = 0,
+    # A d = -1 ≤ 0 and cᵀd = -1 < 0
+    unbounded_qp = MILP(;
+        c = [0.0, -1.0], Q = sparse([1.0 0.0; 0.0 0.0]), lv = [0.0, 0.0], uv = [Inf, Inf],
+        A = sparse([1.0 -1.0]), lc = [-Inf], uc = [1.0],
+    )
+    # min ½x₁² - x₁ with x₁ - x₂ ≤ 1 and x ≥ 0: the linear part alone would be unbounded along
+    # (1, 1), but Q curves it up, so the optimum x₁ = 1 is finite
+    bounded_qp = MILP(;
+        c = [-1.0, 0.0], Q = sparse([1.0 0.0; 0.0 0.0]), lv = [0.0, 0.0], uv = [Inf, Inf],
+        A = sparse([1.0 -1.0]), lc = [-Inf], uc = [1.0],
+    )
+    infeasible_qp = MILP(;
+        c = [1.0, 1.0], Q = sparse(1.0I, 2, 2), lv = [0.0, 0.0], uv = [Inf, Inf],
+        A = sparse([1.0 1.0; 1.0 1.0]), lc = [3.0, -Inf], uc = [Inf, 1.0],
+    )
+    @testset "$(typeof(algo).parameters[1])" for algo in (
+            PDHG(), PDLP(), HPDLP(),
+        )
+        sol, stats = solve(unbounded_qp, algo)
+        @test termination_status(stats) == MOI.DUAL_INFEASIBLE
+        check_primal_ray(stats.ray.x, unbounded_qp)
+        d = stats.ray.x / norm(stats.ray.x, Inf)
+        @test norm(unbounded_qp.Q * d) < 1.0e-6
+
+        sol, stats = solve(bounded_qp, algo)
+        @test termination_status(stats) == MOI.OPTIMAL
+        @test objective_value(sol.x, bounded_qp) ≈ -0.5 atol = 1.0e-4
+
+        sol, stats = solve(infeasible_qp, algo)
+        @test termination_status(stats) == MOI.INFEASIBLE
+        check_dual_ray(stats.ray.y, infeasible_qp)
+    end
+end

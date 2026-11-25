@@ -43,9 +43,9 @@ end
 """
     objective_value(x, milp)
 
-Compute the value of the objective of `milp` at solution vector `x`, constant included.
+Compute the value of the objective `½xᵀQx + cᵀx + c0` of `milp` at solution vector `x`.
 """
-objective_value(x, milp::MILP) = coldot(x, milp.c) .+ milp.c0
+objective_value(x, milp::MILP) = coldot(x, milp.c) .+ quadratic_value(x, milp.Q) .+ milp.c0
 
 """
     PrimalDualSolution

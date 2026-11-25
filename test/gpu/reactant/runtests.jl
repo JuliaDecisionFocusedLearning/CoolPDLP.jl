@@ -150,7 +150,7 @@ end
 
 Check that a compiled solve ended up where the plain one did.
 """
-function test_agreement(state, state_r; rtol)
+function test_agreement(state, state_r; rtol, atol = 0.0)
     @testset "Finite iterates" begin
         @test all(isfinite, unwrap(state_r.sol.x))
         @test all(isfinite, unwrap(state_r.sol.y))
@@ -162,15 +162,15 @@ function test_agreement(state, state_r; rtol)
     end
 
     @testset "Same solution" begin
-        @test isapprox(unwrap(state_r.sol.x), unwrap(state.sol.x); rtol)
-        @test isapprox(unwrap(state_r.sol.y), unwrap(state.sol.y); rtol)
+        @test isapprox(unwrap(state_r.sol.x), unwrap(state.sol.x); rtol, atol)
+        @test isapprox(unwrap(state_r.sol.y), unwrap(state.sol.y); rtol, atol)
     end
 
     @testset "Same KKT errors" begin
         @testset "$field" for field in fieldnames(KKTErrors)
             err = unwrap(getfield(state.stats.err, field))
             err_r = unwrap(getfield(state_r.stats.err, field))
-            @test isapprox(err_r, err; rtol)
+            @test isapprox(err_r, err; rtol, atol)
         end
     end
 
@@ -303,6 +303,32 @@ const HALPERN_ALGORITHMS = (:HPDLP, :HPRLP)
         test_agreement(state, state_r; rtol = 1.0e-8)
         @test unwrap(state_r.stats.extra_products) == unwrap(state.stats.extra_products)
     end
+end
+
+# a quadratic objective adds products by `Q` to the steps and the KKT errors; with dense
+# matrices, a sparse `Q` stays in the CSR format of this package (see `convert_matrix`)
+const QP_ALGORITHMS = (:PDHG, :PDLP, :HPDLP)
+qp0 = MILP(read_instance(MarosMeszaros, "HS21")[1])
+
+@testset verbose = true "Quadratic program with $A and $M" for A in QP_ALGORITHMS,
+        M in (Matrix, GPUSparseMatrixCSR)
+
+    algo = CoolPDLP.Algorithm{A}(
+        Float64,
+        Int32,
+        M;
+        backend = nothing,
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    state, state_r = solve_plain_and_compiled(algo, qp0, PrimalDualSolution(qp0))
+    # HS21 is solved exactly: its multiplier and gap are zero in the plain run, and rounding
+    # noise in the compiled one
+    test_agreement(state, state_r; rtol = 1.0e-8, atol = 1.0e-12)
 end
 
 """

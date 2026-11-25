@@ -14,7 +14,7 @@ using Reactant: Reactant, @reactant_overlay
 # The preconditioning parameters only act before the solve loop, and hold `Bool` fields which
 # number tracking would try (and fail) to turn into traced numbers.
 const Structural = Union{
-    CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters,
+    CoolPDLP.GPUSparseMatrix, CoolPDLP.GenericParameters, CoolPDLP.ZeroMatrix,
     CoolPDLP.PreconditioningParameters, CoolPDLP.ConversionParameters,
 }
 

@@ -136,7 +136,8 @@ Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
 
 The errors are those of the original problem, before preconditioning and bound and objective
-rescaling.
+rescaling. For a quadratic program, the reduced costs are `c + Q x - Aᵀ y`, the primal
+objective gains `½ xᵀQx` and the dual objective loses it, as in PDQP and HPR-QP.
 """
 function kkt_errors!(
         err::KKTErrors,
@@ -167,14 +168,17 @@ function kkt_errors!(
         norm::TerminationNorm,
     ) where {T}
     (; x, y) = sol
-    (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
-    # the rescaled problem has bounds `β b`, objective `γ c` and solution `(β x, γ y)`
+    (; c, c0, lv, uv, A, At, Q, lc, uc, D1, D2) = milp
+    # the rescaled problem has bounds `β b`, objective `γ c`, quadratic term `(γ / β) Q` and
+    # solution `(β x, γ y)`
     β, γ = milp.bound_scale, milp.obj_scale
     βr, γr = transpose(β), transpose(γ)
 
     A_x = mul!(scratch.y, A, x)
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
     c_At_y = mul!(scratch.x, At, y, -1, false)
+    # `err.gap` holds `xᵀQx` until the gap itself is computed
+    xQx = add_quadratic_gradient!!(err.gap, scratch.z, c_At_y, Q, x)
     c_At_y .+= c
     z = bound_multipliers!(scratch.z, c_At_y, lv, uv, z_given)
 
@@ -204,11 +208,14 @@ function kkt_errors!(
     pc_sum = colsum!!(scratch.b1, pc)
     pv_sum = colsum!!(scratch.b2, pv)
     # the objective constant cancels out in the gap, but not in its scale
-    # both objectives are those of the original problem, hence the division by `β γ`
+    # both objectives are those of the original problem, hence the division by `β γ` (the
+    # quadratic term `x̃ᵀQ̃x̃` of the rescaled problem is `β γ xᵀQx` as well)
+    pc_sum = subtract_half!!(pc_sum, xQx)
     dobj = broadcast!!(
         (p, v, b, g, k) -> (p + v) / (b * g) + k, scratch.b1, pc_sum, pv_sum, β, γ, c0
     )
     cx = colsum!!(scratch.b2, @. scratch.x = c * x)
+    cx = add_half!!(cx, xQx)
     pobj = broadcast!!((cx, b, g, k) -> cx / (b * g) + k, scratch.b2, cx, β, γ, c0)
 
     err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, pobj, dobj)

@@ -13,6 +13,8 @@ function permute_rows_columns(
     return sparse(invperm_row[I], invperm_col[J], V, m, n)
 end
 
+permute_rows_columns(Z::ZeroMatrix; perm_col::Vector{Int}, perm_row::Vector{Int}) = Z
+
 """
     sort_rows_columns(milp)
 
@@ -20,7 +22,7 @@ Return a new `MILP` where the constraint matrix has been permuted by order of in
 """
 function sort_rows_columns(milp::MILP)
     (;
-        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        c, c0, lv, uv, A, At, Q, lc, uc, D1, D2, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
 
@@ -34,6 +36,7 @@ function sort_rows_columns(milp::MILP)
         uv = uv[perm_var],
         A = permute_rows_columns(A; perm_col = perm_var, perm_row = perm_cons),
         At = permute_rows_columns(At; perm_col = perm_cons, perm_row = perm_var),
+        Q = permute_rows_columns(Q; perm_col = perm_var, perm_row = perm_var),
         lc = lc[perm_cons],
         uc = uc[perm_cons],
         D1 = Diagonal(diag(D1)[perm_cons]),

@@ -9,7 +9,9 @@ arXiv:2106.04756). At every termination check, a few candidate directions are pr
 the sign conditions of a ray, then tested on both the original (unscaled) and the preconditioned problem:
 
 - a primal ray `d` certifies dual infeasibility when `A * d` lies in the recession cone of
-  `[lc, uc]`, `d` in that of `[lv, uv]` (enforced by the projection) and `cᵀd < 0`;
+  `[lc, uc]`, `d` in that of `[lv, uv]` (enforced by the projection), `cᵀd < 0` and, for a
+  quadratic program, `Q * d = 0` (the objective must not curve up along the ray; `‖Q d‖` is
+  added to the violation);
 - a dual ray `y` certifies primal infeasibility when its reduced cost `r = -Aᵀy` pairs with
   finite variable bounds only (`r > 0` needs a finite lower bound and `r < 0` a finite upper
   bound, while the projection makes `y` pair with finite constraint bounds), and its dual
@@ -151,28 +153,39 @@ Compute the certificate error of the primal ray `d` (scaled space), column by co
 The violation is measured both on the original problem and on the preconditioned one, and the
 error is the larger of the two (see [`dual_ray_error!!`](@ref)).
 
-Costs one multiplication by `A` (counted in the pass that [`infeasibility_check!`](@ref) charges
-to `stats.ray_passes`).
+Costs one multiplication by `A`, and one by `Q` for a quadratic program (both counted in the
+pass that [`infeasibility_check!`](@ref) charges to `stats.ray_passes`).
 """
 function primal_ray_error!!(
         dest::BatchedNumber, ws::InfeasibilityWorkspace, scratch::Scratch,
         d::AbstractVecOrMat, milp::MILP, tol::Number,
     )
-    (; c, A, lc, uc, D1, bound_scale) = milp
+    (; c, A, Q, lc, uc, D1, D2, bound_scale, obj_scale) = milp
     Ad = mul!(scratch.y, A, d)
     viol = @. scratch.y = primal_ray_violation(Ad, lc, uc)
     # each term is brought back to the original problem (see `kkt_errors!`): for a ray `d` of
-    # the rescaled problem, `d / β` is one of the original problem, `A d` scales like `β`
-    # and `cᵀd` like `β γ`; the preconditioned violation (in `dest`) only
+    # the rescaled problem, `d / β` is one of the original problem, `A d` scales like `β`,
+    # `Q d` like `γ` and `cᵀd` like `β γ`; the preconditioned violation (in `dest`) only
     # leaves out the diagonal scalings `D1` and `D2`
     dest = colnorm!!(dest, viol)
     dest = broadcast!!(/, dest, dest, bound_scale)
     ws.t1 = colnorm!!(ws.t1, @. scratch.y = inv(D1.diag) * viol)
     ws.t1 = broadcast!!(/, ws.t1, ws.t1, bound_scale)
+    # ‖D2⁻¹ Q d‖ is the violation of `Q d = 0` in the original space (`Q d = D2⁻¹ Q̃ d̃`). It is
+    # spelled out rather than delegated to `quadratic_norm!!`: under DispatchDoctor, each extra
+    # layer of `@stable` calls makes its compile-time stability check likelier to stop folding,
+    # and then it runs (and allocates) at every check. `isquadratic` is a constant for a
+    # `ZeroMatrix`, so a linear program skips the block at compile time.
+    if isquadratic(Q)
+        Qd = quadratic_mul!(scratch.z, Q, d)
+        ws.t2 = colnorm!!(ws.t2, Qd)
+        dest = broadcast!!((v, q, g) -> v + q / g, dest, dest, ws.t2, obj_scale)
+        ws.t4 = colnorm!!(ws.t4, @. scratch.z = inv(D2.diag) * Qd)
+        ws.t1 = broadcast!!((v, q, g) -> v + q / g, ws.t1, ws.t1, ws.t4, obj_scale)
+    end
     ws.t1 = broadcast!!(max, ws.t1, ws.t1, dest)
     ws.t2 = colsum!!(ws.t2, @. scratch.x = c * d)
     ws.t3 = colsum!!(ws.t3, @. scratch.x = abs(c * d))
-    (; obj_scale) = milp
     return broadcast!!(dest, ws.t1, ws.t2, ws.t3, bound_scale, obj_scale) do v, o, oa, b, g
         ray_error(v, -o / (b * g), oa / (b * g), tol)
     end
@@ -236,7 +249,9 @@ Look for infeasibility certificates among two candidate rays, each given as a `(
 (see [`ray_candidates`](@ref)), and store the errors of the best ones in
 `stats.primal_ray_error` and `stats.dual_ray_error`, and the rays themselves in `infeas.ray`.
 
-Each candidate costs one multiplication by `A` and one by `Aᵀ`, i.e. one KKT pass. These two passes go to `stats.ray_passes`, not `stats.kkt_passes`:
+Each candidate costs one multiplication by `A` and one by `Aᵀ`, plus one by `Q` for a quadratic
+program, i.e. one KKT pass with the same convention as an iteration (which also multiplies by
+`A`, `Aᵀ` and `Q` once each). These two passes go to `stats.ray_passes`, not `stats.kkt_passes`:
 the detection does not eat into `max_kkt_passes`. Does nothing at all when the detection is
 disabled (`infeas === nothing`).
 """

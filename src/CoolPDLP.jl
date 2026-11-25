@@ -34,6 +34,7 @@ include("public.jl")
     include("utils/linalg.jl")
     include("utils/test.jl")
     include("utils/batching.jl")
+    include("utils/quadratic.jl")
 
     include("problems/milp.jl")
     include("problems/solution.jl")

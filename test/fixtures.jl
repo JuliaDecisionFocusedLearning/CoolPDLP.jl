@@ -1,5 +1,6 @@
 using CoolPDLP
 using Random
+using LinearAlgebra
 using SparseArrays
 
 "MILP fields which can vary from one instance of a batch to the next"
@@ -62,4 +63,26 @@ function same_instance(m1::MILP, m2::MILP)
         milp.dataset, milp.name, milp.path,
     )
     return as_csc(m1) ≈ as_csc(m2)
+end
+
+"""
+    random_qp(rng, m, n; density, rank)
+
+Build a random convex QP which is feasible by construction (its bounds surround a random point)
+and bounded (`Q` is positive definite unless `rank < n`, in which case every variable is boxed).
+"""
+function random_qp(rng, m, n; density = 0.3, rank = n)
+    B = sprandn(rng, rank, n, density)
+    Q = sparse(B' * B)
+    rank == n && (Q += 0.1I)
+    A = sprandn(rng, m, n, density)
+    x0 = randn(rng, n)
+    boxed = rank < n
+    lv = [boxed || rand(rng) < 0.7 ? x - rand(rng) : -Inf for x in x0]
+    uv = [boxed || rand(rng) < 0.7 ? x + rand(rng) : Inf for x in x0]
+    Ax0 = A * x0
+    lc = [rand(rng) < 0.3 ? a : (rand(rng) < 0.5 ? a - rand(rng) : -Inf) for a in Ax0]
+    uc = [lc[i] == Ax0[i] ? Ax0[i] : (rand(rng) < 0.7 ? Ax0[i] + rand(rng) : Inf) for i in eachindex(Ax0)]
+    c = randn(rng, n)
+    return MILP(; c, c0 = randn(rng), Q, lv, uv, A, lc, uc)
 end

@@ -284,6 +284,23 @@ Initialize the appropriate state for solving `milp` starting from `sol` with the
 function initialize end
 
 """
+    supports_quadratic(algo)
+
+Whether `algo` solves quadratic programs, `false` unless its algorithm declares otherwise.
+[`solve`](@ref) throws an `ArgumentError` on a quadratic program otherwise.
+"""
+supports_quadratic(::Algorithm) = false
+supports_quadratic(::Algorithm{:PDHG}) = true
+supports_quadratic(::Algorithm{:PDLP}) = true
+supports_quadratic(::Algorithm{:HPDLP}) = true
+
+function check_supports_quadratic(milp::MILP, algo::Algorithm{A}) where {A}
+    isquadratic(milp.Q) && !supports_quadratic(algo) &&
+        throw(ArgumentError("$A only solves linear programs"))
+    return nothing
+end
+
+"""
     solve(milp, sol, algo)
     solve(milp, algo)
 
@@ -296,12 +313,14 @@ function solve(
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm
     )
+    check_supports_quadratic(milp_init_cpu, algo)
     starting_time = current_time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
+    # with a quadratic objective, the box-constrained optimum cannot be read off the data
     trivial_solve = (
         try_solve_crossed_bounds!(state, milp_init_cpu) ||
-            (nbcons(milp) == 0 && try_solve_noconstraints!(state, milp, algo))
+            (!isquadratic(milp.Q) && nbcons(milp) == 0 && try_solve_noconstraints!(state, milp, algo))
     )
     if !trivial_solve
         solve!(state, milp, algo)

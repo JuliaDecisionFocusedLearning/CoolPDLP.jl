@@ -24,6 +24,9 @@ MOI.Utilities.@product_of_sets(
 Solver type compatible with JuMP, which calls an algorithm from `CoolPDLP` under the hood.
 
 Its options are the same as the keyword arguments of [`Algorithm`](@ref).
+
+The objective may be affine or a convex quadratic (`MOI.ScalarQuadraticFunction`). A quadratic
+objective which is detectably nonconvex (see [`check_convex`](@ref)) makes `optimize!` throw.
 """
 mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     x::Vector{T}
@@ -83,6 +86,7 @@ const SUPPORTED_SET_TYPE{T} = Union{MOI.EqualTo{T}, MOI.GreaterThan{T}, MOI.Less
 MOI.supports_constraint(::Optimizer{T}, ::Type{MOI.VariableIndex}, ::Type{<:SUPPORTED_SET_TYPE{T}}) where {T} = true
 MOI.supports_constraint(::Optimizer{T}, ::Type{MOI.ScalarAffineFunction{T}}, ::Type{<:SUPPORTED_SET_TYPE{T}}) where {T} = true
 MOI.supports(::Optimizer{T}, ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}) where {T} = true
+MOI.supports(::Optimizer{T}, ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{T}}) where {T} = true
 
 MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.Silent) = true
@@ -205,6 +209,26 @@ function _pass_attributes(dest::Optimizer{T}, cache::MOI.Utilities.UniversalFall
     return cache.model
 end
 
+"""
+    quadratic_objective_matrix(f::MOI.ScalarQuadraticFunction, n)
+
+Return the symmetric matrix `Q` such that the quadratic part of `f` is `½ xᵀQx`.
+
+MOI already uses this convention: a diagonal term with coefficient `a` stands for `½ a xᵢ²`, and
+an off-diagonal one for `a xᵢ xⱼ`, so it contributes `a` to both `Qᵢⱼ` and `Qⱼᵢ`.
+"""
+function quadratic_objective_matrix(f::MOI.ScalarQuadraticFunction{T}, n::Integer) where {T}
+    I, J, V = Int[], Int[], T[]
+    for term in f.quadratic_terms
+        i, j, a = term.variable_1.value, term.variable_2.value, term.coefficient
+        push!(I, i); push!(J, j); push!(V, a)
+        if i != j
+            push!(I, j); push!(J, i); push!(V, a)
+        end
+    end
+    return sparse(I, J, V, n, n)
+end
+
 function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallback{OptimizerCache{T}}) where {T}
     MOI.empty!(dest)
     index_map = MOI.Utilities.identity_index_map(fcache)
@@ -217,16 +241,29 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
 
     c = zeros(T, n)
     c0 = zero(T)
-    if cache.objective.scalar_affine !== nothing
-        for term in cache.objective.scalar_affine.terms
+    affine = cache.objective.scalar_affine
+    quadratic = cache.objective.scalar_quadratic
+    if affine !== nothing
+        for term in affine.terms
             c[term.variable.value] += term.coefficient
         end
-        c0 = cache.objective.scalar_affine.constant
+        c0 = affine.constant
+    end
+    Q = if quadratic !== nothing
+        for term in quadratic.affine_terms
+            c[term.variable.value] += term.coefficient
+        end
+        c0 = quadratic.constant
+        quadratic_objective_matrix(quadratic, n)
+    else
+        nothing
     end
     if max_sense  # a `MILP` is a minimization problem
         c .*= -one(T)
         c0 = -c0
+        isnothing(Q) || (Q .*= -one(T))
     end
+    isnothing(Q) || check_convex(Q)
 
     dest.sets = cache.constraints.sets
     lv = cache.variables.lower
@@ -234,7 +271,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     lc = cache.constraints.constants.lower
     uc = cache.constraints.constants.upper
 
-    milp = MILP(; c, c0, lv, uv, A, lc, uc)
+    milp = isnothing(Q) ? MILP(; c, c0, lv, uv, A, lc, uc) : MILP(; c, c0, lv, uv, A, Q, lc, uc)
 
     algorithm = get(dest.options, :algorithm, PDLP)
 
@@ -283,7 +320,8 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
         dest.dual_status = has_ray ? MOI.INFEASIBILITY_CERTIFICATE : MOI.UNKNOWN_RESULT_STATUS
     elseif cts == MOI.DUAL_INFEASIBLE
         # the primal ray `x` certifies dual infeasibility, its objective (without the objective
-        # constant) is negative in the minimization form
+        # constant) is negative in the minimization form; for a QP this only checks `cᵀd < 0`,
+        # since the detector already required `Q d ≈ 0` (see `primal_ray_error!!`)
         x = Array(stats.ray.x)
         scale = maximum(abs, x; init = zero(eltype(x)))
         dest.x = iszero(scale) ? x : x ./ scale
@@ -297,9 +335,11 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     else
         dest.x = Array(sol.x)
         dest.y = Array(sol.y)
-        dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
+        Qx = isnothing(Q) ? zero(c) : Q * dest.x
+        dest.z = proj_multiplier.(c .+ Qx .- milp.At * dest.y, lv, uv)
         raw_obj = objective_value(dest.x, milp)
-        raw_dual_obj = _dual_objective(dest.y, dest.z, milp, c0)
+        # the dual objective of a QP also loses ½xᵀQx
+        raw_dual_obj = _dual_objective(dest.y, dest.z, milp, c0) - dot(dest.x, Qx) / 2
         dest.obj_value = max_sense ? -raw_obj : raw_obj
         dest.dual_obj_value = max_sense ? -raw_dual_obj : raw_dual_obj
         dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL

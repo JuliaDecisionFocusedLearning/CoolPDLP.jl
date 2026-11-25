@@ -131,6 +131,29 @@ end
     JuMP.@objective(quad_model, Min, q[1] * q[2])
     quad_path = tempname() * ".mps"
     JuMP.write_to_file(quad_model, quad_path; format = MOI.FileFormats.FORMAT_MPS)
+    # `q₁q₂` is nonconvex, and a linear reader refuses a quadratic objective anyway
     @test_throws ArgumentError mps_to_milp(quad_path)
+    @test_throws ArgumentError mps_to_milp(quad_path, Val(false))
     rm(quad_path; force = true)
+end
+
+@testset "Quadratic objective from a QPS file" begin
+    model = JuMP.Model()
+    JuMP.@variable(model, 0 <= q[1:3] <= 1)
+    JuMP.@constraint(model, q[1] + q[2] + q[3] >= 1)
+    JuMP.@objective(model, Max, -(q[1]^2 + q[1] * q[2] + 2q[2]^2 + 3q[3]^2) + q[3] + 5)
+    path = tempname() * ".mps"
+    JuMP.write_to_file(model, path; format = MOI.FileFormats.FORMAT_MPS)
+    milp = mps_to_milp(path)
+    # the maximization is negated into a minimization, `Q` included
+    @test Matrix(milp.Q) ≈ [2 1 0; 1 4 0; 0 0 6]
+    @test milp.c ≈ [0, 0, -1]
+    @test milp.c0 ≈ -5
+    @test_throws ArgumentError milp_to_mps(milp, tempname() * ".mps")
+    # a linear program read as a quadratic one gets an empty sparse `Q`
+    lp_path = tempname() * ".mps"
+    milp_to_mps(MILP(; c = [1.0], lv = [0.0], uv = [1.0], A = sparse([1.0;;]), lc = [0.0], uc = [1.0]), lp_path)
+    @test iszero(nnz(mps_to_milp(lp_path).Q))
+    rm(path; force = true)
+    rm(lp_path; force = true)
 end

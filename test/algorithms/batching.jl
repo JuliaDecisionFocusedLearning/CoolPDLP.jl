@@ -88,10 +88,10 @@ end
             foreach(step!, states, milps)
         end
         restart_check!(state_batch, milp_batch, algo)
-        restart!(state_batch, algo)
+        restart!(state_batch, milp_batch, algo)
         for i in 1:NBATCH
             restart_check!(states[i], milps[i], algo)
-            restart!(states[i], algo)
+            restart!(states[i], milps[i], algo)
             @test instance(state_batch, i).step_sizes.ω ≈ states[i].step_sizes.ω
         end
         # guard against a vacuous comparison: the restart must actually move the weights
