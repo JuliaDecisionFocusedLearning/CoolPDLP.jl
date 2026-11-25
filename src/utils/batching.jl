@@ -91,7 +91,7 @@ with `broadcast!!` otherwise.
 
 Under Reactant, a zero-dimensional broadcast between traced numbers can fail to compile
 ("Missing Julia object for global"), depending on what was compiled before it, so unbatched
-quantities never go through `broadcast!!`. See also `primal_dual_steps!!`.
+quantities never go through `broadcast!!`.
 """
 # `Vararg{Any, N}` rather than `Vararg{BatchedNumber}`: Julia does not specialize on a vararg of
 # an abstract union, and then allocates at every call
