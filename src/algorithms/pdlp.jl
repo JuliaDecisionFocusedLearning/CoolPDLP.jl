@@ -75,7 +75,10 @@ function initialize(
     sol_avg_last = zero(sol)
     sol_restart = copy(sol)
     η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
-    ω = batched_expand(sol.x, primal_weight_init(milp, algo.step_size))
+    # after bound and objective rescaling both norms are below one, so start from ω = 1
+    rescaled = algo.preconditioning.bound_objective_rescaling
+    ω_init = rescaled ? one(T) : primal_weight_init(milp, algo.step_size)
+    ω = batched_expand(sol.x, ω_init)
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     iteration = IterationCounter(0, 0, 0)

@@ -60,7 +60,7 @@ end
 
 function precondition(milp::MILP, prec::Preconditioner)
     (;
-        c, c0, lv, uv, A, At, lc, uc,
+        c, c0, lv, uv, A, At, lc, uc, bound_scale, obj_scale,
         int_var, var_names, con_names, dataset, name, path,
     ) = milp
     (; D1, D2) = prec
@@ -82,6 +82,8 @@ function precondition(milp::MILP, prec::Preconditioner)
         uc = uc_p,
         D1 = new_prec.D1,
         D2 = new_prec.D2,
+        bound_scale,
+        obj_scale,
         int_var,
         var_names,
         con_names,
@@ -159,6 +161,61 @@ function ruiz_preconditioner(cons::ConstraintMatrix; iterations::Integer)
 end
 
 """
+    SCALING_FACTOR_BOUNDS
+
+Range `(lo, hi)` to which the Curtis-Reid factors are clamped.
+"""
+const SCALING_FACTOR_BOUNDS = (1.0e-20, 1.0e20)
+
+"""
+    curtis_reid_preconditioner(cons; iterations)
+
+Curtis-Reid least-squares scaling by `iterations` rounds of block coordinate descent (see the
+math page of the documentation): the scaled matrix is `Diagonal(exp.(r)) * A * Diagonal(exp.(s))`.
+"""
+function curtis_reid_preconditioner(cons::ConstraintMatrix{T}; iterations::Integer) where {T}
+    (; A, At) = cons
+    m, n = size(A)
+    r = zeros(T, m)
+    s = zeros(T, n)
+    for _ in 1:iterations
+        for i in 1:m
+            r[i] = curtis_reid_mean(At, i, s)
+        end
+        for j in 1:n
+            s[j] = curtis_reid_mean(A, j, r)
+        end
+    end
+    lo, hi = SCALING_FACTOR_BOUNDS
+    d1 = clamp.(exp.(r), T(lo), T(hi))
+    d2 = clamp.(exp.(s), T(lo), T(hi))
+    return Preconditioner(Diagonal(d1), Diagonal(d2))
+end
+
+# mean of `-log|aᵢⱼ| - otherᵢ` over the finite nonzeros of column `j`, or zero if there are none.
+# Stored zeros are skipped: their `-Inf` logarithm would send the factor to its clamp
+function curtis_reid_mean(A::AbstractMatrix{T}, j::Integer, other::AbstractVector{T}) where {T}
+    vals, idx = column_entries(A, j)
+    acc, k = zero(T), 0
+    for t in eachindex(vals, idx)
+        v = abs(vals[t])
+        (v > 0 && isfinite(v)) || continue
+        acc += -log(v) - other[idx[t]]
+        k += 1
+    end
+    return k == 0 ? zero(T) : acc / k
+end
+
+function column_entries(A::SparseMatrixCSC, j::Integer)
+    rg = nzrange(A, j)
+    return view(nonzeros(A), rg), view(rowvals(A), rg)
+end
+function column_entries(A::AbstractMatrix, j::Integer)
+    idx = findall(!iszero, view(A, :, j))
+    return view(A, idx, j), idx
+end
+
+"""
     PreconditioningParameters
 
 # Fields
@@ -170,20 +227,79 @@ $(TYPEDFIELDS)
     chambolle_pock_alpha::T
     "iteration parameter in the Ruiz preconditioner"
     ruiz_iter::I
+    "number of Curtis-Reid rounds before Ruiz"
+    curtis_reid_iter::I = 20
+    "whether to rescale the bounds and the objective after preconditioning"
+    bound_objective_rescaling::Bool = false
 end
 
 function Base.show(io::IO, params::PreconditioningParameters)
-    (; chambolle_pock_alpha, ruiz_iter) = params
-    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter")
+    (; chambolle_pock_alpha, ruiz_iter, curtis_reid_iter, bound_objective_rescaling) = params
+    return print(io, "PreconditioningParameters: chambolle_pock_alpha=$chambolle_pock_alpha, ruiz_iter=$ruiz_iter, curtis_reid_iter=$curtis_reid_iter, bound_objective_rescaling=$bound_objective_rescaling")
 end
 
 function pdlp_preconditioner(milp::MILP, params::PreconditioningParameters)
     (; A, At) = milp
-    (; chambolle_pock_alpha, ruiz_iter) = params
+    (; chambolle_pock_alpha, ruiz_iter, curtis_reid_iter) = params
     cons = ConstraintMatrix(A, At)
+    prec_cr = curtis_reid_preconditioner(cons; iterations = curtis_reid_iter)
+    cons = precondition(cons, prec_cr)
     prec_r = ruiz_preconditioner(cons; iterations = ruiz_iter)
     cons_r = precondition(cons, prec_r)
     prec_cp = chambolle_pock_preconditioner(cons_r; alpha = chambolle_pock_alpha)
-    prec = prec_r * prec_cp
+    prec = prec_cp * prec_r * prec_cr
     return prec
+end
+
+"""
+    bound_objective_factors(milp)
+
+Return the factors `(β, γ) = (1 / (1 + ‖b‖₂), 1 / (1 + ‖c‖₂))`, with `bᵢ = combine(lcᵢ, ucᵢ)` as
+in the relative primal error, one per instance when the bounds or the objective are batched.
+"""
+function bound_objective_factors(milp::MILP{T}) where {T}
+    (; c, lc, uc) = milp
+    β = inv.(one(T) .+ colnorm(combine.(lc, uc)))
+    γ = inv.(one(T) .+ colnorm(c))
+    return β, γ
+end
+
+# multiply each column of `x` by its per-instance factor in `s` (a number or a vector)
+scale_columns(x::AbstractVecOrMat, s::BatchedNumber) = x .* transpose(s)
+
+"""
+    rescale_bounds_objective(milp, β, γ)
+
+Return `milp` with bounds multiplied by `β` and objective by `γ`, factors recorded in
+`milp.bound_scale` and `milp.obj_scale`. A solution `(x, y)` of `milp` becomes `(β x, γ y)`.
+"""
+function rescale_bounds_objective(milp::MILP, β::BatchedNumber, γ::BatchedNumber)
+    (;
+        c, c0, lv, uv, A, At, lc, uc, D1, D2, bound_scale, obj_scale,
+        int_var, var_names, con_names, dataset, name, path,
+    ) = milp
+    return MILP(;
+        c = scale_columns(c, γ),
+        c0,
+        lv = scale_columns(lv, β),
+        uv = scale_columns(uv, β),
+        A,
+        At,
+        lc = scale_columns(lc, β),
+        uc = scale_columns(uc, β),
+        D1,
+        D2,
+        bound_scale = bound_scale .* β,
+        obj_scale = obj_scale .* γ,
+        int_var,
+        var_names,
+        con_names,
+        dataset,
+        name,
+        path
+    )
+end
+
+function rescale_bounds_objective(sol::PrimalDualSolution, β::BatchedNumber, γ::BatchedNumber)
+    return PrimalDualSolution(scale_columns(sol.x, β), scale_columns(sol.y, γ))
 end

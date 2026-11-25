@@ -21,7 +21,7 @@ Preprocessing and initialization need actual matrices, but `solve!` only uses th
     MILP(;
         c, lv, uv, A, lc, uc,
         At=sametype_transpose(A),
-        [c0, D1, D2, int_var, var_names, con_names, dataset, name, path]
+        [c0, D1, D2, bound_scale, obj_scale, int_var, var_names, con_names, dataset, name, path]
     )
 
 # Fields
@@ -41,6 +41,8 @@ struct MILP{
         Mt,
         Vb <: DenseVector,
         Tc <: Number,
+        Sb <: BatchedNumber,
+        So <: BatchedNumber,
     }
     "objective vector"
     c::Vo
@@ -62,6 +64,10 @@ struct MILP{
     D1::Dg1
     "right preconditioner"
     D2::Dg2
+    "bound rescaling factor, one per instance when batched"
+    bound_scale::Sb
+    "objective rescaling factor, one per instance when batched"
+    obj_scale::So
     "which variables must be integers"
     int_var::Vb
     "variable names"
@@ -86,6 +92,8 @@ struct MILP{
             uc,
             D1 = Diagonal(one!(similar(lc, size(lc, 1)))),
             D2 = Diagonal(one!(similar(lv, size(lv, 1)))),
+            bound_scale = true,
+            obj_scale = true,
             int_var = zero!(similar(c, Bool, size(c, 1))),
             var_names = map(string, axes(c, 1)),
             con_names = map(string, axes(lc, 1)),
@@ -114,6 +122,8 @@ struct MILP{
         end
 
         common_backend(numbers...)
+        bound_scale = convert_scale(T, bound_scale)
+        obj_scale = convert_scale(T, obj_scale)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
@@ -122,6 +132,7 @@ struct MILP{
         return new{
             T, typeof(c), typeof(lv), typeof(uv), typeof(lc), typeof(uc),
             typeof(D1), typeof(D2), typeof(A), typeof(At), typeof(int_var), T,
+            typeof(bound_scale), typeof(obj_scale),
         }(
             c,
             convert(T, c0),
@@ -133,6 +144,8 @@ struct MILP{
             uc,
             D1,
             D2,
+            bound_scale,
+            obj_scale,
             int_var,
             var_names,
             con_names,
@@ -269,6 +282,8 @@ function Base.isapprox(m1::MILP, m2::MILP; kwargs...)
             isapprox(m1.uc, m2.uc; kwargs...) &&
             isapprox(m1.D1, m2.D1; kwargs...) &&
             isapprox(m1.D2, m2.D2; kwargs...) &&
+            isapprox(m1.bound_scale, m2.bound_scale; kwargs...) &&
+            isapprox(m1.obj_scale, m2.obj_scale; kwargs...) &&
             m1.int_var == m2.int_var &&
             m1.var_names == m2.var_names &&
             m1.con_names == m2.con_names &&
@@ -314,6 +329,8 @@ function instance(milp::MILP, i::Int)
         uc = instance_vec(milp.uc, i),
         D1 = milp.D1,
         D2 = milp.D2,
+        bound_scale = instance_scale(milp.bound_scale, i),
+        obj_scale = instance_scale(milp.obj_scale, i),
         int_var = milp.int_var,
         var_names = milp.var_names,
         con_names = milp.con_names,
@@ -322,3 +339,10 @@ function instance(milp::MILP, i::Int)
         path = milp.path
     )
 end
+
+convert_scale(::Type{T}, s::Number) where {T} = convert(T, s)
+convert_scale(::Type{T}, s::AbstractVector) where {T} = eltype(s) === T ? s : map(T, s)
+
+# copied to the CPU when `s` lives on a device
+instance_scale(s::Number, ::Int) = s
+instance_scale(s::AbstractVector, i::Int) = only(Array(view(s, i:i)))

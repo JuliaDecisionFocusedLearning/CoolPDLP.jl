@@ -50,6 +50,8 @@ end
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
+        curtis_reid_iter = 20,
+        bound_objective_rescaling = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -72,6 +74,9 @@ end
     )
 
 Constructor for algorithm configs.
+
+The preconditioning stages and the bound and objective rescaling are described on the math page
+of the documentation.
 """
 function Algorithm{A}(
         # conversion
@@ -82,6 +87,8 @@ function Algorithm{A}(
         # preconditioning
         chambolle_pock_alpha = 1.0,
         ruiz_iter = 10,
+        curtis_reid_iter = 20,
+        bound_objective_rescaling = false,
         # step sizes
         invnorm_scaling = 0.9,
         primal_weight_damping = 0.5,
@@ -108,7 +115,9 @@ function Algorithm{A}(
     )
     preconditioning = PreconditioningParameters(;
         chambolle_pock_alpha = _T(chambolle_pock_alpha),
-        ruiz_iter
+        ruiz_iter,
+        curtis_reid_iter,
+        bound_objective_rescaling,
     )
     step_size = StepSizeParameters(;
         invnorm_scaling = _T(invnorm_scaling),
@@ -192,7 +201,7 @@ Apply preconditioning, type conversion and device transfer to `milp_init` and `s
 
 Return a tuple `(milp, sol)`.
 """
-function preprocess(
+@stable default_union_limit = 2 function preprocess(
         milp_init_cpu::MILP,
         sol_init_cpu::PrimalDualSolution,
         algo::Algorithm,
@@ -201,6 +210,12 @@ function preprocess(
     prec = pdlp_preconditioner(milp_init_cpu, algo.preconditioning)
     milp_cpu = precondition(milp_init_cpu, prec)
     sol_cpu = precondition(sol_init_cpu, prec)
+    # per-instance factors turn shared variable bounds into batched ones, hence a small union
+    if algo.preconditioning.bound_objective_rescaling
+        β, γ = bound_objective_factors(milp_cpu)
+        milp_cpu = rescale_bounds_objective(milp_cpu, β, γ)
+        sol_cpu = rescale_bounds_objective(sol_cpu, β, γ)
+    end
 
     # moving to GPU
     milp = perform_conversion(milp_cpu, algo.conversion)
@@ -341,5 +356,7 @@ finish_progress!(prog) = finish!(prog)
 finish_progress!(::NoProgress) = nothing
 
 function get_solution(state::AbstractState, milp::MILP)
-    return unprecondition(state.sol, Preconditioner(milp))
+    (; bound_scale, obj_scale) = milp
+    sol = rescale_bounds_objective(state.sol, inv.(bound_scale), inv.(obj_scale))
+    return unprecondition(sol, Preconditioner(milp))
 end

@@ -53,7 +53,7 @@ end
     JuMP.optimize!(model)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
-    @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
+    @test JuMP.objective_value(model) ≈ 205.0 rtol = 1.0e-4
 end
 
 @testset "Options survive repeated optimize!" begin
@@ -172,7 +172,7 @@ end
     @test_warn "Got mismatched float type" JuMP.optimize!(model)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
-    @test JuMP.objective_value(model) ≈ 205.0 atol = 1.0e-2
+    @test JuMP.objective_value(model) ≈ 205.0 rtol = 1.0e-4
     @test JuMP.value(x) isa Float64
 
     # model/return in Float32, solve in Float32
@@ -186,6 +186,6 @@ end
     JuMP.optimize!(model)
     @test JuMP.termination_status(model) == MOI.OPTIMAL
     @test JuMP.primal_status(model) == MOI.FEASIBLE_POINT
-    @test JuMP.objective_value(model) ≈ 205.0f0 atol = 1.0e-2
+    @test JuMP.objective_value(model) ≈ 205.0f0 rtol = 1.0e-4
     @test JuMP.value(x) isa Float32
 end

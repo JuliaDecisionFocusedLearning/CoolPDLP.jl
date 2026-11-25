@@ -132,6 +132,9 @@ end
     kkt_errors!(err, scratch, sol, milp)
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
+
+The errors are those of the original problem, before preconditioning and bound and objective
+rescaling.
 """
 function kkt_errors!(
         err::KKTErrors,
@@ -141,6 +144,9 @@ function kkt_errors!(
     ) where {T}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
+    # the rescaled problem has bounds `β b`, objective `γ c` and solution `(β x, γ y)`
+    β, γ = milp.bound_scale, milp.obj_scale
+    βr, γr = transpose(β), transpose(γ)
 
     A_x = mul!(scratch.y, A, x)
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
@@ -148,17 +154,17 @@ function kkt_errors!(
     c_At_y .+= c
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
-    primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
+    primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc)) / βr
     err.primal = colnorm!!(err.primal, primal_diff)
 
-    rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
+    rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc) / βr
     err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds)
     err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
-    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
+    dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z) / γr
     err.dual = colnorm!!(err.dual, dual_diff)
 
-    rescaled_obj = @. scratch.x = inv(D2.diag) * c
+    rescaled_obj = @. scratch.x = inv(D2.diag) * c / γr
     err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj)
     err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
@@ -174,9 +180,12 @@ function kkt_errors!(
     pc_sum = colsum!!(scratch.b1, pc)
     pv_sum = colsum!!(scratch.b2, pv)
     # the objective constant cancels out in the gap, but not in its scale
-    dobj = broadcast!!(+, scratch.b1, pc_sum, pv_sum, c0)
+    # both objectives are those of the original problem, hence the division by `β γ`
+    dobj = broadcast!!(
+        (p, v, b, g, k) -> (p + v) / (b * g) + k, scratch.b1, pc_sum, pv_sum, β, γ, c0
+    )
     cx = colsum!!(scratch.b2, @. scratch.x = c * x)
-    pobj = broadcast!!(+, scratch.b2, cx, c0)
+    pobj = broadcast!!((cx, b, g, k) -> cx / (b * g) + k, scratch.b2, cx, β, γ, c0)
 
     err.gap = broadcast!!((a, b) -> abs(a - b), err.gap, pobj, dobj)
     err.gap_scale = broadcast!!((a, b) -> one(T) + abs(a) + abs(b), err.gap_scale, dobj, pobj)
