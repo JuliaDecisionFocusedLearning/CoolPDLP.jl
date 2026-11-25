@@ -431,7 +431,7 @@ end
 """
     refine_kkt_errors!(state, milp, norm)
 
-Improve the KKT errors just computed by [`termination_check!`](@ref) with an algorithm-specific
+Improve the KKT errors just computed by `termination_check!` with an algorithm-specific
 candidate. Does nothing by default.
 """
 refine_kkt_errors!(::AbstractState, ::MILP, ::TerminationNorm) = nothing

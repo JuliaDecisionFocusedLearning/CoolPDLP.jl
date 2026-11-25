@@ -391,7 +391,7 @@ end
 """
     refine_kkt_errors!(state, milp, norm)
 
-Second optimality candidate of the paper (§6.2), tried by [`termination_check!`](@ref) after the
+Second optimality candidate of the paper (§6.2), tried by `termination_check!` after the
 projection `Π_R(c - Aᵀy)` of [`kkt_errors!`](@ref): the active-set reduced cost `r_act`: the reduced cost `q = c - Aᵀy` kept only
 where the last primal projection put `x` on a bound and `q` has the sign of a multiplier of that
 bound, zero elsewhere. Where `Π_R(q)` charges a nonzero multiplier of an inactive bound to the
