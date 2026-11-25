@@ -13,6 +13,7 @@ struct Algorithm{
         R <: RestartParameters,
         G <: GenericParameters,
         T <: TerminationParameters,
+        X,
     }
     conversion::C
     preconditioning::P
@@ -20,6 +21,8 @@ struct Algorithm{
     restart::R
     generic::G
     termination::T
+    "parameters that only algorithm `A` reads, built by [`specific_parameters`](@ref)"
+    specific::X
 
     function Algorithm{A}(
             conversion::C,
@@ -28,17 +31,35 @@ struct Algorithm{
             restart::R,
             generic::G,
             termination::T,
-        ) where {A, C, P, S, R, G, T}
-        return new{A, C, P, S, R, G, T}(
+            specific::X,
+        ) where {A, C, P, S, R, G, T, X}
+        return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
             step_size,
             restart,
             generic,
             termination,
+            specific,
         )
     end
 end
+
+"""
+    NoParameters
+
+Placeholder for the specific parameters of an algorithm that has none.
+"""
+struct NoParameters end
+
+"""
+    specific_parameters(::Val{A}, ::Type{T}; kwargs...)
+
+Build the parameters that only algorithm `A` reads, in float type `T`, from the keyword arguments of [`Algorithm`](@ref) that the common parameters do not take.
+
+Algorithms without such parameters fall back on [`NoParameters`](@ref) and reject any extra keyword argument.
+"""
+specific_parameters(::Val, ::Type) = NoParameters()
 
 """
     Algorithm{:ALGNAME}(
@@ -75,6 +96,8 @@ end
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        # specific to algorithm `A`, see `specific_parameters`
+        kwargs...
     )
 
 Constructor for algorithm configs.
@@ -128,6 +151,7 @@ function Algorithm{A}(
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        kwargs...
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -167,18 +191,21 @@ function Algorithm{A}(
         infeasibility_tol = convert_tol(_T, infeasibility_tol),
     )
 
+    specific = specific_parameters(Val(A), _T; kwargs...)
+
     return Algorithm{A}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        specific,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, specific) = algo
     return print(
         io, """
         $A algorithm:
@@ -187,7 +214,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $specific"""
     )
 end
 

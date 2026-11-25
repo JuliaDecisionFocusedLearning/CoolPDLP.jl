@@ -107,6 +107,7 @@ mutable struct ConvergenceStats{
         R <: Union{Nothing, PrimalDualSolution},
         A <: Union{Nothing, AbstractVector},  # of `Bool`s, traced as `TracedRNumber{Bool}`s
         IP <: Union{Nothing, AbstractVector},
+        X,
     }
     "current KKT error"
     err::KKTErrors{T}
@@ -134,6 +135,8 @@ mutable struct ConvergenceStats{
     active::A
     "number of KKT passes of each instance of a batch when it terminated, or so far if it is still running (`nothing` without batching)"
     instance_kkt_passes::IP
+    "statistics that only the algorithm in use records, or `nothing`"
+    algorithm::X
 end
 
 """
@@ -180,10 +183,11 @@ function ConvergenceStats(
         error_history = [(kkt_passes, copy(err))],
         active = batched_tracker(err.primal, true),
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
-    ) where {T, I, S, C}
+        algorithm::X = nothing,
+    ) where {T, I, S, C, X}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{
-        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes),
+        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes), X,
     }(
         err,
         starting_time,
@@ -198,6 +202,7 @@ function ConvergenceStats(
         error_history,
         active,
         instance_kkt_passes,
+        algorithm,
     )
 end
 
@@ -251,6 +256,7 @@ function instance(stats::ConvergenceStats, i::Int)
         primal_ray_error = instance_num(stats.primal_ray_error, i),
         dual_ray_error = instance_num(stats.dual_ray_error, i),
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
+        algorithm = instance(stats.algorithm, i),
     )
 end
 
