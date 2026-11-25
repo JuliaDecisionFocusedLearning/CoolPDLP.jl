@@ -1,19 +1,19 @@
 """
     HPDLP(args...; kwargs...)
 
-Shortcut for [`Algorithm{:HPDLP}`](@ref): reflected restarted Halpern PDHG (r²HPDHG), as in
-[cuPDLPx](https://github.com/MIT-Lu-Lab/cuPDLPx).
+Shortcut for [`Algorithm{:HPDLP}`](@ref): reflected restarted Halpern PDHG (r²HPDHG) of
+Lu, Peng and Yang, "cuPDLPx: A Further Enhanced GPU-Based First-Order Solver for Linear
+Programming", 2025, [arXiv:2507.14051](https://arxiv.org/abs/2507.14051).
 
-Its defaults follow cuPDLPx: step size `0.998 / ‖A‖₂`, reflection coefficient `1`, restarts
-on the fixed-point residual with decays `0.2` (sufficient), `0.5` (necessary) and `0.36`
-(artificial), PID primal weight control and a check every `200` iterations. Unlike cuPDLPx,
-the preconditioner starts with `curtis_reid_iter = 20` Curtis-Reid iterations (as in HPR-LP),
-which saves KKT passes on Netlib, and `bound_objective_rescaling` stays off (cuPDLPx turns it on;
-here it costs about 15 % more KKT passes on a Netlib sample at `1e-6`).
+Its defaults are: step size `0.998 / ‖A‖₂` (as in the paper), reflection coefficient `1`,
+restarts on the fixed-point residual with decays `0.2` (sufficient), `0.5` (necessary) and
+`0.36` (artificial), PID primal weight control, a check every `200` iterations and
+`curtis_reid_iter = 20` Curtis-Reid iterations, which save KKT passes on Netlib.
+`bound_objective_rescaling` stays off: it costs about 15 % more KKT passes on a Netlib sample
+at `1e-6`.
 
 The reflected step is `γ (2T(z) - z) + (1 - γ) z`, so `reflection_coefficient = 1` is the fully
-reflected step of cuPDLPx and `1/2` is plain Halpern on `T` (other values may not match the
-parametrization of cuPDLPx's own reflection coefficient).
+reflected step and `1/2` is plain Halpern on `T`.
 
 Unlike [`PDLP`](@ref), every instance of a batch restarts on its own, so
 `restart_batch_aggregation` is ignored.
@@ -66,7 +66,7 @@ mutable struct HalpernStats{T <: BatchedNumber, B <: BatchedNumber, I <: Number}
     pid_error::T
     "primal weight which balanced the primal and dual residuals best so far"
     best_ω::T
-    "best balance `|log(rel_dual / rel_primal)|` so far (natural log: same ordering as the `log10` of cuPDLPx)"
+    "best balance `|log(rel_dual / rel_primal)|` so far"
     best_gap::T
 end
 
@@ -156,7 +156,7 @@ function initialize(
     ) where {T, V}
     z = copy(sol)
     z_anchor = copy(sol)
-    # after bound and objective rescaling, both norms are below one and cuPDLPx starts from ω = 1
+    # after bound and objective rescaling, both norms are below one, so start from ω = 1
     ω_init = if algo.preconditioning.bound_objective_rescaling
         one(T)
     else
@@ -239,9 +239,9 @@ end
 """
     ray_candidates(state::HPDLPState)
 
-For HPDLP, the candidate directions follow cuPDLPx: the PDHG image `T(z)` minus the anchor of
-the instance's last restart, and `T(z)` itself. (cuPDLPx also tries `T(z) - z`, which would
-need the Halpern iterate from before the last step to be kept.)
+For HPDLP, the candidate directions are the PDHG image `T(z)` minus the anchor of the
+instance's last restart, and `T(z)` itself. (`T(z) - z` would need the Halpern iterate from
+before the last step to be kept.)
 """
 ray_candidates(state::HPDLPState) = ((state.sol, state.z_anchor), (state.sol, nothing))
 
@@ -296,7 +296,7 @@ end
     fixed_point_error!!(dest, scratch, z, Tz, milp, step_sizes)
 
 Compute the fixed-point residual `‖z - T(z)‖_P` in the norm of the PDHG preconditioner, scaled
-by the step size `η` as in cuPDLPx, column by column, into `dest`:
+by the step size `η`, column by column, into `dest`:
 
     ω ‖Δx‖² + ‖Δy‖² / ω + 2η ⟨Δx, Aᵀ Δy⟩
 
@@ -341,7 +341,7 @@ end
 """
     restart_check!(state::HPDLPState, algo, must_terminate)
 
-Decide, instance by instance, whether to restart, following cuPDLPx: sufficient decay of the
+Decide, instance by instance, whether to restart: sufficient decay of the
 fixed-point residual, necessary decay without local progress, or a long inner loop. The
 decision is stored in `state.halpern.restart`.
 """
@@ -409,7 +409,7 @@ end
 """
     pid_update!(halpern, step_sizes, scratch, sol, z_anchor, err, params)
 
-PID control of the primal weight in log space, as in cuPDLPx, for the instances which restart.
+PID control of the primal weight in log space, for the instances which restart.
 
 The error is `log(‖Δy‖ / (ω ‖Δx‖))` between the new restart point `sol` and the previous
 anchor. When the distances or the ratio of relative residuals are degenerate, the weight falls
@@ -461,7 +461,7 @@ function pid_update!(
     end
 
     # remember the weight which balances the relative residuals best, for the fallback above;
-    # as in cuPDLPx (`perform_restart` in `solver.cu`), it is recorded from the weight *after*
+    # it is recorded from the weight *after*
     # the PID update of this restart, compared with the residuals measured before it
     balance(p, ps, d, ds) = abs(log((d / ds) / (p / ps)))
     halpern.best_ω = batched_apply!!(

@@ -240,13 +240,14 @@ $T$ is the PDHG step of `pdhg_update!`, with $\tau = \eta/\omega$ and $\sigma = 
 
 At a restart, PID control in log space sets the primal weight. The error is $e = \log(\|\Delta y\| / (\omega \|\Delta x\|))$, measured between $T(z)$ and the previous anchor. The update is $\omega \leftarrow \omega \exp(k_P e + k_I s + k_D (e - e_{\text{prev}}))$, with $s \leftarrow \zeta s + e$.
 
-| | cuPDLPx | `HPDLP()` |
-|---|---|---|
-| step size | $0.998/\|A\|_2$ | same |
-| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 | same |
-| check frequency | 200 | same |
-| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) | same |
-| preconditioning | Ruiz 10 + Pock-Chambolle | **Curtis-Reid 20** + Ruiz 10 + Pock-Chambolle |
-| bound/objective rescaling | on | **off** (on costs about 15 % more passes on Netlib) |
-| ray candidates | $T(z) - z^0$, $T(z)$, $T(z) - z$ | first two only |
+This is the method of [Lu, Peng & Yang (2025)](https://arxiv.org/abs/2507.14051), whose step size $0.998/\|A\|_2$ `HPDLP()` keeps. Its other defaults are:
+
+| | `HPDLP()` |
+|---|---|
+| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 |
+| check frequency | 200 |
+| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) |
+| preconditioning | Curtis-Reid 20 + Ruiz 10 + Pock-Chambolle |
+| bound/objective rescaling | off (on costs about 15 % more passes on Netlib) |
+| ray candidates | $T(z) - z^0$, $T(z)$ |
 
