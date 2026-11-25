@@ -25,24 +25,31 @@ $(TYPEDFIELDS)
 @kwdef mutable struct PDHGState{
         T <: Number, V <: AbstractVecOrMat{T},
         SS <: StepSizes, Sc <: Scratch, CS <: ConvergenceStats,
+        L <: Union{Nothing, PrimalDualSolution{T, V}}, IW <: Union{Nothing, InfeasibilityWorkspace},
     } <: AbstractState{T, V}
     "current solution"
     sol::PrimalDualSolution{T, V}
+    "solution before the last step, saved by [`save_last!`](@ref) for the infeasibility check (`nothing` when it is disabled)"
+    sol_last::L
     "step sizes"
     step_sizes::SS
     "scratch space"
     scratch::Sc
     "convergence stats"
     stats::CS
+    "infeasibility detection buffers"
+    infeas::IW
 end
 
 nbinstances((; sol)::PDHGState) = nbinstances(sol)
 function instance(state::PDHGState, i::Int)
     return PDHGState(
         instance(state.sol, i),
+        instance(state.sol_last, i),
         instance(state.step_sizes, i),
         instance(state.scratch, i),
         instance(state.stats, i),
+        instance(state.infeas, i),
     )
 end
 
@@ -59,8 +66,12 @@ function initialize(
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)  # TODO: count this KKT pass
-    stats = ConvergenceStats(err; starting_time)
-    state = PDHGState(; sol, step_sizes, scratch, stats)
+    tol = algo.termination.infeasibility_tol
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    infeas = InfeasibilityWorkspace(sol, tol)
+    # only the infeasibility check needs the previous iterate
+    sol_last = ray_buffer(sol, tol)
+    state = PDHGState(; sol, sol_last, step_sizes, scratch, stats, infeas)
     return state
 end
 
@@ -72,30 +83,66 @@ function solve!(
     prog = init_progress("PDHG iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
-        @trace for _ in 1:algo.generic.check_every
+        @trace for _ in 1:(algo.generic.check_every - 1)
             step!(state, milp)
             next_progress!(prog, state)
         end
+        # the infeasibility check compares with the iterate before the last step, so only that
+        # step needs it saved
+        save_last!(state)
+        step!(state, milp)
+        next_progress!(prog, state)
         must_terminate = termination_check!(state, milp, algo)
     end
+    export_certificate!(state.stats, state.infeas, milp)
     finish_progress!(prog)
     return state
 end
+
+"""
+    save_last!(state::PDHGState)
+
+Save the current iterate of `state` into `sol_last`, which [`infeasibility_check!`](@ref)
+compares with. Does nothing when the infeasibility detection is disabled.
+"""
+function save_last!(state::PDHGState)
+    save_last!(state.sol_last, state.sol)
+    return nothing
+end
+
+save_last!(sol_last::PrimalDualSolution, sol::PrimalDualSolution) = (copy!(sol_last, sol); nothing)
+save_last!(::Nothing, ::PrimalDualSolution) = nothing
+
+"""
+    ray_candidates(state)
+
+For PDHG, the candidate directions are the last step and the current iterate itself (the
+displacement since the starting point, up to a constant).
+"""
+ray_candidates(state::PDHGState) = ((state.sol, state.sol_last), (state.sol, nothing))
 
 function step!(
         state::PDHGState{T, V},
         milp::MILP{T},
     ) where {T, V}
     (; sol, step_sizes, scratch) = state
-    pdhg_update!(sol, scratch, step_sizes, milp)
+    pdhg_update!(sol, scratch, step_sizes, milp, active_mask(state.stats))
     state.stats.kkt_passes += 1
     return nothing
 end
 
 """
-    pdhg_update!(sol, scratch, step_sizes, milp)
+    dual_update(y, σ, Ax, lc, uc)
 
-Apply one PDHG update to the iterates `sol`, in place.
+Dual PDHG step `y - σ Ax - σ clamp(y / σ - Ax, -uc, -lc)` of one entry.
+"""
+@inline dual_update(y, σ, Ax, lc, uc) = y - σ * Ax - σ * clamp(inv(σ) * y - Ax, -uc, -lc)
+
+"""
+    pdhg_update!(sol, scratch, step_sizes, milp, active)
+
+Apply one PDHG update to the iterates `sol`, in place, for the instances flagged in `active`
+only (see [`active_mask`](@ref)).
 
 The new primal iterate is formed in scratch space, used for the extrapolation `2xp - x`, then
 copied into `x`. Writing it into a second buffer and swapping the two would avoid that copy in
@@ -103,23 +150,24 @@ plain Julia, but under Reactant both buffers would be carried through the compil
 places at each step, so XLA would copy them in full every time.
 """
 function pdhg_update!(
-        sol::PrimalDualSolution, scratch::Scratch, step_sizes::StepSizes, milp::MILP
+        sol::PrimalDualSolution, scratch::Scratch, step_sizes::StepSizes, milp::MILP,
+        active,
     )
     (; x, y) = sol
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = transpose(broadcast!!(/, scratch.b1, η, ω))
-    σ = transpose(broadcast!!(*, scratch.b2, η, ω))
+    τ = transpose(batched_apply!!(/, scratch.b1, η, ω))
+    σ = transpose(batched_apply!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.z, At, y)
     xp = @. scratch.x = clamp(x - τ * (c - At_y), lv, uv)
     xdiff = @. scratch.z = 2xp - x
-    copyto!(x, xp)
+    masked_copyto!(x, active, xp)
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    @. y = y - σ * A_xdiff - σ * clamp(inv(σ) * y - A_xdiff, -uc, -lc)
+    masked_broadcast!(dual_update, y, active, y, σ, A_xdiff, lc, uc)
     return sol
 end

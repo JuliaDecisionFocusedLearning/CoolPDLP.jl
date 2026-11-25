@@ -97,6 +97,22 @@ function LinearAlgebra.axpby!(
     return y
 end
 
+"""
+    masked_axpby!(a, x, b, y, active)
+
+Compute `y = a x + b y` column by column, for the active instances only.
+"""
+masked_axpby!(a::BatchedNumber, x::PrimalDualSolution, b::BatchedNumber, y::PrimalDualSolution, ::Bool) = axpby!(a, x, b, y)
+function masked_axpby!(
+        a::AbstractVector, x::PrimalDualSolution, b::AbstractVector, y::PrimalDualSolution,
+        active::AbstractVector,
+    )
+    f(a, x, b, y) = a * x + b * y
+    masked_broadcast!(f, y.x, active, transpose(a), x.x, transpose(b), y.x)
+    masked_broadcast!(f, y.y, active, transpose(a), x.y, transpose(b), y.y)
+    return y
+end
+
 # broadcast rather than `axpby!`: the BLAS wrapper boxes its scalars into `Ref`s, which
 # only the optimizer removes, so `LinearAlgebra.axpby!` allocates at reduced optimization
 function colaxpby!(
@@ -107,6 +123,16 @@ function colaxpby!(
         a * x + b * y
     end
     return y
+end
+
+"""
+    masked_copy!(sol, active, sol_other)
+
+Copy `sol_other` into `sol`, for the active instances only (see [`masked_copyto!`](@ref)).
+"""
+masked_copy!(sol::PrimalDualSolution, ::Bool, sol_other::PrimalDualSolution) = copy!(sol, sol_other)
+function masked_copy!(sol::PrimalDualSolution, active::AbstractVector, sol_other::PrimalDualSolution)
+    return batched_select!(sol, active, sol_other)
 end
 
 """

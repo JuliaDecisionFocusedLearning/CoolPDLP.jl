@@ -50,6 +50,7 @@ include("public.jl")
     include("components/restart.jl")
     include("components/generic.jl")
     include("components/termination.jl")
+    include("components/infeasibility.jl")
 
     include("algorithms/common.jl")
     include("algorithms/pdhg.jl")

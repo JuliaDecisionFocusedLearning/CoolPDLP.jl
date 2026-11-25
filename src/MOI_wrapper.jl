@@ -1,3 +1,15 @@
+"Dual objective `lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0` of the multipliers `y` and `z`."
+function _dual_objective(y, z, milp::MILP, c0)
+    (; lv, uv, lc, uc) = milp
+    return (
+        sum(safeprod_left.(lc, positive_part.(y)); init = zero(c0))
+            - sum(safeprod_left.(uc, negative_part.(y)); init = zero(c0))
+            + sum(safeprod_left.(lv, positive_part.(z)); init = zero(c0))
+            - sum(safeprod_left.(uv, negative_part.(z)); init = zero(c0))
+            + c0
+    )
+end
+
 MOI.Utilities.@product_of_sets(
     RHS,
     MOI.EqualTo{T},
@@ -249,29 +261,52 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     # call opaque, and `solve` gets compiled at run time for the concrete algorithm instead.
     sol, stats = Base.invokelatest(solve, milp, algo)
 
-    dest.x = Array(sol.x)
-    dest.y = Array(sol.y)
-    dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
-
-    raw_obj = objective_value(dest.x, milp)
-    raw_dual_obj = (  # lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0
-        sum(safeprod_left.(lc, positive_part.(dest.y)))
-            - sum(safeprod_left.(uc, negative_part.(dest.y)))
-            + sum(safeprod_left.(lv, positive_part.(dest.z)))
-            - sum(safeprod_left.(uv, negative_part.(dest.z)))
-            + c0
-    )
-    dest.obj_value = max_sense ? -raw_obj : raw_obj
-    dest.dual_obj_value = max_sense ? -raw_dual_obj : raw_dual_obj
-    dest.solve_time = stats.time_elapsed
-
     cts = termination_status(stats)
     @assert cts != MOI.OPTIMIZE_NOT_CALLED "solve did not reach a terminal status"
     dest.termination_status = cts
-    dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL
-        MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
+    dest.solve_time = stats.time_elapsed
+
+    if cts == MOI.INFEASIBLE
+        # the dual ray `y` and its reduced cost `-Aᵀy` certify primal infeasibility, the ray
+        # objective (without the objective constant) is positive
+        dest.x = fill(T(NaN), n)
+        # no ray at all when the bounds cross (or the detection is disabled)
+        y = isnothing(stats.ray) ? zeros(T, size(A, 1)) : Array(stats.ray.y)
+        scale = maximum(abs, y; init = zero(eltype(y)))
+        dest.y = iszero(scale) ? y : y ./ scale
+        dest.z = proj_multiplier.(-(milp.At * dest.y), lv, uv)
+        raw_dual_obj = _dual_objective(dest.y, dest.z, milp, zero(T))
+        dest.obj_value = T(NaN)
+        dest.dual_obj_value = max_sense ? -raw_dual_obj : raw_dual_obj
+        has_ray = !iszero(scale) && isfinite(raw_dual_obj) && raw_dual_obj > 0
+        dest.primal_status = MOI.NO_SOLUTION
+        dest.dual_status = has_ray ? MOI.INFEASIBILITY_CERTIFICATE : MOI.UNKNOWN_RESULT_STATUS
+    elseif cts == MOI.DUAL_INFEASIBLE
+        # the primal ray `x` certifies dual infeasibility, its objective (without the objective
+        # constant) is negative in the minimization form
+        x = Array(stats.ray.x)
+        scale = maximum(abs, x; init = zero(eltype(x)))
+        dest.x = iszero(scale) ? x : x ./ scale
+        dest.y = fill(T(NaN), size(A, 1))
+        dest.z = fill(T(NaN), n)
+        raw_obj = dot(c, dest.x)
+        dest.obj_value = max_sense ? -raw_obj : raw_obj
+        dest.dual_obj_value = T(NaN)
+        dest.primal_status = raw_obj < 0 ? MOI.INFEASIBILITY_CERTIFICATE : MOI.UNKNOWN_RESULT_STATUS
+        dest.dual_status = MOI.NO_SOLUTION
     else
-        MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
+        dest.x = Array(sol.x)
+        dest.y = Array(sol.y)
+        dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
+        raw_obj = objective_value(dest.x, milp)
+        raw_dual_obj = _dual_objective(dest.y, dest.z, milp, c0)
+        dest.obj_value = max_sense ? -raw_obj : raw_obj
+        dest.dual_obj_value = max_sense ? -raw_dual_obj : raw_dual_obj
+        dest.primal_status, dest.dual_status = if cts == MOI.OPTIMAL
+            MOI.FEASIBLE_POINT, MOI.FEASIBLE_POINT
+        else
+            MOI.UNKNOWN_RESULT_STATUS, MOI.UNKNOWN_RESULT_STATUS
+        end
     end
 
     return index_map, false

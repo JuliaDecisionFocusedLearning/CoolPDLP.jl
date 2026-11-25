@@ -13,6 +13,7 @@ struct Algorithm{
         R <: RestartParameters,
         G <: GenericParameters,
         T <: TerminationParameters,
+        X,
     }
     conversion::C
     preconditioning::P
@@ -20,6 +21,8 @@ struct Algorithm{
     restart::R
     generic::G
     termination::T
+    "parameters that only algorithm `A` reads, built by [`specific_parameters`](@ref)"
+    specific::X
 
     function Algorithm{A}(
             conversion::C,
@@ -28,17 +31,35 @@ struct Algorithm{
             restart::R,
             generic::G,
             termination::T,
-        ) where {A, C, P, S, R, G, T}
-        return new{A, C, P, S, R, G, T}(
+            specific::X,
+        ) where {A, C, P, S, R, G, T, X}
+        return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
             step_size,
             restart,
             generic,
             termination,
+            specific,
         )
     end
 end
+
+"""
+    NoParameters
+
+Placeholder for the specific parameters of an algorithm that has none.
+"""
+struct NoParameters end
+
+"""
+    specific_parameters(::Val{A}, ::Type{T}; kwargs...)
+
+Build the parameters that only algorithm `A` reads, in float type `T`, from the keyword arguments of [`Algorithm`](@ref) that the common parameters do not take.
+
+Algorithms without such parameters fall back on [`NoParameters`](@ref) and reject any extra keyword argument.
+"""
+specific_parameters(::Val, ::Type) = NoParameters()
 
 """
     Algorithm{:ALGNAME}(
@@ -74,6 +95,9 @@ end
         termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
+        infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        # specific to algorithm `A`, see `specific_parameters`
+        kwargs...
     )
 
 Constructor for algorithm configs.
@@ -83,6 +107,12 @@ The algorithm stops when, for every instance, the KKT errors meet
 [`termination_margin!!`](@ref)), with the residuals measured in the norm `termination_norm`
 (a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
 is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
+
+With `infeasibility_tol` (default `1e-8`), PDHG and PDLP look for infeasibility
+certificates at every termination check, and stop with `MOI.INFEASIBLE` or
+`MOI.DUAL_INFEASIBLE` once a ray's error is below it (see [`infeasibility_check!`](@ref)). These
+checks cost two KKT passes each, which do not count towards `max_kkt_passes`.
+`infeasibility_tol = nothing` removes the detection altogether.
 
 The preconditioning stages and the bound and objective rescaling are described on the math page
 of the documentation.
@@ -120,6 +150,8 @@ function Algorithm{A}(
         termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
+        infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
+        kwargs...
     ) where {A, T, Ti, M, B}
 
     conversion = ConversionParameters(
@@ -156,7 +188,10 @@ function Algorithm{A}(
         termination_reltol = _T(termination_reltol),
         termination_abstol = _T(termination_abstol),
         max_kkt_passes,
+        infeasibility_tol = convert_tol(_T, infeasibility_tol),
     )
+
+    specific = specific_parameters(Val(A), _T; kwargs...)
 
     return Algorithm{A}(
         conversion,
@@ -164,12 +199,13 @@ function Algorithm{A}(
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        specific,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, specific) = algo
     return print(
         io, """
         $A algorithm:
@@ -178,7 +214,8 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $specific"""
     )
 end
 
@@ -262,21 +299,32 @@ function solve(
     starting_time = current_time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp, algo)
+    trivial_solve = (
+        try_solve_crossed_bounds!(state, milp_init_cpu) ||
+            (nbcons(milp) == 0 && try_solve_noconstraints!(state, milp, algo))
+    )
     if !trivial_solve
         solve!(state, milp, algo)
     end
     return get_solution(state, milp), state.stats
 end
 
+"""
+    convert_tol(T, tol)
+
+Convert an optional tolerance to `T`, keeping `nothing` as is.
+"""
+convert_tol(::Type{T}, tol::Number) where {T} = convert(T, tol)
+convert_tol(::Type, ::Nothing) = nothing
+
 function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algorithm)
     (; c, lv, uv) = milp
     (; sol) = state
     # with no constraint rows, the box-constrained optimum can be read off `c` and the
     # bounds directly, as long as the box is feasible and bounded in the direction `c`
-    # pushes towards (otherwise fall through to the general loop below, same as any other
-    # infeasible/unbounded problem: this package has no dedicated status for either, so it
-    # relies on the iteration/time limit rather than early-exiting with a wrong `OPTIMAL`)
+    # pushes towards (otherwise fall through to the general loop: crossed bounds have already
+    # been reported by `try_solve_crossed_bounds!`, and an unbounded direction is certified by
+    # the infeasibility detection)
     box_feasible = all(lv .<= uv)
     bounded_below = !any(@. (c > 0) & isinf(lv))
     bounded_above = !any(@. (c < 0) & isinf(uv))
@@ -285,10 +333,69 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algori
         kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.generic.termination_norm)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
+        state.stats.instance_status_code = batched_fill(
+            state.stats.instance_status_code, status_code(MOI.OPTIMAL)
+        )
         return true
     else
         return false
     end
+end
+
+"""
+    crossed_bounds(milp)
+
+Return whether some lower bound of `milp` exceeds the matching upper bound, for each instance.
+
+Such an instance is trivially infeasible, but its ray certificate would need separate
+multipliers for the lower and upper bounds, which [`infeasibility_check!`](@ref) does not have.
+"""
+function crossed_bounds(milp::MILP)
+    (; lv, uv, lc, uc) = milp
+    crossed_v = vec(any(lv .> uv; dims = 1))
+    crossed_c = vec(any(lc .> uc; dims = 1))
+    crossed = crossed_v .| crossed_c
+    return isbatched(milp) ? Array(crossed) : only(crossed)
+end
+
+"""
+    try_solve_crossed_bounds!(state, milp_cpu)
+
+Terminate with `MOI.INFEASIBLE` right away if every instance of `milp_cpu` has crossed bounds,
+see [`crossed_bounds`](@ref). No ray certificate is available in that case.
+
+When only some instances of a batch have crossed bounds, those are marked `MOI.INFEASIBLE` and
+frozen (see [`freeze_terminated!`](@ref)) before the batch is solved as usual, so that they
+neither keep the batch running until its limit nor end up with a limit status.
+"""
+function try_solve_crossed_bounds!(state::AbstractState, milp_cpu::MILP)
+    crossed = crossed_bounds(milp_cpu)
+    if !batched_all(identity, crossed)
+        mark_crossed_instances!(state.stats, crossed)
+        return false
+    end
+    state.stats.time_elapsed = current_time() - state.stats.starting_time
+    state.stats.termination_status_code = status_code(MOI.INFEASIBLE)
+    state.stats.instance_status_code = batched_fill(
+        state.stats.instance_status_code, status_code(MOI.INFEASIBLE)
+    )
+    return true
+end
+
+"""
+    mark_crossed_instances!(stats, crossed)
+
+Give the instances of a batch flagged in `crossed` the status `MOI.INFEASIBLE` and freeze them.
+Does nothing without batching, or when no instance is flagged.
+"""
+mark_crossed_instances!(::ConvergenceStats, ::Bool) = nothing
+function mark_crossed_instances!(stats::ConvergenceStats, crossed::AbstractVector{Bool})
+    any(crossed) || return nothing
+    codes = Array(stats.instance_status_code)
+    codes[crossed] .= status_code(MOI.INFEASIBLE)
+    copyto!(stats.instance_status_code, codes)
+    freeze_terminated!(stats)
+    return nothing
 end
 
 function solve(
@@ -303,6 +410,10 @@ end
     solve!(state, milp, algo)
 
 Modify `state` in-place to solve the continuous relaxation of `milp` using the algorithm defined by `algo`.
+
+Unlike [`solve`](@ref), `solve!` does not look for crossed bounds (see [`crossed_bounds`](@ref)),
+a host-side check: call [`try_solve_crossed_bounds!`](@ref) first, and skip `solve!` when it
+returns `true`.
 """
 function solve! end
 
@@ -314,6 +425,12 @@ function termination_check!(
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
+    # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
+    # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
+    infeasibility_check!(
+        stats, state.infeas, scratch, ray_candidates(state)..., milp,
+        algo.termination.infeasibility_tol, active_mask(stats),
+    )
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end
