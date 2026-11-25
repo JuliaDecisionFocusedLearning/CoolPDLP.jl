@@ -16,9 +16,8 @@ the sign conditions of a ray, then tested on both the original (unscaled) and th
   objective `lcᵀ|y|⁺ - ucᵀ|y|⁻ + lvᵀ|r|⁺ - uvᵀ|r|⁻` is positive.
 
 Following PDLP, the error of a ray is its violation of the cone conditions divided by its
-objective, which does not depend on the scale of the ray. Following cuPDLPx, a ray only
-qualifies if its objective exceeds a small fraction of the sum of its absolute terms, which
-rules out objectives that are rounding noise.
+objective, which does not depend on the scale of the ray. A ray only qualifies if its objective
+exceeds a small fraction of the sum of its absolute terms, which rules out rounding noise.
 
 The objectives are the same in the scaled and original spaces, since `D1` and `D2` cancel out.
 =#
@@ -185,13 +184,8 @@ end
 Compute the certificate error of the dual ray `y` (scaled space), column by column, into `dest`.
 
 The violation is measured both on the original problem and on the preconditioned one (without
-`D1` and `D2`, but with the scalar rescalings undone), and the error is the larger of the two.
-An exact certificate has no violation in either, but a near-certificate can look exact in one
-metric only: on leo1 from MIPLIB 2017, whose objective is a free variable `x₁` defined by a row
-with coefficients up to `9e7`, a dual ray leaves a reduced cost `0.55` on `x₁` against an
-objective of `9e7`, an error of `6e-9` on the original problem, while that row sets the weight
-of every other reduced cost: on the preconditioned problem, which balances the row, the error
-is large, and the LP is in fact feasible.
+`D1` and `D2`, but with the scalar rescalings undone), and the error is the larger of the two:
+a near-certificate of a badly scaled feasible LP can look exact on the original problem only.
 
 Costs one multiplication by `Aᵀ`.
 """
@@ -245,10 +239,6 @@ Look for infeasibility certificates among two candidate rays, each given as a `(
 Each candidate costs one multiplication by `A` and one by `Aᵀ`, i.e. one KKT pass. These two passes go to `stats.ray_passes`, not `stats.kkt_passes`:
 the detection does not eat into `max_kkt_passes`. Does nothing at all when the detection is
 disabled (`infeas === nothing`).
-
-It takes the pieces of the solver state it needs rather than the state itself: with a whole
-state in its signature, inference could not fold the `promote_op` with which `@stable` checks
-the return type at compile time, so the check ran at every call and boxed its arguments.
 """
 function infeasibility_check!(
         stats::ConvergenceStats, infeas::InfeasibilityWorkspace, scratch::Scratch,

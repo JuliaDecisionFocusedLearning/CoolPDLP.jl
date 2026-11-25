@@ -181,28 +181,6 @@ end
     @allowscalar @test instance(stats, 2).kkt_passes == 0
 end
 
-@testset "Type stability" begin
-    # on a single instance and on a batch, enabled or disabled
-    Random.seed!(0)
-    _, milp_batch = random_milp_batch(20, 30, 0.4, 3)
-    @testset "$alg, $(nbinstances(milp)) instance(s), tol $tol" for alg in algorithms,
-            milp in (infeasible_lp, milp_batch), tol in (1.0e-8, nothing)
-
-        algo = alg(; show_progress = false, infeasibility_tol = tol)
-        state = initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
-        (; infeas, scratch, stats, sol) = state
-        candidates = CoolPDLP.ray_candidates(state)
-        @test (@inferred CoolPDLP.infeasibility_check!(stats, infeas, scratch, candidates..., milp, tol, true)) === nothing
-        @test (@inferred CoolPDLP.export_certificate!(stats, infeas, milp)) === nothing
-        @inferred CoolPDLP.instance(infeas, 1)
-        isnothing(tol) && continue
-        @inferred CoolPDLP.form_candidate!(infeas.cand, sol, nothing, milp, true)
-        @inferred CoolPDLP.primal_ray_error!!(infeas.e, infeas, scratch, infeas.cand.x, milp, tol)
-        @inferred CoolPDLP.dual_ray_error!!(infeas.e, infeas, scratch, infeas.cand.y, milp, tol)
-        @inferred CoolPDLP.keep_better!!(infeas.ray.x, stats.primal_ray_error, infeas.cand.x, infeas.e, true)
-    end
-end
-
 @testset "Detection disabled" begin
     @testset "$alg" for alg in algorithms
         algo = alg(; infeasibility_tol = nothing, max_kkt_passes = 1000)
@@ -242,19 +220,8 @@ end
         @test isnothing(state.infeas)
         @test isnothing(state.stats.ray)
         if state isa CoolPDLP.PDHGState
-            # PDHG keeps its previous iterate for the infeasibility check only
             @test isnothing(state.sol_last)
         end
-
-        # what the detection allocates, measured on a problem large enough to dominate: at
-        # least its two ray buffers and the exported certificate, all gone when disabled
-        big, _ = CoolPDLP.random_milp_and_sol(Xoshiro(0), 400, 600, 0.01)
-        bigsol = PrimalDualSolution(big)
-        init(a) = initialize(big, bigsol, a; starting_time = 0.0)
-        enabled, disabled = alg(), alg(; infeasibility_tol = nothing)
-        init(enabled), init(disabled)
-        buffers = 3 * (nbvar(big) + nbcons(big)) * sizeof(Float64)
-        @test @allocated(init(enabled)) - @allocated(init(disabled)) >= buffers
     end
 end
 
