@@ -107,6 +107,7 @@ mutable struct ConvergenceStats{
         R <: Union{Nothing, PrimalDualSolution},
         A <: Union{Nothing, AbstractVector},  # of `Bool`s, traced as `TracedRNumber{Bool}`s
         IP <: Union{Nothing, AbstractVector},
+        X,
     }
     "current KKT error"
     err::KKTErrors{T}
@@ -138,6 +139,8 @@ mutable struct ConvergenceStats{
     extra_products::I
     "evaluations of the scalar root functions of HSDPDLP's box-cone projections, per instance (zero for the other algorithms)"
     newton_iterations::T
+    "statistics that only the algorithm in use records, or `nothing`"
+    algorithm::X
 end
 
 """
@@ -196,10 +199,11 @@ function ConvergenceStats(
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
         extra_products = zero(kkt_passes),
         newton_iterations = batched_fill(err.primal, zero(eltype(err.primal))),
-    ) where {T, I, S, C}
+        algorithm::X = nothing,
+    ) where {T, I, S, C, X}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{
-        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes),
+        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes), X,
     }(
         err,
         starting_time,
@@ -216,6 +220,7 @@ function ConvergenceStats(
         instance_kkt_passes,
         convert(I, extra_products),
         newton_iterations,
+        algorithm,
     )
 end
 
@@ -271,6 +276,7 @@ function instance(stats::ConvergenceStats, i::Int)
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
         extra_products = stats.extra_products,
         newton_iterations = instance_num(stats.newton_iterations, i),
+        algorithm = instance(stats.algorithm, i),
     )
 end
 

@@ -13,11 +13,12 @@ using Test
     algo = HPDLP()
     @test algo isa CoolPDLP.Algorithm{:HPDLP}
     @test algo.step_size.invnorm_scaling == 0.998
-    @test algo.step_size.reflection_coefficient == 1.0
-    @test algo.step_size.pid_kp == 0.99
-    @test algo.step_size.pid_ki == 0.01
-    @test algo.step_size.pid_kd == 0.0
-    @test algo.step_size.pid_integral_discount == 0.3
+    @test algo.specific.reflection_coefficient == 1.0
+    @test algo.specific.pid_kp == 0.99
+    @test algo.specific.pid_ki == 0.01
+    @test algo.specific.pid_kd == 0.0
+    @test algo.specific.pid_integral_discount == 0.3
+    @test_throws MethodError PDLP(; pid_kp = 0.5)
     @test algo.restart.sufficient_decay == 0.2
     @test algo.restart.necessary_decay == 0.5
     @test algo.restart.artificial_decay == 0.36
