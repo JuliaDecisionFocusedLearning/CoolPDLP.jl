@@ -45,12 +45,15 @@ function HSDPDLP(args...; kwargs...)
         invnorm_scaling = 0.998,
         necessary_decay = 0.5,
         check_every = 200,
-        pid_kp = 0.97,
-        pid_ki = 0.05,
-        pid_kd = 0.0,
-        pid_integral_discount = 0.3,
         kwargs...
     )
+end
+
+function specific_parameters(
+        ::Val{:HSDPDLP}, ::Type{T}; reflection_coefficient = 1.0, pid_kp = 0.97, pid_ki = 0.05,
+        pid_kd = 0.0, pid_integral_discount = 0.3,
+    ) where {T}
+    return HalpernParameters{T}(reflection_coefficient, pid_kp, pid_ki, pid_kd, pid_integral_discount)
 end
 
 "relative tolerance `ϵ_N` of the safeguarded Newton method (the paper's `1e-6` stalls the outer iteration)"
@@ -198,6 +201,22 @@ function instance(ws::HSDWorkspace, i::Int)
 end
 
 """
+    HSDStats
+
+Statistics of [`HSDPDLP`](@ref) that the other algorithms do not record, kept in `stats.algorithm`.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+mutable struct HSDStats{T <: BatchedNumber}
+    "evaluations of the scalar root functions of the box-cone projections, per instance"
+    newton_iterations::T
+end
+
+instance(stats::HSDStats, i::Int) = HSDStats(instance_num(stats.newton_iterations, i))
+
+"""
     HSDPDLPState
 
 # Fields
@@ -327,7 +346,10 @@ function initialize(
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
     tol = algo.termination.infeasibility_tol
-    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2)
+    newton = HSDStats(batched_fill(err.primal, zero(eltype(err.primal))))
+    stats = ConvergenceStats(
+        err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2, algorithm = newton,
+    )
     infeas = InfeasibilityWorkspace(sol, tol)
     return HSDPDLPState(;
         sol = copy(sol), Tz, z, z_anchor, hsd, ws, step_sizes, scratch, halpern, stats, infeas,
@@ -382,8 +404,8 @@ function check_pass!(
     must_terminate = termination_check!(state, milp, algo)
     halpern_restart_check!(state.halpern, algo.restart, must_terminate, active_mask(state.stats))
     hsd_restart!(state, algo)
-    state.stats.newton_iterations = masked_apply!!(
-        n -> n + zero(n), state.stats.newton_iterations, active_mask(state.stats), state.ws.newton_iters
+    state.stats.algorithm.newton_iterations = masked_apply!!(
+        n -> n + zero(n), state.stats.algorithm.newton_iterations, active_mask(state.stats), state.ws.newton_iters
     )
     return must_terminate
 end
@@ -478,7 +500,7 @@ function hsd_step!(
         state::HSDPDLPState, algo::Algorithm{:HSDPDLP}, ::Val{fixed_point_error}
     ) where {fixed_point_error}
     (; Tz, z, z_anchor, hsd, ws, step_sizes, scratch, halpern) = state
-    γ = algo.step_size.reflection_coefficient
+    γ = algo.specific.reflection_coefficient
     active = active_mask(state.stats)
     hsd_operator!(Tz, z, ws, hsd, step_sizes, algo.step_size.invnorm_scaling, active)
     if fixed_point_error
@@ -851,7 +873,7 @@ PDHG point `T(z)`, rescaled as in eq. 44. The other instances are left untouched
 function hsd_restart!(state::HSDPDLPState{T}, algo::Algorithm{:HSDPDLP}) where {T}
     (; Tz, z, z_anchor, hsd, ws, step_sizes, scratch, halpern) = state
     (; restart) = halpern
-    hsd_primal_weight_update!(halpern, step_sizes, ws, scratch, Tz, z_anchor, hsd, algo.step_size)
+    hsd_primal_weight_update!(halpern, step_sizes, ws, scratch, Tz, z_anchor, hsd, algo.specific, algo.step_size.invnorm_scaling)
     state.stats.extra_products += 1  # the `Aᵀy` of `certificate_regime!!`
 
     # homogeneous rescaling of the restart point (eq. 44)
@@ -893,7 +915,7 @@ function hsd_restart_point!(p::HSDPoint, restart::BatchedNumber, scale::BatchedN
 end
 
 """
-    hsd_primal_weight_update!(halpern, step_sizes, ws, scratch, Tz, z_anchor, hsd, params)
+    hsd_primal_weight_update!(halpern, step_sizes, ws, scratch, Tz, z_anchor, hsd, params, ν)
 
 PI control of the primal weight (eqs. 46-52) for the instances which restart: the error is
 `e = log(δd / (ω δp))` with `δp² = ‖Δx‖² + (λ²/ν) Δτ²` and `δd² = ‖Δy‖² + Δα²` the movements of
@@ -903,15 +925,14 @@ the primal and dual blocks since the anchor, the integral `s ← ζ s + e` and t
 """
 function hsd_primal_weight_update!(
         halpern::HalpernStats, step_sizes::StepSizes, ws::HSDWorkspace, scratch::Scratch,
-        Tz::HSDPoint, z_anchor::HSDPoint, hsd::NamedTuple, params::StepSizeParameters,
+        Tz::HSDPoint, z_anchor::HSDPoint, hsd::NamedTuple, params::HalpernParameters, ν::Number,
     )
     (; restart) = halpern
-    (; pid_kp, pid_ki, pid_integral_discount, invnorm_scaling) = params
+    (; pid_kp, pid_ki, pid_integral_discount) = params
     ws.ρ = certificate_regime!!(ws.ρ, ws, scratch, Tz, hsd)
     ρ = ws.ρ
     Δx = colnorm!!(scratch.b1, @. scratch.x = Tz.xy.x - z_anchor.xy.x)
     Δy = colnorm!!(scratch.b2, @. scratch.y = Tz.xy.y - z_anchor.xy.y)
-    ν = invnorm_scaling
     # δp, then δd, into the per-instance scratch
     ws.δp = batched_apply!!(ws.δp, Δx, Tz.τ, z_anchor.τ, step_sizes.η) do Δx, τ, τ0, λ
         sqrt(Δx^2 + λ^2 / ν * (τ - τ0)^2)

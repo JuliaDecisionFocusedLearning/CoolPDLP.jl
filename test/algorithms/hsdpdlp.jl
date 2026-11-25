@@ -104,7 +104,7 @@ diffpoint(a, b) = HSDPoint(PrimalDualSolution(a.xy.x - b.xy.x, a.xy.y - b.xy.y),
     # per check of 50 steps: 2 residual products, 2 + 3 for the two optimality candidates, 1 for
     # the certificate regime; plus 2 for the initial KKT errors
     @test CoolPDLP.matrix_products(stats) == 2 * stats.kkt_passes + 8 * checks + 2
-    @test stats.newton_iterations >= 2 * stats.kkt_passes
+    @test stats.algorithm.newton_iterations >= 2 * stats.kkt_passes
 end
 
 @testset "Active-set reduced cost" begin

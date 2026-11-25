@@ -290,5 +290,5 @@ A point with $\tau > 0$ yields $(x, y)/\tau$. A point with $\tau = 0$ and $\kapp
 | optimality test | best of $r_{\text{act}}$ and $\Pi_R(q)$ | same |
 | infeasibility | always | only when `infeasibility_tol` is not `nothing` |
 
-`stats.newton_iterations` counts the root evaluations per instance. [`matrix_products`](@ref CoolPDLP.matrix_products) counts every product by $A$ or $A^\top$, including those of the restart metric and of the termination tests.
+`stats.algorithm.newton_iterations` counts the root evaluations per instance. [`matrix_products`](@ref CoolPDLP.matrix_products) counts every product by $A$ or $A^\top$, including those of the restart metric and of the termination tests.
 
