@@ -132,39 +132,11 @@ function step!(
 end
 
 """
-    primal_dual_steps!!(op, dest, η, ω)
-
-Compute the primal (`op = /`) or dual (`op = *`) step `op(η, ω)`, column by column into `dest`.
-
-An unbatched step is computed directly rather than with `broadcast!!`: under Reactant, a
-zero-dimensional broadcast of a `Float32` division between traced numbers can fail to compile
-("Missing Julia object for global"), depending on what was compiled before it.
-"""
-primal_dual_steps!!(op::F, ::Number, η::Number, ω::Number) where {F} = op(η, ω)
-function primal_dual_steps!!(op::F, dest::AbstractVector, η::BatchedNumber, ω::BatchedNumber) where {F}
-    return broadcast!!(op, dest, η, ω)
-end
-
-"""
     dual_update(y, σ, Ax, lc, uc)
 
 Dual PDHG step `y - σ Ax - σ clamp(y / σ - Ax, -uc, -lc)` of one entry.
 """
 @inline dual_update(y, σ, Ax, lc, uc) = y - σ * Ax - σ * clamp(inv(σ) * y - Ax, -uc, -lc)
-
-"""
-    masked_dual_update!(dest, active, y, σ, Ax, lc, uc)
-
-Write the dual step [`dual_update`](@ref) of `y` into `dest`, for the active instances only.
-Spelled out without batching, so that an unbatched solve runs the same fused broadcast as before.
-"""
-function masked_dual_update!(dest::AbstractVector, ::Bool, y, σ, Ax, lc, uc)
-    @. dest = y - σ * Ax - σ * clamp(inv(σ) * y - Ax, -uc, -lc)
-    return dest
-end
-function masked_dual_update!(dest::AbstractMatrix, active, y, σ, Ax, lc, uc)
-    return masked_broadcast!(dual_update, dest, active, y, σ, Ax, lc, uc)
-end
 
 """
     pdhg_update!(sol, scratch, step_sizes, milp, active)
@@ -185,8 +157,8 @@ function pdhg_update!(
     (; η, ω) = step_sizes
     (; c, lv, uv, A, At, lc, uc) = milp
 
-    τ = transpose(primal_dual_steps!!(/, scratch.b1, η, ω))
-    σ = transpose(primal_dual_steps!!(*, scratch.b2, η, ω))
+    τ = transpose(batched_apply!!(/, scratch.b1, η, ω))
+    σ = transpose(batched_apply!!(*, scratch.b2, η, ω))
 
     # xp = clamp.(x - τ * (c - At * y), lv, uv)
     At_y = mul!(scratch.z, At, y)
@@ -196,6 +168,6 @@ function pdhg_update!(
 
     # yp = y - σ * A * (2xp - x) - σ * clamp.(inv(σ) * y - A * (2xp - x), -uc, -lc)
     A_xdiff = mul!(scratch.y, A, xdiff)
-    masked_dual_update!(y, active, y, σ, A_xdiff, lc, uc)
+    masked_broadcast!(dual_update, y, active, y, σ, A_xdiff, lc, uc)
     return sol
 end

@@ -90,7 +90,7 @@ The algorithm stops when, for every instance, the KKT errors meet
 (a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
 is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
 
-With `infeasibility_tol` (default `1e-8`, as in PDLP), PDHG and PDLP look for infeasibility
+With `infeasibility_tol` (default `1e-8`), PDHG and PDLP look for infeasibility
 certificates at every termination check, and stop with `MOI.INFEASIBLE` or
 `MOI.DUAL_INFEASIBLE` once a ray's error is below it (see [`infeasibility_check!`](@ref)). These
 checks cost two KKT passes each, which do not count towards `max_kkt_passes`.
@@ -398,13 +398,9 @@ end
 
 Modify `state` in-place to solve the continuous relaxation of `milp` using the algorithm defined by `algo`.
 
-Unlike [`solve`](@ref), `solve!` does not look for crossed bounds (some `l > u`, see
-[`crossed_bounds`](@ref)): that check reads the bounds on the host, so it cannot run inside a
-loop compiled by Reactant. An instance with crossed bounds has no ray certificate, so `solve!`
-alone runs it to an iteration or time limit. When calling `solve!` directly (e.g. to compile it),
-call `CoolPDLP.try_solve_crossed_bounds!(state, milp)` first, outside the compiled function, and
-skip `solve!` when it returns `true`: it then marks the state `MOI.INFEASIBLE`, and otherwise
-freezes the instances of a batch which have crossed bounds.
+Unlike [`solve`](@ref), `solve!` does not look for crossed bounds (see [`crossed_bounds`](@ref)),
+a host-side check: call [`try_solve_crossed_bounds!`](@ref) first, and skip `solve!` when it
+returns `true`.
 """
 function solve! end
 
