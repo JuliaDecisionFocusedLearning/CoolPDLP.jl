@@ -55,17 +55,6 @@ include("fixtures.jl")
             include("gpu/batching.jl")
             test_batching(GPUSparseMatrixCSR, JLBackend())
         end
-        @testset verbose = true "Unbatched HSDPDLP on JLArrays" begin
-            using JLArrays: JLArrays, JLArray
-            include("gpu/hsdpdlp.jl")
-            # any scalar indexing of a device array throws
-            JLArrays.allowscalar(false)
-            try
-                test_hsdpdlp_device(GPUSparseMatrixCSR, JLBackend(), JLArray)
-            finally
-                JLArrays.allowscalar(true)
-            end
-        end
         @testset "Tutorial" begin
             include("tutorial.jl")
         end

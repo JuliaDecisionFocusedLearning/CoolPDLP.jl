@@ -35,10 +35,9 @@ checked every `200` iterations; a PI primal weight controller (`pid_kp = 0.97`, 
 
 Deviations from the paper: the Newton tolerance is `1e-9` (see `HSD_NEWTON_TOL`); the primal
 weight stays within `[1e-4, 1e4]` with anti-windup; and the preconditioner is the package default
-(no geometric-mean passes: 12 of them cost about 25 % more KKT passes on a Netlib sample). The
-optimality test tries both reduced-cost candidates of the paper (see [`hsd_termination_check!`](@ref));
-on Netlib, the active-set one lowers the gap but the primal residual decides, so pass counts are
-unchanged at `1e-6` and `1e-8`. Infeasibility can only be reported when `infeasibility_tol` is not `nothing`.
+(no geometric-mean passes). The optimality test tries both reduced-cost candidates of the paper
+(see [`refine_kkt_errors!`](@ref)). Infeasibility can only be reported when
+`infeasibility_tol` is not `nothing`.
 """
 function HSDPDLP(args...; kwargs...)
     return Algorithm{:HSDPDLP}(
@@ -54,31 +53,14 @@ function HSDPDLP(args...; kwargs...)
     )
 end
 
-"""
-Relative tolerance `ϵ_N` of the safeguarded Newton method. Algorithm 1 of the paper uses `1e-6`,
-but with it the inexact roots stall the outer iteration: at `termination_reltol = 1e-6`, share2b,
-scagr7 and stocfor1 hit `10^5` KKT passes and adlittle needs 14× more, for about 40 % fewer
-residual evaluations per step.
-"""
+"relative tolerance `ϵ_N` of the safeguarded Newton method (the paper's `1e-6` stalls the outer iteration)"
 const HSD_NEWTON_TOL = 1.0e-9
 "factor around the initial primal weight `1` which the weight is kept within (a safeguard, not in the paper)"
 const HSD_OMEGA_WINDOW = 1.0e4
 "maximum number of iterations of the safeguarded Newton method, as in the paper"
 const HSD_NEWTON_MAXITER = 100
-"""
-Number of Newton iterations between two convergence tests of [`boxcone_root!`](@ref). The test
-reduces over the batch, which reads the result back to the host on a KernelAbstractions GPU, so it
-does not run after every iteration; the extra iterations leave the converged instances as they are.
-"""
+"number of Newton iterations between two convergence tests of [`boxcone_root!`](@ref), each of which reduces over the batch"
 const HSD_NEWTON_CHECK_EVERY = 4
-"""
-Number of Newton iterations of [`boxcone_root!`](@ref) on a KernelAbstractions GPU, where it runs
-without any convergence test, since each test would read a flag back to the host. On 40 Netlib
-instances at `termination_reltol = 1e-6`, 99.97 % of the roots converge within 4 iterations and
-99.99 % within 8 (at most 17); the extra iterations leave a converged root as it is, and a root
-which has not converged yet stays inside its bracket and warm-starts the next step.
-"""
-const HSD_NEWTON_DEVICE_ITERS = 8
 
 """
     HSDPoint
@@ -257,7 +239,7 @@ $(TYPEDFIELDS)
     stats::CS
     "infeasibility detection buffers"
     infeas::IW
-    "active-set reduced costs of the second optimality candidate (see [`active_set_candidate!`](@ref))"
+    "active-set reduced costs of the second optimality candidate (see [`refine_kkt_errors!`](@ref))"
     r_act::V
     "KKT errors of the second optimality candidate"
     err_act::E
@@ -322,31 +304,6 @@ function hsd_problem(milp::MILP{T}, sol::PrimalDualSolution{T}) where {T}
     # state with; `A` and `At` are those of `milp`, shared
     hsd = (; c = c .* γcr, lv = lv .* γbr, uv = uv .* γbr, A, At, lc = lc .* γbr, uc = uc .* γbr)
     return hsd, γb, γc
-end
-
-"""
-    internal_batch(milp, sol, algo::Algorithm{:HSDPDLP})
-
-Make a batch of one of an unbatched problem whose arrays live on a KernelAbstractions GPU.
-
-Unbatched, the scalars of HSDPDLP (the Newton roots and residuals, `τ`, `α`, the norms of the
-restarts) are host numbers, so each of the many reductions of a step would read its result back
-to the host. In a batch, they are device vectors with one entry per instance, and the batched
-kernels keep them there. [`solve`](@ref) returns the solution and the stats of the single
-instance (see `export_result`); a state built with [`initialize`](@ref) from the result of
-[`preprocess`](@ref) holds the batch of one. CPU arrays are left as they are: on the host, the
-unbatched scalars are the cheaper ones.
-"""
-internal_batch(milp::MILP, sol::PrimalDualSolution, ::Algorithm{:HSDPDLP}) = batch_of_one(milp, sol, sol.x)
-
-batch_of_one(milp::MILP, sol::PrimalDualSolution, ::AbstractMatrix) = (milp, sol)
-batch_of_one(milp::MILP, sol::PrimalDualSolution, ::Vector) = (milp, sol)
-function batch_of_one(milp::MILP, sol::PrimalDualSolution, ::AbstractVector)
-    column(v) = reshape(copy(v), :, 1)
-    # a matrix `c` is enough to make `milp` a batch, whose other data is shared by its instance
-    fields = NamedTuple{fieldnames(typeof(milp))}(ntuple(i -> getfield(milp, i), Val(fieldcount(typeof(milp)))))
-    milp1 = MILP(; merge(fields, (; c = column(milp.c)))...)
-    return milp1, PrimalDualSolution(column(sol.x), column(sol.y))
 end
 
 function initialize(
@@ -422,7 +379,7 @@ function check_pass!(
     hsd_step!(state, algo, Val(true))
     next_progress!(prog, state)
     recover_solution!(state.sol, state.Tz, state.ws, active_mask(state.stats))
-    must_terminate = hsd_termination_check!(state, milp, algo)
+    must_terminate = termination_check!(state, milp, algo)
     halpern_restart_check!(state.halpern, algo.restart, must_terminate, active_mask(state.stats))
     hsd_restart!(state, algo)
     state.stats.newton_iterations = masked_apply!!(
@@ -432,33 +389,10 @@ function check_pass!(
 end
 
 """
-    hsd_termination_check!(state, milp, algo)
+    refine_kkt_errors!(state, milp, norm)
 
-The termination check of the other algorithms, except that the optimality test of the paper
-(§6.2) tries two reduced costs for the recovered `(x, y)`: the projection `Π_R(c - Aᵀy)` of
-[`kkt_errors!`](@ref), and the active-set one of [`active_set_candidate!`](@ref). Each instance
-keeps the errors of the candidate with the smaller relative KKT error.
-"""
-function hsd_termination_check!(state::HSDPDLPState, milp::MILP, algo::Algorithm{:HSDPDLP})
-    (; sol, scratch, stats) = state
-    (; infeasibility_tol) = algo.termination
-    (; termination_norm) = algo.generic
-    update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp, termination_norm)
-    stats.extra_products += 2
-    active_set_candidate!(state, milp, termination_norm)
-    infeasibility_check!(
-        stats, state.infeas, scratch, ray_candidates(state)..., milp, infeasibility_tol,
-        active_mask(stats),
-    )
-    record_error_history!(stats, algo.generic.record_error_history)
-    return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
-end
-
-"""
-    active_set_candidate!(state, milp, norm)
-
-Second optimality candidate of the paper (`r_act`): the reduced cost `q = c - Aᵀy` kept only
+Second optimality candidate of the paper (§6.2), tried by [`termination_check!`](@ref) after the
+projection `Π_R(c - Aᵀy)` of [`kkt_errors!`](@ref): the active-set reduced cost `r_act`: the reduced cost `q = c - Aᵀy` kept only
 where the last primal projection put `x` on a bound and `q` has the sign of a multiplier of that
 bound, zero elsewhere. Where `Π_R(q)` charges a nonzero multiplier of an inactive bound to the
 gap, this one charges it to the dual residual instead. The errors of the better candidate end up
@@ -466,7 +400,7 @@ in `state.stats.err`. Costs three products by `A` or `Aᵀ`.
 
 A frozen instance of a batch keeps its `r_act`, hence its errors.
 """
-function active_set_candidate!(state::HSDPDLPState, milp::MILP, norm::TerminationNorm)
+function refine_kkt_errors!(state::HSDPDLPState, milp::MILP, norm::TerminationNorm)
     (; sol, Tz, hsd, scratch, stats, r_act, err_act) = state
     (; c, At) = milp
     At_y = mul!(scratch.x, At, sol.y)
@@ -681,12 +615,9 @@ end
 One iteration of Algorithm 1 of the paper for one instance, as a pure function of its state:
 return the next `(t, lo, hi, Δ, done)`. A converged instance is left as it is.
 
-Besides the tests of the paper, an instance stops when its next iterate is its current one. The
-test `|g| ≤ d_min ϵ/(1+ϵ) t` of the paper can be out of reach in floating point: the rounding
-error of `g` grows with the actual slope `d`, which can exceed `d_min = 1/μ` by many orders of
-magnitude (`7e8` on grow7), so the Newton step underflows to zero while `|g|` stays above the
-threshold, and the paper's loop runs to its iteration limit (about 100 evaluations per root on
-grow7 and kb2). Such a `t` is the root to machine precision.
+Besides the tests of the paper, an instance stops when its next iterate is its current one: the
+test `|g| ≤ d_min ϵ/(1+ϵ) t` can be out of reach in floating point when the slope `d` far exceeds
+`d_min`, and such a `t` is the root to machine precision.
 """
 @inline function newton_update(t, g, d, lo, hi, hi0, Δ, done, dmin, ϵ)
     # a root at zero is only reached through `g(0) ≥ 0`
@@ -738,18 +669,11 @@ Find, for every instance, the `τ ≥ 0` with `g(τ) ≥ 0` and `τ g(τ) = 0` b
 method of Algorithm 1, warm-started from `warm`, and return it (in `ws.t`).
 
 The iterations are masked per instance and the loop is a `@trace while`, whose trip count is
-data-dependent: under Reactant, it compiles to a `while` of the XLA program, whose condition stays
-on the device (the Reactant tests compile HSDPDLP, hence this loop). It tests for convergence
+data-dependent: under Reactant, it compiles to a `while` of the XLA program. It tests for convergence
 every `HSD_NEWTON_CHECK_EVERY` iterations, and stops once every instance has converged, or after
 `HSD_NEWTON_MAXITER` iterations (rounded up to the next test). The frozen instances of a batch
 (`active` false, see `active_mask`) count as converged from the start: they keep their warm
 start, and never hold the loop up.
-
-On a KernelAbstractions GPU (outside a Reactant compilation), the loop runs a fixed
-`HSD_NEWTON_DEVICE_ITERS` iterations instead, so that it never reads anything back to the host:
-with the batch of one that [`preprocess`](@ref) makes of an unbatched problem on such a device
-(see `internal_batch`), all its scalars are device arrays too. On the CPU, the convergence test is
-a plain `Bool`, and the loop stops as soon as it holds.
 """
 function boxcone_root!(
         ws::HSDWorkspace{V}, data::Union{NTuple{2}, NTuple{3}}, warm::BatchedNumber, dmin::BatchedNumber, active = true,
@@ -762,18 +686,10 @@ function boxcone_root!(
     newton_init!(ws, dmin, active)
     count_newton!(ws)
     newton_step!(ws, dmin, ϵ)
-    if V <: Array || within_compile()
-        iter = 1
-        @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
-            newton_block!(ws, data, dmin, ϵ)
-            iter += HSD_NEWTON_CHECK_EVERY
-        end
-    else
-        for _ in 2:HSD_NEWTON_DEVICE_ITERS
-            newton_residual!(ws, data)
-            count_newton!(ws)
-            newton_step!(ws, dmin, ϵ)
-        end
+    iter = 1
+    @trace while (iter < HSD_NEWTON_MAXITER) & !batched_all(identity, ws.done)
+        newton_block!(ws, data, dmin, ϵ)
+        iter += HSD_NEWTON_CHECK_EVERY
     end
     return ws.t
 end
@@ -1007,9 +923,8 @@ function hsd_primal_weight_update!(
         safelog(δd) - safelog(δp) - log(w)
     end
     gate = oftype(ν, 0.9)
-    # Safeguard (not in the paper): the weight stays within a factor `HSD_OMEGA_WINDOW` of its
+    # safeguard (not in the paper): the weight stays within a factor `HSD_OMEGA_WINDOW` of its
     # initial value 1, and the integral stops accumulating while the proposed weight is outside
-    # (anti-windup). Unbounded, the weight of grow15 collapsed to 1e-7 within a few restarts.
     W = oftype(ν, HSD_OMEGA_WINDOW)
     proposal(w, e, s) = w * exp(pid_kp * e + pid_ki * (pid_integral_discount * s + e))
     inside(w) = (w >= inv(W)) & (w <= W)

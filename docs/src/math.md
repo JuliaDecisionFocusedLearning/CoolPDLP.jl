@@ -281,11 +281,11 @@ A point with $\tau > 0$ yields $(x, y)/\tau$. A point with $\tau = 0$ and $\kapp
 
 | | paper | `HSDPDLP()` |
 |---|---|---|
-| Newton tolerance $\epsilon_N$ | $10^{-6}$ | $10^{-9}$: with $10^{-6}$, three Netlib instances stall at reltol $10^{-6}$ |
-| Newton stopping | $\lvert g\rvert \leq d_{\min}\epsilon/(1+\epsilon)\,\tau$, or bracket | also stops once the Newton step no longer moves $\tau$, which takes 4 evaluations per step instead of 22–59 on kb2 and grow7 |
+| Newton tolerance $\epsilon_N$ | $10^{-6}$ | $10^{-9}$ |
+| Newton stopping | $\lvert g\rvert \leq d_{\min}\epsilon/(1+\epsilon)\,\tau$, or bracket | also stops once the Newton step no longer moves $\tau$ |
 | Newton warm start | previous root | previous root, rescaled with the restart point |
 | primal weight | unbounded | kept in $[10^{-4}, 10^4]$, with anti-windup |
-| preconditioning | geometric mean 12 + Ruiz 10 + Pock-Chambolle | Ruiz 10 + Pock-Chambolle (geometric mean costs about 25 % more passes on Netlib) |
+| preconditioning | geometric mean 12 + Ruiz 10 + Pock-Chambolle | Ruiz 10 + Pock-Chambolle |
 | optimality test | best of $r_{\text{act}}$ and $\Pi_R(q)$ | same |
 | infeasibility | always | only when `infeasibility_tol` is not `nothing` |
 

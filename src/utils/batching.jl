@@ -65,9 +65,7 @@ batched_similar(val::AbstractVector) = similar(val)
 Extract the value of `val` for the `i`-th instance of the batch.
 """
 instance_num(val::Number, ::Int) = val
-instance_num(val::Vector, i::Int) = val[i]
-# a copy of one entry rather than scalar indexing, which device arrays may forbid
-instance_num(val::AbstractVector, i::Int) = only(Array(val[i:i]))
+instance_num(val::AbstractVector, i::Int) = val[i]
 
 """
     batched_all(f, args...)

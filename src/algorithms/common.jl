@@ -260,33 +260,7 @@ Return a tuple `(milp, sol)`.
     milp = perform_conversion(milp_cpu, algo.conversion)
     sol = perform_conversion(sol_cpu, algo.conversion)
 
-    return internal_batch(milp, sol, algo)
-end
-
-"""
-    internal_batch(milp, sol, algo)
-
-Return the problem and starting point that `algo` actually solves: `(milp, sol)` itself by default.
-An algorithm may solve an unbatched problem as a batch of one instead (see the `HSDPDLP` method),
-in which case [`export_result`](@ref) brings the result back to a single instance.
-"""
-internal_batch(milp::MILP, sol::PrimalDualSolution, ::Algorithm) = (milp, sol)
-
-"""
-    export_result(sol, stats, milp_init, sol_init)
-
-Return `(sol, stats)` in the shape of the problem `milp_init` and starting point `sol_init` given
-to [`solve`](@ref): the single instance of a batch of one which [`internal_batch`](@ref) made of
-an unbatched problem. (Whether `milp_init` is batched only depends on its type, so the result type
-does too.)
-"""
-function export_result(sol::PrimalDualSolution, stats::ConvergenceStats, milp_init::MILP, sol_init::PrimalDualSolution)
-    return export_result(sol, stats, milp_init, sol.x, sol_init.x)
-end
-export_result(sol, stats, ::MILP, ::AbstractVecOrMat, ::AbstractVecOrMat) = (sol, stats)
-function export_result(sol, stats, milp_init::MILP, ::AbstractMatrix, ::AbstractVector)
-    isbatched(milp_init) && return (sol, stats)
-    return instance(sol, 1), instance(stats, 1)
+    return milp, sol
 end
 
 """
@@ -319,7 +293,7 @@ function solve(
     if !trivial_solve
         solve!(state, milp, algo)
     end
-    return export_result(get_solution(state, milp), state.stats, milp_init_cpu, sol_init_cpu)
+    return get_solution(state, milp), state.stats
 end
 
 """
@@ -443,6 +417,7 @@ function termination_check!(
     update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
     stats.extra_products += 2
+    refine_kkt_errors!(state, milp, algo.generic.termination_norm)
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
     infeasibility_check!(
@@ -452,6 +427,14 @@ function termination_check!(
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end
+
+"""
+    refine_kkt_errors!(state, milp, norm)
+
+Improve the KKT errors just computed by [`termination_check!`](@ref) with an algorithm-specific
+candidate. Does nothing by default.
+"""
+refine_kkt_errors!(::AbstractState, ::MILP, ::TerminationNorm) = nothing
 
 """
     record_error_history!(stats, record)

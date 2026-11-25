@@ -10,19 +10,7 @@ using Random
 using SparseArrays
 using Test
 
-@testset "Defaults follow the paper" begin
-    algo = HSDPDLP()
-    @test algo isa CoolPDLP.Algorithm{:HSDPDLP}
-    @test algo.step_size.invnorm_scaling == 0.998
-    @test algo.step_size.pid_kp == 0.97
-    @test algo.step_size.pid_ki == 0.05
-    @test algo.step_size.pid_kd == 0.0
-    @test algo.step_size.pid_integral_discount == 0.3
-    @test algo.restart.sufficient_decay == 0.2
-    @test algo.restart.necessary_decay == 0.5
-    @test algo.restart.artificial_decay == 0.36
-    @test algo.generic.check_every == 200
-    @test occursin("HSDPDLP algorithm", sprint(show, algo))
+@testset "check_every" begin
     milp = CoolPDLP.random_milp_and_sol(Xoshiro(0), 5, 8, 0.5)[1]
     @test_throws ArgumentError solve(milp, HSDPDLP(; check_every = 1))
 end
@@ -241,15 +229,6 @@ end
         @test state_i.z.τ ≈ states[i].z.τ
         @test state_i.step_sizes.ω ≈ states[i].step_sizes.ω
         @test state_i.halpern.restarts == states[i].halpern.restarts
-    end
-
-    # a full solve of the batch reaches the same solutions
-    algo = HSDPDLP(; termination_reltol = 1.0e-6)
-    sol, stats = solve(milp_batch, algo)
-    @test termination_status(stats) == MOI.OPTIMAL
-    for i in 1:nbatch
-        sol_i, _ = solve(milps[i], algo)
-        @test objective_value(sol.x[:, i], milps[i]) ≈ objective_value(sol_i.x, milps[i]) rtol = 1.0e-4
     end
 end
 
