@@ -15,7 +15,7 @@ the sign conditions of a ray, then tested on both the original (unscaled) and th
   bound, while the projection makes `y` pair with finite constraint bounds), and its dual
   objective `lcᵀ|y|⁺ - ucᵀ|y|⁻ + lvᵀ|r|⁺ - uvᵀ|r|⁻` is positive.
 
-Following PDLP, the error of a ray is its violation of the cone conditions divided by its
+The error of a ray is its violation of the cone conditions divided by its
 objective, which does not depend on the scale of the ray. A ray only qualifies if its objective
 exceeds a small fraction of the sum of its absolute terms, which rules out rounding noise.
 
