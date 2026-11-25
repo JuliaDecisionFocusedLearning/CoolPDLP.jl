@@ -426,6 +426,7 @@ function termination_check!(
     update_time_elapsed!(stats, algo.generic.time_limit)
     kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
     stats.extra_products += 2
+    refine_kkt_errors!(state, milp, algo.generic.termination_norm)
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
     infeasibility_check!(
@@ -435,6 +436,14 @@ function termination_check!(
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end
+
+"""
+    refine_kkt_errors!(state, milp, norm)
+
+Improve the KKT errors just computed by `termination_check!` with an algorithm-specific
+candidate. Does nothing by default.
+"""
+refine_kkt_errors!(::AbstractState, ::MILP, ::TerminationNorm) = nothing
 
 """
     record_error_history!(stats, record)

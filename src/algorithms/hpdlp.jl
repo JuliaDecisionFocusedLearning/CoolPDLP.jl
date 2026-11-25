@@ -32,7 +32,7 @@ end
 """
     HalpernParameters
 
-Parameters of [`HPDLP`](@ref) that the other algorithms do not read.
+Parameters of [`HPDLP`](@ref) and [`HSDPDLP`](@ref) that the other algorithms do not read.
 
 # Fields
 
