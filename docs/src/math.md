@@ -171,7 +171,7 @@ The diagonal preconditioner chains the following stages in this order, each acti
 - `geometric_mean_iter` passes of geometric-mean scaling, dividing each row, then each column, by $\sqrt{\min |a| \cdot \max |a|}$;
 - `ruiz_iter` Ruiz passes and the Pock–Chambolle step above.
 
-`Algorithm` turns the first two off by default, while `PDLP()` and `HPDLP()` run 20 Curtis–Reid rounds. Their factors are clamped to $[10^{-20}, 10^{20}]$.
+`Algorithm` turns the first two off by default, while `PDLP()`, `HPDLP()` and `HPRLP()` run 20 Curtis–Reid rounds. Their factors are clamped to $[10^{-20}, 10^{20}]$.
 
 With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
 A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, PDLP and HPDLP start from a primal weight of one, and errors and solutions are still reported for the original problem.
@@ -215,7 +215,7 @@ Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without
 
 ## Halpern methods
 
-`HPDLP` runs the following outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
+`HPDLP` and `HPRLP` share one outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
 
 ```math
 z^{k+1} = \frac{k+1}{k+2} \left( \gamma \, (2 T(z^k) - z^k) + (1 - \gamma) \, z^k \right) + \frac{1}{k+2} \, z^0
@@ -250,4 +250,21 @@ This is the method of [Lu, Peng & Yang (2025)](https://arxiv.org/abs/2507.14051)
 | preconditioning | Curtis-Reid 20 + Ruiz 10 + Pock-Chambolle |
 | bound/objective rescaling | off (on costs about 15 % more passes on Netlib) |
 | ray candidates | $T(z) - z^0$, $T(z)$ |
+
+### HPRLP: HPR-LP
+
+With $T_1 = \lambda I - AA^\top$ and $\lambda \geq \lambda_{\max}(AA^\top)$, an HPR-LP step is a PDHG step. Its primal step is $\sigma$ and its dual step is $1/(\lambda\sigma)$, so the code uses $\eta = 1/\sqrt\lambda$ and $\omega = \eta/\sigma$.
+The metric $M$ of the splitting gives $\|\Delta\|_M^2 = \|\Delta x\|^2/\sigma + \sigma\lambda \|\Delta y\|^2 + 2\langle A\Delta x, \Delta y\rangle$, which is the PDHG metric above divided by $\eta$.
+The method is that of [Chen, Sun, Yuan, Zhang & Zhao (2025)](https://doi.org/10.1007/s12532-025-00292-0), and `HPRLP()` differs from the paper as follows.
+
+| | paper | `HPRLP()` |
+|---|---|---|
+| $\lambda$ | power method | 1.01 × power method, grown on the fly when $\|\Delta\|_M^2 < 0$ (never for a frozen instance) |
+| $\sigma_0$ | 1 | $\|b\|/\|c\|$ of the scaled problem |
+| $\sigma$ update | $\|\Delta x\|/(\|\Delta y\|\sqrt\lambda)$ | blended in log space with the $\sigma$ of the best residual, plus a correction near $10^{-9}$ |
+| first check | rule-based | always restarts |
+| preconditioning | Ruiz 10 + Pock-Chambolle + $b, c$ scaling | Curtis-Reid 20, then the same |
+| termination | every 150 steps | every 150 steps |
+| dual residual | | uses $\bar z$ of the splitting |
+| infeasibility | none | ray certificates |
 

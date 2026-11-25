@@ -56,6 +56,7 @@ include("public.jl")
     include("algorithms/pdhg.jl")
     include("algorithms/pdlp.jl")
     include("algorithms/hpdlp.jl")
+    include("algorithms/hprlp.jl")
 end
 
 include("MOI_wrapper.jl")
@@ -69,7 +70,7 @@ export instance, nbinstances, isbatched
 export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
-export PDHG, PDLP, HPDLP
+export PDHG, PDLP, HPDLP, HPRLP
 export TerminationNorm, L2Norm, LInfNorm
 @public Algorithm
 @public KKTErrors, relative, matrix_products

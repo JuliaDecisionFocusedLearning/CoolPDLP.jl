@@ -88,7 +88,7 @@ function random_unbounded_lp(rng, m, n, p)
     )
 end
 
-algorithms = (PDHG, PDLP, HPDLP)
+algorithms = (PDHG, PDLP, HPDLP, HPRLP)
 configs = [(SparseMatrixCSC, CPU()), (GPUSparseMatrixCSR, JLBackend())]
 
 @testset "Hand-made LPs: $alg on $M" for alg in algorithms, (M, backend) in configs

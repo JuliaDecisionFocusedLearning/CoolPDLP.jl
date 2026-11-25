@@ -31,6 +31,9 @@ makedocs(;
     modules = [CoolPDLP],
     authors = "Guillaume Dalle and Michael Klamkin",
     sitename = "CoolPDLP.jl",
+    # the internals page holds every private docstring, and grows past the 200 KiB default
+    # with each algorithm
+    format = Documenter.HTML(; size_threshold_ignore = ["internals.md"]),
     pages = [
         "Home" => "index.md",
         "tutorial.md",
