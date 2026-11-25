@@ -36,15 +36,52 @@ end
 $(TYPEDFIELDS)
 """
 @kwdef struct TerminationParameters{T <: Number, I <: Number}
-    "tolerance on KKT relative errors to decide termination"
+    "relative tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
     termination_reltol::T
+    "absolute tolerance on the KKT errors to decide termination, see [`termination_margin!!`](@ref)"
+    termination_abstol::T
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
 end
 
 function Base.show(io::IO, params::TerminationParameters)
-    (; termination_reltol, max_kkt_passes) = params
-    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, max_kkt_passes=$max_kkt_passes")
+    (; termination_reltol, termination_abstol, max_kkt_passes) = params
+    return print(io, "TerminationParameters: termination_reltol=$termination_reltol, termination_abstol=$termination_abstol, max_kkt_passes=$max_kkt_passes")
+end
+
+"""
+    excess(e, s, ϵₐ, ϵᵣ)
+
+By how much the error `e` exceeds its tolerance `ϵₐ + ϵᵣ (s - 1)`, where `s` is the scale
+stored in [`KKTErrors`](@ref), i.e. one plus the raw norm.
+"""
+@inline excess(e, s, ϵₐ, ϵᵣ) = e - (ϵₐ + ϵᵣ * (s - one(s)))
+
+"""
+    termination_margin!!(dest, err, params)
+
+Compute, column by column into `dest`, by how much the KKT errors `err` exceed their tolerances:
+the instance has converged when the result is nonpositive.
+
+With `ϵₐ = termination_abstol` and `ϵᵣ = termination_reltol`, convergence means
+
+    ‖primal residual‖ ≤ ϵₐ + ϵᵣ ‖b‖
+    ‖dual residual‖   ≤ ϵₐ + ϵᵣ ‖c‖
+    |pobj - dobj|     ≤ ϵₐ + ϵᵣ (|pobj| + |dobj|)
+
+where `b` combines the finite constraint bounds and the norm is `termination_norm` (in [`GenericParameters`](@ref)). Since
+the scales stored in [`KKTErrors`](@ref) are `1 + ‖b‖`, `1 + ‖c‖` and `1 + |pobj| + |dobj|`, the
+default `ϵₐ = ϵᵣ` is the purely relative criterion `error / scale ≤ ϵᵣ`.
+"""
+function termination_margin!!(dest::BatchedNumber, err::KKTErrors, params::TerminationParameters)
+    (; primal, primal_scale, dual, dual_scale, gap, gap_scale) = err
+    (; termination_abstol, termination_reltol) = params
+    return broadcast!!(
+        dest, primal, primal_scale, dual, dual_scale, gap, gap_scale,
+        termination_abstol, termination_reltol,
+    ) do p, ps, d, ds, g, gs, ϵₐ, ϵᵣ
+        max(excess(p, ps, ϵₐ, ϵᵣ), excess(d, ds, ϵₐ, ϵᵣ), excess(g, gs, ϵₐ, ϵᵣ))
+    end
 end
 
 
@@ -138,7 +175,8 @@ end
 """
     set_termination_status!!(stats, dest, params, time_limit)
 
-Decide how the algorithm terminates, using `dest` as scratch space for the relative errors.
+Decide how the algorithm terminates, using `dest` as scratch space for the margins computed by
+[`termination_margin!!`](@ref).
 
 The time limit is passed separately from the other termination parameters `params`, because it
 lives in [`GenericParameters`](@ref).
@@ -158,8 +196,8 @@ function set_termination_status!!(
         time_limit::Number
     )
     (; err, time_elapsed, kkt_passes) = stats
-    (; termination_reltol, max_kkt_passes) = params
-    is_optimal = batched_all(<=(termination_reltol), relative!!(dest, err))
+    (; max_kkt_passes) = params
+    is_optimal = batched_all(<=(0), termination_margin!!(dest, err, params))
     is_time_limit = time_elapsed >= time_limit
     is_iteration_limit = kkt_passes >= max_kkt_passes
     # nested `ifelse` instead of `if`/`elseif`: it is a plain (traceable) computation, and it

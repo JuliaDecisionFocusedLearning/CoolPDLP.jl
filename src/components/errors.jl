@@ -129,15 +129,18 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
 end
 
 """
-    kkt_errors!(err, scratch, sol, milp)
+    kkt_errors!(err, scratch, sol, milp, norm)
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
+
+The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
 """
 function kkt_errors!(
         err::KKTErrors,
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
+        norm::TerminationNorm,
     ) where {T}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
@@ -149,17 +152,17 @@ function kkt_errors!(
     z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
-    err.primal = colnorm!!(err.primal, primal_diff)
+    err.primal = colnorm!!(err.primal, primal_diff, norm)
 
     rescaled_combined_bounds = @. scratch.y = inv(D1.diag) * combine(lc, uc)
-    err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds)
+    err.primal_scale = colnorm!!(err.primal_scale, rescaled_combined_bounds, norm)
     err.primal_scale = broadcast!!(+, err.primal_scale, one(T), err.primal_scale)
 
     dual_diff = @. scratch.x = inv(D2.diag) * (c_At_y - z)
-    err.dual = colnorm!!(err.dual, dual_diff)
+    err.dual = colnorm!!(err.dual, dual_diff, norm)
 
     rescaled_obj = @. scratch.x = inv(D2.diag) * c
-    err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj)
+    err.dual_scale = colnorm!!(err.dual_scale, rescaled_obj, norm)
     err.dual_scale = broadcast!!(+, err.dual_scale, one(T), err.dual_scale)
 
     # dual objective:   lᵀ|y|⁺ - uᵀ|y|⁻ + lᵥᵀ|z|⁺ - uᵥᵀ|z|⁻ + c0

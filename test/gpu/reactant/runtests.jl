@@ -371,11 +371,40 @@ const REACTANT_EXT = Base.get_extension(CoolPDLP, :CoolPDLPReactantExt)
     @test unwrap(algo_r.termination.max_kkt_passes) == 300
     # the time limit is structure too, since its finiteness decides whether the clock is read
     @test algo_r.generic.time_limit === Inf
+    # and so is the termination norm, which selects the reduction of the KKT errors
+    @test algo_r.generic.termination_norm === L2Norm()
     milp, sol = preprocess(milp0, sol0, algo)
     state_r = to_rarray(initialize(milp, sol, algo; starting_time = time()); track_numbers = true)
     @test !(state_r.stats.kkt_passes isa Int)
     @test !(state_r.iteration.inner isa Int)
     @test !(state_r.iteration.total isa Int)
+end
+
+@testset verbose = true "Termination norm" begin
+    # the norm is a type parameter, so a loop compiled for one norm refuses another
+    algo2, algoinf = (
+        PDLP(
+            Float64, Int64, Matrix;
+            backend = nothing, termination_norm, max_kkt_passes = 100, check_every = 50,
+            record_error_history = false,
+        ) for termination_norm in (L2Norm(), LInfNorm())
+    )
+    milp, sol = preprocess(milp0, sol0, algo2)
+    state_r = to_rarray(initialize(milp, sol, algo2; starting_time = time()); track_numbers = true)
+    milp_r = to_rarray(milp; track_numbers = true)
+    solve_r! = @compile CoolPDLP.solve!(state_r, milp_r, to_rarray(algo2; track_numbers = true))
+    @test_throws Reactant.Compiler.MisMatchedThunkTypeError solve_r!(
+        state_r, milp_r, to_rarray(algoinf; track_numbers = true)
+    )
+    @testset "Compiled L∞ solve agrees with the plain one" begin
+        algo = PDLP(
+            Float64, Int64, Matrix;
+            backend = nothing, termination_norm = LInfNorm(), termination_reltol = 1.0e-4,
+            max_kkt_passes = 2000,
+        )
+        state, state_r = solve_plain_and_compiled(algo)
+        test_agreement(state, state_r; rtol = 1.0e-8)
+    end
 end
 
 @testset "Backend support for host callbacks" begin

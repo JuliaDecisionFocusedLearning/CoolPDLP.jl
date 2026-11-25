@@ -68,6 +68,7 @@ export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
 export PDHG, PDLP
+export TerminationNorm, L2Norm, LInfNorm
 @public Algorithm
 @public KKTErrors, relative
 @public termination_status

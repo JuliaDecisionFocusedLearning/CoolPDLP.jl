@@ -239,7 +239,7 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     algo_opts = Dict{Symbol, Any}(:show_progress => !dest.silent)
     for (k, v) in dest.options
         k in algorithm_option_keys && continue
-        algo_opts[k] = v
+        algo_opts[k] = k === :termination_norm && v isa AbstractString ? termination_norm(v) : v
     end
     algo = algorithm(float_type, int_type, matrix_type; algo_opts...)
 
@@ -275,4 +275,10 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
     end
 
     return index_map, false
+end
+
+function termination_norm(name::AbstractString)
+    name == "L2" && return L2Norm()
+    name == "Linf" && return LInfNorm()
+    throw(ArgumentError("termination_norm must be \"L2\", \"Linf\" or a `TerminationNorm`, got $(repr(name))"))
 end

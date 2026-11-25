@@ -67,11 +67,19 @@ end
         record_error_history = true,
         # termination
         termination_reltol = 1.0e-4,
+        termination_abstol = termination_reltol,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
     )
 
 Constructor for algorithm configs.
+
+The algorithm stops when, for every instance, the KKT errors meet
+`error ≤ termination_abstol + termination_reltol * scale` (see
+[`termination_margin!!`](@ref)), with the residuals measured in the norm `termination_norm`
+(a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
+is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
 """
 function Algorithm{A}(
         # conversion
@@ -99,6 +107,8 @@ function Algorithm{A}(
         record_error_history = true,
         # termination
         termination_reltol = 1.0e-4,
+        termination_abstol = termination_reltol,
+        termination_norm = L2Norm(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
     ) where {A, T, Ti, M, B}
@@ -127,10 +137,12 @@ function Algorithm{A}(
         show_progress,
         check_every,
         record_error_history,
-        time_limit
+        time_limit,
+        termination_norm,
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),
+        termination_abstol = _T(termination_abstol),
         max_kkt_passes,
     )
 
@@ -232,14 +244,14 @@ function solve(
     starting_time = current_time()
     milp, sol = preprocess(milp_init_cpu, sol_init_cpu, algo)
     state = initialize(milp, sol, algo; starting_time)
-    trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp)
+    trivial_solve = nbcons(milp) == 0 && try_solve_noconstraints!(state, milp, algo)
     if !trivial_solve
         solve!(state, milp, algo)
     end
     return get_solution(state, milp), state.stats
 end
 
-function try_solve_noconstraints!(state::AbstractState, milp::MILP)
+function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algorithm)
     (; c, lv, uv) = milp
     (; sol) = state
     # with no constraint rows, the box-constrained optimum can be read off `c` and the
@@ -252,7 +264,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP)
     bounded_above = !any(@. (c < 0) & isinf(uv))
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-        kkt_errors!(state.stats.err, state.scratch, sol, milp)
+        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.generic.termination_norm)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         return true
@@ -283,7 +295,7 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp)
+    kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
     record_error_history!(stats, algo.generic.record_error_history)
     return set_termination_status!!(stats, scratch.b1, algo.termination, algo.generic.time_limit)
 end
