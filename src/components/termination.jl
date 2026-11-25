@@ -107,6 +107,7 @@ mutable struct ConvergenceStats{
         R <: Union{Nothing, PrimalDualSolution},
         A <: Union{Nothing, AbstractVector},  # of `Bool`s, traced as `TracedRNumber{Bool}`s
         IP <: Union{Nothing, AbstractVector},
+        X,
     }
     "current KKT error"
     err::KKTErrors{T}
@@ -136,6 +137,8 @@ mutable struct ConvergenceStats{
     instance_kkt_passes::IP
     "products by `A` or `Aᵀ` outside the KKT passes and the infeasibility checks: the initial KKT errors, the KKT errors of the termination and restart checks, and the restart metrics; see [`matrix_products`](@ref)"
     extra_products::I
+    "statistics that only the algorithm in use records, or `nothing`"
+    algorithm::X
 end
 
 """
@@ -193,10 +196,11 @@ function ConvergenceStats(
         active = batched_tracker(err.primal, true),
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
         extra_products = zero(kkt_passes),
-    ) where {T, I, S, C}
+        algorithm::X = nothing,
+    ) where {T, I, S, C, X}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
     return ConvergenceStats{
-        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes),
+        T, F, I, S, C, typeof(ray), typeof(active), typeof(instance_kkt_passes), X,
     }(
         err,
         starting_time,
@@ -212,6 +216,7 @@ function ConvergenceStats(
         active,
         instance_kkt_passes,
         convert(I, extra_products),
+        algorithm,
     )
 end
 
@@ -266,6 +271,7 @@ function instance(stats::ConvergenceStats, i::Int)
         dual_ray_error = instance_num(stats.dual_ray_error, i),
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
         extra_products = stats.extra_products,
+        algorithm = instance(stats.algorithm, i),
     )
 end
 
