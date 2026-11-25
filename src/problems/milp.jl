@@ -6,6 +6,9 @@ Represent a Mixed Integer Linear Program in "cuPDLPx form":
     min cᵀx + c0   s.t.   lv ≤ x ≤ uv
                           lc ≤ A * x ≤ uc
 
+The matrices `A` and `At` share one element type, which may be another floating-point type
+than that of the vectors (mixed precision).
+
 A `MILP` can also hold a whole batch of such programs sharing the constraint matrix `A`: any
 of `c`, `lv`, `uv`, `lc` and `uc` may then be a matrix with one column per instance, while
 the others stay vectors shared by the whole batch. All batched fields must agree on the
@@ -105,15 +108,27 @@ struct MILP{
 
         # batching mixes container types (a shared bound is a vector next to a batched
         # matrix), so only the element type and the backend can be required to match
-        numbers = (c, lv, uv, A, At, lc, uc, D1, D2)
-        T = Base.promote_eltype(numbers...)
-        if !isconcretetype(T)
-            throw(ArgumentError("Abstract element type $T"))
+        # the matrices may be stored in another floating-point precision than the vectors
+        # (mixed precision), but must agree with each other
+        numbers = (c, lv, uv, lc, uc, D1, D2)
+        matrices = (A, At)
+        # `eltype` of the values rather than of their types: a matrix-free operator may only
+        # define the former
+        T = promote_type(map(eltype, numbers)...)
+        Tm = promote_type(map(eltype, matrices)...)
+        if !isconcretetype(T) || !isconcretetype(Tm)
+            throw(ArgumentError("Abstract element type $T or $Tm"))
         elseif !all(x -> eltype(x) === T, numbers)
             throw(ArgumentError("Element type not consistent: $(map(eltype, numbers))"))
+        elseif !all(x -> eltype(x) === Tm, matrices)
+            throw(ArgumentError("Matrix element type not consistent: $(map(eltype, matrices))"))
+        elseif Tm !== T && !(T <: AbstractFloat && Tm <: AbstractFloat)
+            # any number type works when it is shared (e.g. `ForwardDiff.Dual` or `Rational`),
+            # but only a floating-point precision can be lowered
+            throw(ArgumentError("Matrix element type $Tm differs from $T, and they are not both floating-point types"))
         end
 
-        common_backend(numbers...)
+        common_backend(c, lv, uv, A, At, lc, uc, D1, D2)
 
         if isempty(name) && !isempty(path)
             name = splitext(splitpath(path)[end])[1]
@@ -183,7 +198,7 @@ function Base.show(
         io, """
         $(isbatched(milp) ? "Batched " : "")MILP instance $(milp.name) from dataset $(milp.dataset):
         - types:
-          - values $T
+          - values $T$(eltype(milp.A) === T ? "" : " (matrices $(eltype(milp.A)))")
           - vectors $(length(vectors) == 1 ? only(vectors) : Tuple(vectors))
           - matrices $(M == Mt ? M : (M, Mt))
         - variables: $(nbvar(milp))

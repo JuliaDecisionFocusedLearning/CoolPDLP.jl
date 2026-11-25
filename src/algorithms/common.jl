@@ -45,7 +45,8 @@ end
         # conversion
         _T::Type{T} = Float64,
         ::Type{Ti} = Int,
-        ::Type{M} = SparseMatrixCSC;
+        ::Type{M} = SparseMatrixCSC,
+        ::Type{Tm} = Nothing;
         backend::B = CPU(),
         # preconditioning
         chambolle_pock_alpha = 1.0,
@@ -72,12 +73,16 @@ end
     )
 
 Constructor for algorithm configs.
+
+`Tm` stores the matrices in another precision than `T` (experimental mixed precision, see the
+math page), and requires `termination_reltol ≥ eps(Tm)`.
 """
 function Algorithm{A}(
         # conversion
         _T::Type{T} = Float64,
         ::Type{Ti} = Int,
-        ::Type{M} = SparseMatrixCSC;
+        ::Type{M} = SparseMatrixCSC,
+        ::Type{Tm} = Nothing;
         backend::B = CPU(),
         # preconditioning
         chambolle_pock_alpha = 1.0,
@@ -101,11 +106,16 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = Inf,
-    ) where {A, T, Ti, M, B}
+    ) where {A, T, Ti, M, B, Tm}
 
     conversion = ConversionParameters(
-        T, Ti, M; backend,
+        T, Ti, M, Tm; backend,
     )
+    # the KKT errors are measured with the rounded matrices, which are only within about
+    # `eps(Tm)` (relative) of the original ones: a tighter tolerance would be met on paper only
+    if Tm <: AbstractFloat && Tm !== T && termination_reltol < eps(Tm)
+        throw(ArgumentError("termination_reltol = $termination_reltol is below eps($Tm) = $(eps(Tm)), the accuracy of the matrices stored in $Tm"))
+    end
     preconditioning = PreconditioningParameters(;
         chambolle_pock_alpha = _T(chambolle_pock_alpha),
         ruiz_iter

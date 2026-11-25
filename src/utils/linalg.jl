@@ -12,15 +12,17 @@ Adapt.parent_type(::Type{M}) where {M <: GPUSparseMatrix} = M
 # The formats implement `sparse_mul!`, and `mul!` forwards to it. Vectors may be strided, like
 # the column views that Krylov.jl multiplies: those on different backends throw an
 # `ArgumentError` rather than fall back to the generic `mul!`, which reads `A` entry by entry.
+# The element type of `A` may differ from that of the vectors (mixed precision): the kernels
+# read `A` in its own precision and accumulate in that of `c`.
 for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
     @eval begin
         function LinearAlgebra.mul!(
-                c::StridedVector{T}, A::$M{T}, b::StridedVector{T}, α::Number, β::Number
+                c::StridedVector{T}, A::$M, b::StridedVector{T}, α::Number, β::Number
             ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end
         function LinearAlgebra.mul!(
-                c::DenseMatrix{T}, A::$M{T}, b::DenseMatrix{T}, α::Number, β::Number
+                c::DenseMatrix{T}, A::$M, b::DenseMatrix{T}, α::Number, β::Number
             ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end

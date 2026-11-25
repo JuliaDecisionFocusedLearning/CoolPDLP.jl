@@ -35,6 +35,26 @@ function set_eltype(::Type{T}, milp::MILP) where {T}
 end
 
 """
+    set_matrix_eltype(Tm, milp)
+
+Change the element type of the matrices `A` and `At` inside `milp` to `Tm`, leaving the
+vectors alone.
+"""
+function set_matrix_eltype(::Type{Tm}, milp::MILP) where {Tm}
+    (;
+        c, c0, lv, uv, A, At, lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path,
+    ) = milp
+    return MILP(;
+        c, c0, lv, uv,
+        A = set_eltype(Tm, A),
+        At = set_eltype(Tm, At),
+        lc, uc, D1, D2,
+        int_var, var_names, con_names, dataset, name, path
+    )
+end
+
+"""
     set_indtype(Ti, milp)
 
 Change the element type of integer containers inside `milp` to `Ti`.

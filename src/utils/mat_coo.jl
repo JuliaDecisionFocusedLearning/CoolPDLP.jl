@@ -64,7 +64,7 @@ end
         c::AbstractVector{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
-        A_nzval::DenseVector{T},
+        A_nzval::DenseVector,
         b::AbstractVector{T},
         α::Number,
     ) where {T, Ti}
@@ -75,11 +75,11 @@ end
 
 function sparse_mul!(
         c::AbstractVector{T},
-        A::GPUSparseMatrixCOO{T, Ti},
+        A::GPUSparseMatrixCOO,
         b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti}
+    ) where {T <: Number}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)
@@ -100,7 +100,7 @@ end
         c::DenseMatrix{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
-        A_nzval::DenseVector{T},
+        A_nzval::DenseVector,
         b::DenseMatrix{T},
         α::Number,
     ) where {T, Ti}
@@ -111,7 +111,7 @@ end
 
 function sparse_mul!(
         c::DenseMatrix{T},
-        A::GPUSparseMatrixCOO{T},
+        A::GPUSparseMatrixCOO,
         b::DenseMatrix{T},
         α::Number,
         β::Number;

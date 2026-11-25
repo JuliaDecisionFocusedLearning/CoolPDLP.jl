@@ -90,7 +90,7 @@ end
 @kernel function spmv_ell!(
         c::AbstractVector{T},
         A_colval::AbstractMatrix{Ti},
-        A_nzval::AbstractMatrix{T},
+        A_nzval::AbstractMatrix,
         b::AbstractVector{T},
         α::Number,
         β::Number
@@ -108,11 +108,11 @@ end
 
 function sparse_mul!(
         c::AbstractVector{T},
-        A::GPUSparseMatrixELL{T, Ti},
+        A::GPUSparseMatrixELL,
         b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti}
+    ) where {T <: Number}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_ell!(backend)
@@ -133,7 +133,7 @@ end
 @kernel function spmm_ell!(
         c::DenseMatrix{T},
         A_colval::AbstractMatrix{Ti},
-        A_nzval::AbstractMatrix{T},
+        A_nzval::AbstractMatrix,
         b::DenseMatrix{T},
         α::Number,
         β::Number
@@ -151,7 +151,7 @@ end
 
 function sparse_mul!(
         c::DenseMatrix{T},
-        A::GPUSparseMatrixELL{T},
+        A::GPUSparseMatrixELL,
         b::DenseMatrix{T},
         α::Number,
         β::Number;
