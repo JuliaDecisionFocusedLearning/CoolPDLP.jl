@@ -31,7 +31,7 @@ end
 """
     DEFAULT_INFEASIBILITY_TOL
 
-Default `infeasibility_tol` of [`TerminationParameters`](@ref) and [`Algorithm`](@ref), as in PDLP.
+Default `infeasibility_tol` of [`TerminationParameters`](@ref) and [`Algorithm`](@ref).
 """
 const DEFAULT_INFEASIBILITY_TOL = 1.0e-8
 
@@ -49,7 +49,7 @@ $(TYPEDFIELDS)
     termination_abstol::T = termination_reltol
     "maximum number of multiplications by both the KKT matrix `K` and its transpose `Kᵀ`"
     max_kkt_passes::I
-    "relative tolerance for infeasibility certificates, see [`infeasibility_check!`](@ref); `nothing` disables the detection altogether (no ray buffers, no extra KKT passes), which is decided by the type and therefore at trace time under Reactant"
+    "relative tolerance for infeasibility certificates, see [`infeasibility_check!`](@ref); `nothing` disables the detection"
     infeasibility_tol::E = oftype(termination_reltol, DEFAULT_INFEASIBILITY_TOL)
 end
 

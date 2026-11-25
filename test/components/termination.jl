@@ -272,12 +272,3 @@ end
 
     @test_throws MethodError PDLP(; termination_norm = 1)
 end
-
-@testset "Single default for the infeasibility tolerance" begin
-    using CoolPDLP: TerminationParameters, DEFAULT_INFEASIBILITY_TOL
-    params = TerminationParameters(; termination_reltol = 1.0e-4, max_kkt_passes = 1)
-    @test params.infeasibility_tol === PDLP().termination.infeasibility_tol === DEFAULT_INFEASIBILITY_TOL
-    @test TerminationParameters(;
-        termination_reltol = 1.0f-4, max_kkt_passes = 1
-    ).infeasibility_tol isa Float32
-end

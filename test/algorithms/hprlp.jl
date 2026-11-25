@@ -10,7 +10,7 @@ using Random
 using SparseArrays
 using Test
 
-@testset "Defaults follow HPR-LP" begin
+@testset "Defaults" begin
     algo = HPRLP()
     @test algo isa CoolPDLP.Algorithm{:HPRLP}
     @test algo.restart.sufficient_decay == 0.2
@@ -52,7 +52,7 @@ end
     configs = [(SparseMatrixCSC, CPU()), (CoolPDLP.GPUSparseMatrixCSR, JLBackend())]
     @testset "$name on $M in $T" for name in names, (M, backend) in configs, T in (Float64, Float32)
         milp = MILP(read_instance(Netlib, name)[1]; dataset = Netlib, name)
-        # in `Float32`, blend has a round-off floor near `1e-3`: HPR-LP's penalty rule drives the
+        # in `Float32`, blend has a round-off floor near `1e-3`: the penalty rule drives the
         # primal step `σ = η / ω` up to ~500 there, and `x - σ (c - Aᵀy)` then carries an error
         # `σ ε (|c| + |Aᵀ||y|)` of ~3e-5 per entry and step, which no longer averages out
         # (started at the `Float64` optimum, the iterates drift to a primal error of ~1e-3).
@@ -74,7 +74,7 @@ end
     algo = HPRLP(; check_every = 20, termination_reltol = 0.0, max_kkt_passes = 4000)
     milp_p, sol_p = preprocess(milp, PrimalDualSolution(milp), algo)
     state = initialize(milp_p, sol_p, algo; starting_time = time())
-    # the first check restarts whatever the residual, as in HPR-LP
+    # the first check restarts whatever the residual
     @test !state.halpern.fpe_pending
     @test state.halpern.fpe_initial == Inf
     solve!(state, milp_p, algo)
