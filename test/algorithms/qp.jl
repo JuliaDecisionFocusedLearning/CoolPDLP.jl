@@ -29,11 +29,12 @@ function highs_solution(milp::MILP)
     return JuMP.value.(x), JuMP.objective_value(model)
 end
 
-algname(algo::CoolPDLP.Algorithm{A}) where {A} = "$A"
+algname(algo::CoolPDLP.Algorithm{A}) where {A} = algo.specific == CoolPDLP.PDLPParameters(true) ? "$A with momentum" : "$A"
 
 qp_algorithms(; kwargs...) = (
     PDHG(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
     PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
+    PDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, quadratic_momentum = true, kwargs...),
     HPDLP(; termination_reltol = 1.0e-6, max_kkt_passes = 10^6, kwargs...),
 )
 
@@ -215,6 +216,24 @@ end
             @test objective_value(x[:, i], singles[i]) ≈ obj_ref rtol = 1.0e-4
         end
     end
+end
+
+@testset "PDQP momentum changes the iterates" begin
+    qp = MILP(read_instance(MarosMeszaros, "HS118")[1])
+    base = (; termination_reltol = 1.0e-8, max_kkt_passes = 200, check_every = 1000)
+    sol0, stats0 = solve(qp, PDLP(; base...))
+    sol1, stats1 = solve(qp, PDLP(; base..., quadratic_momentum = true))
+    @test stats1.kkt_passes == stats0.kkt_passes
+    @test sol1.x != sol0.x
+    # the aggregate iterate is that of PDQP, not the η-weighted average of PDLP
+    milp, sol = preprocess(qp, PrimalDualSolution(qp), PDLP(; base..., quadratic_momentum = true))
+    state = CoolPDLP.initialize(milp, sol, PDLP(; quadratic_momentum = true); starting_time = 0.0)
+    algo = PDLP(; quadratic_momentum = true)
+    CoolPDLP.step!(state, milp, algo)
+    @test state.sol_avg.x == state.sol.x  # β = 1 at the first step
+    x_avg = copy(state.sol_avg.x)
+    CoolPDLP.step!(state, milp, algo)
+    @test state.sol_avg.x ≈ (2 / 3) * state.sol.x + (1 / 3) * x_avg
 end
 
 @testset "Maros-Mészáros" begin

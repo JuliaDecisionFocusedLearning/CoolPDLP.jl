@@ -14,6 +14,22 @@ function PDLP(args...; kwargs...)
 end
 
 """
+    PDLPParameters
+
+Parameters of [`PDLP`](@ref) that the other algorithms do not read.
+
+# Fields
+
+$(TYPEDFIELDS)
+"""
+struct PDLPParameters
+    "whether to linearize a quadratic objective at the momentum point of PDQP (see [`momentum_update!`](@ref)), ignored for a linear program"
+    quadratic_momentum::Bool
+end
+
+specific_parameters(::Val{:PDLP}, ::Type; quadratic_momentum = false) = PDLPParameters(quadratic_momentum)
+
+"""
     PDLPState
 
 # Fields
@@ -120,13 +136,13 @@ function solve!(
     must_terminate = false
     @trace while !must_terminate
         @trace for _ in 1:(algo.generic.check_every - 1)
-            step!(state, milp)
+            step!(state, milp, algo)
             next_progress!(prog, state)
         end
         # the restart check compares with the iterates before the last step, so only that step
         # needs them saved
         save_last!(state)
-        step!(state, milp)
+        step!(state, milp, algo)
         next_progress!(prog, state)
         must_terminate = termination_check!(state, milp, algo)
         @trace if !must_terminate & restart_check!(state, milp, algo)
@@ -157,6 +173,101 @@ function step!(
     state.stats.kkt_passes += 1
     update_average!(state)
     add_inner!(state.iteration)
+    return nothing
+end
+
+"""
+    step!(state::PDLPState, milp, algo)
+
+Apply one PDLP step, with the momentum of PDQP if `algo.specific.quadratic_momentum` is set and
+`milp` is a quadratic program (see [`momentum_update!`](@ref)).
+
+`isquadratic` is decided by the type of `milp.Q` for a [`ZeroMatrix`](@ref), and by its number of
+stored entries for a sparse `Q`, a run-time check on the host. Under Reactant that number is
+baked into the traced sparse wrapper, so the branch is still resolved at trace time.
+"""
+function step!(state::PDLPState, milp::MILP, algo::Algorithm{:PDLP})
+    # the plain step is spelled out rather than delegated to `step!(state, milp)`: that call
+    # boxed `milp` at every KKT pass
+    if isquadratic(milp.Q) && algo.specific.quadratic_momentum
+        momentum_update!(state, milp, algo.step_size)
+        state.stats.kkt_passes += 1
+        momentum_average!(state)
+    else
+        pdhg_update!(state.sol, state.scratch, state.step_sizes, milp, active_mask(state.stats))
+        state.stats.kkt_passes += 1
+        update_average!(state)
+    end
+    add_inner!(state.iteration)
+    return nothing
+end
+
+"""
+    momentum_update!(state::PDLPState, milp, params)
+
+Apply one step of PDQP (Lu & Yang, 2023, `solver_gpu.jl` of PDQP.jl), with `k` the number of
+steps since the last restart and `k' = k + 2`:
+
+- the objective is linearized at the momentum point `x_md = (1 - β) x̄ + β x` with `β = 2 / k'`,
+  where `x̄` is the aggregate iterate of PDQP, updated by [`momentum_average!`](@ref);
+- the dual step extrapolates with `θ = k / (k + 1)` instead of `1`;
+- the step size grows from that of [`quadratic_stepsize`](@ref) towards `1 / ‖A‖` as
+  `η = k' / (‖Q‖/ω + √(k'² ‖A‖² + ‖Q‖²/ω²))`, scaled by `invnorm_scaling`, since the Lipschitz
+  constant of the linearized objective is effectively `β ‖Q‖`.
+
+The product by `Q` is taken at `x_md` instead of `x`, so a step still costs one product by each of
+`A`, `Aᵀ` and `Q`.
+"""
+function momentum_update!(state::PDLPState{T}, milp::MILP, params::StepSizeParameters) where {T}
+    (; sol, sol_avg, step_sizes, scratch, iteration) = state
+    (; x, y) = sol
+    (; c, lv, uv, A, At, Q, lc, uc) = milp
+    k = iteration.inner
+    kp = convert(T, k + 2)
+    β = 2 / kp
+    θ = convert(T, k) / (k + 1)
+    (; norm_A, norm_Q) = step_sizes
+    scaling = params.invnorm_scaling
+    step_sizes.η = batched_apply!!(step_sizes.η, step_sizes.ω) do ω
+        q = norm_Q / ω
+        denominator = q + sqrt(kp^2 * norm_A^2 + q^2)
+        ifelse(iszero(denominator), one(ω), scaling * kp / denominator)
+    end
+    (; η, ω) = step_sizes
+    τ = transpose(batched_apply!!(/, scratch.b1, η, ω))
+    σ = transpose(batched_apply!!(*, scratch.b2, η, ω))
+
+    # xp = clamp.(x - τ * (c + Q * x_md - At * y), lv, uv)
+    x_md = @. scratch.x = (1 - β) * sol_avg.x + β * x
+    At_y = mul!(scratch.z, At, y)
+    At_y = subtract_quadratic_gradient!(At_y, Q, x_md)
+    xp = @. scratch.x = clamp(x - τ * (c - At_y), lv, uv)
+    xdiff = @. scratch.z = xp + θ * (xp - x)
+    active = active_mask(state.stats)
+    masked_copyto!(x, active, xp)
+
+    A_xdiff = mul!(scratch.y, A, xdiff)
+    masked_broadcast!(dual_update, y, active, y, σ, A_xdiff, lc, uc)
+    return sol
+end
+
+"""
+    momentum_average!(state::PDLPState)
+
+Update the aggregate iterate of PDQP, `x̄ ← (1 - β) x̄ + β x⁺` (and the same for `y`) with
+`β = 2 / (k + 2)`, in place of the step-size-weighted average of PDLP: with the momentum of
+[`momentum_update!`](@ref), `state.sol_avg` holds this aggregate, which is both the momentum
+point's anchor and the averaged candidate of the restarts and of the output.
+"""
+function momentum_average!(state::PDLPState{T}) where {T}
+    (; sol, sol_avg, step_sizes, iteration) = state
+    β = 2 / convert(T, iteration.inner + 2)
+    active = active_mask(state.stats)
+    # `β` is traced under Reactant: an argument of the broadcast rather than a captured value
+    f(β, new, agg) = β * new + (1 - β) * agg
+    masked_broadcast!(f, sol_avg.x, active, β, sol.x, sol_avg.x)
+    masked_broadcast!(f, sol_avg.y, active, β, sol.y, sol_avg.y)
+    add_stepsize!(step_sizes, active)
     return nothing
 end
 
