@@ -27,7 +27,7 @@ milp, _ = CoolPDLP.random_milp_and_sol(10, 20, 0.4)
 end
 
 @testset "$alg rejects unknown keywords" for alg in (PDHG, PDLP)
-    @test alg().specific === CoolPDLP.NoParameters()
+    @test PDHG().specific === CoolPDLP.NoParameters()
     @test_throws MethodError alg(; not_a_parameter = 1)
 end
 
