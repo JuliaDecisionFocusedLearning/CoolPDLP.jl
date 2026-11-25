@@ -89,6 +89,7 @@ specific_parameters(::Val, ::Type) = NoParameters()
         show_progress = false,
         check_every = 100,
         record_error_history = true,
+        batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -116,6 +117,11 @@ checks cost two KKT passes each, which do not count towards `max_kkt_passes`.
 
 The preconditioning stages and the bound and objective rescaling are described on the math page
 of the documentation.
+
+With `batch_compaction`, a batch on the host (CPU arrays, not a compiled Reactant solve) of at
+least four instances solves the instances still running as a smaller batch once at least half of
+it has terminated, so that the frozen instances stop paying for their columns of the products
+(see [`maybe_compact!`](@ref)).
 """
 function Algorithm{A}(
         # conversion
@@ -144,6 +150,7 @@ function Algorithm{A}(
         show_progress = false,
         check_every = 100,
         record_error_history = true,
+        batch_compaction = false,
         # termination
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
@@ -181,6 +188,7 @@ function Algorithm{A}(
         show_progress,
         check_every,
         record_error_history,
+        batch_compaction = Bool(batch_compaction),
         time_limit,
         termination_norm,
     )

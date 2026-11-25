@@ -83,20 +83,36 @@ function solve!(
     prog = init_progress("PDHG iterations:", algo.generic.show_progress)
     must_terminate = false
     @trace while !must_terminate
-        @trace for _ in 1:(algo.generic.check_every - 1)
-            step!(state, milp)
-            next_progress!(prog, state)
-        end
-        # the infeasibility check compares with the iterate before the last step, so only that
-        # step needs it saved
-        save_last!(state)
-        step!(state, milp)
-        next_progress!(prog, state)
-        must_terminate = termination_check!(state, milp, algo)
+        must_terminate = check_pass!(state, milp, algo, prog)
+        must_terminate = maybe_compact!(state, milp, algo, prog, must_terminate)
     end
     export_certificate!(state.stats, state.infeas, milp)
     finish_progress!(prog)
     return state
+end
+
+"""
+    check_pass!(state, milp, algo, prog = NoProgress())
+
+Run `check_every` iterations, then the termination check, and return whether to stop.
+"""
+function check_pass!(
+        state::PDHGState,
+        milp::MILP,
+        algo::Algorithm{:PDHG},
+        prog = NoProgress()
+    )
+    @trace for _ in 1:(algo.generic.check_every - 1)
+        step!(state, milp)
+        next_progress!(prog, state)
+    end
+    # the infeasibility check compares with the iterate before the last step, so only that
+    # step needs it saved
+    save_last!(state)
+    step!(state, milp)
+    next_progress!(prog, state)
+    must_terminate = termination_check!(state, milp, algo)
+    return must_terminate
 end
 
 """
