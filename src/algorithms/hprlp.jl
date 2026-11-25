@@ -2,14 +2,14 @@
     HPRLP(args...; kwargs...)
 
 Shortcut for [`Algorithm{:HPRLP}`](@ref): the Halpern Peaceman-Rachford method with semi-proximal
-terms of [HPR-LP](https://github.com/PolyU-IOR/HPR-LP) (Chen, Sun, Yuan, Zhang and Zhao,
-"HPR-LP: An implementation of an HPR method for solving linear programming", Math. Prog.
-Computation, 2025), for linear programs only.
+terms of HPR-LP (Chen, Sun, Yuan, Zhang and Zhao, "HPR-LP: An implementation of an HPR
+method for solving linear programming", Mathematical Programming Computation, 2025,
+[doi:10.1007/s12532-025-00292-0](https://doi.org/10.1007/s12532-025-00292-0)), for linear
+programs only.
 
 With `T₁ = λI - AAᵀ` and `λ ≥ λ_max(AAᵀ)`, a step of HPR-LP is a PDHG step with primal step `σ`
 and dual step `1 / (λσ)`, reflected and anchored as in [`HPDLP`](@ref). What sets it apart is
-everything around the step, which follows the reference implementation rather than the paper
-where the two differ:
+everything around the step:
 
 - `λ` is `1.01` times the estimate of a power iteration on `AAᵀ` (`5000` iterations at most,
   tolerance `1e-4` on the residual, checked every `10` iterations, same random start), and grows
@@ -24,8 +24,7 @@ where the two differ:
   scaled problem;
 - the termination test reads the reduced costs `z̄` of the splitting (see [`kkt_errors!`](@ref)).
 
-Termination is only checked every `check_every` iterations, as in the paper; the reference code
-also checks it on its logging schedule.
+Termination is only checked every `check_every` iterations, as in the paper.
 
 Every instance of a batch restarts, and updates its `σ` and `λ`, on its own.
 """
@@ -117,12 +116,12 @@ end
 """
     hprlp_power_iteration(A, At; maxiter = 5000, tol = 1e-4, check_every = 10)
 
-Estimate the largest eigenvalue of `AAᵀ` as `power_iteration_cpu` of HPR-LP (`utils.jl`) does:
+Estimate the largest eigenvalue of `AAᵀ` by a power iteration:
 start from `randn(MersenneTwister(1), m) .+ 1e-8`, normalize and multiply by `AAᵀ`, and every
 `check_every` iterations stop if `‖AAᵀq - λq‖ < tol` with the Rayleigh quotient `λ`.
 
-It deliberately duplicates [`spectral_norm`](@ref) so that the iterates match HPR-LP's
-bit for bit. The tolerance is absolute, as in HPR-LP: it only makes sense because the problem is
+It deliberately duplicates [`spectral_norm`](@ref) to keep this exact starting point and
+stopping rule. The tolerance is absolute: it only makes sense because the problem is
 already scaled (so that `‖A‖` is of order one) when this runs.
 """
 function hprlp_power_iteration(
@@ -153,7 +152,7 @@ end
 """
     hprlp_initial_sigma(milp)
 
-Initial penalty of HPR-LP (`allocate_workspace_cpu`): `‖b‖ / ‖c‖` on the scaled problem, where
+Initial penalty: `‖b‖ / ‖c‖` on the scaled problem, where
 `bᵢ` is the largest finite absolute bound of row `i`, or `1` if either norm is below `1e-8`.
 """
 function hprlp_initial_sigma(milp::MILP{T}) where {T}
@@ -182,7 +181,7 @@ function initialize(
     step_sizes = StepSizes(; η, ω)
     scratch = Scratch(sol)
     halpern = HalpernStats(sol, ω)
-    # the first check restarts no matter what, as in HPR-LP: with no reference residual (`Inf`),
+    # the first check restarts no matter what: with no reference residual (`Inf`),
     # the sufficient decay criterion always holds
     halpern.fpe_pending = batched_apply!!(zero, halpern.fpe_pending, halpern.fpe_pending)
     err = KKTErrors(sol)
@@ -279,7 +278,7 @@ end
 """
     step!(state::HPRLPState, milp, algo, Val(kind))
 
-Apply one step of HPR-LP (`kernels.jl` of HPR-LP), with `σ = η / ω` and `λσ = 1 / (η ω)`:
+Apply one step of HPR-LP, with `σ = η / ω` and `λσ = 1 / (η ω)`:
 
     x̄ = proj_[lv, uv](x + σ (Aᵀy - c))
     x̂ = 2x̄ - x
@@ -310,7 +309,7 @@ function step!(
     masked_broadcast!(hprlp_dual_step, sol.y, active, A_x_hat, z.y, σd, lc, uc)
 
     if kind === :first
-        # HPR-LP only measures the first step of a cycle after a restart
+        # only the first step of a cycle after a restart is measured
         hprlp_fixed_point_error!(state, milp, halpern.fpe_pending)
         state.stats.extra_products += 1
     elseif kind === :last
@@ -355,16 +354,16 @@ end
 """
     hprlp_fixed_point_error!(state, milp, allow_growth)
 
-Measure the fixed-point residual of the last step in the metric `M` of HPR-LP
-(`compute_weighted_norm_cpu!` in `algorithm.jl` of HPR-LP), column by column, into
+Measure the fixed-point residual of the last step in the metric `M` of the
+splitting, column by column, into
 `state.halpern.fpe`. With `Δ = z - T(z)` and `σ` the primal step:
 
     ‖Δ‖²_M = σλ ‖Δy‖² + ‖Δx‖² / σ + 2 ⟨A Δx, Δy⟩
 
-If this comes out negative, `λ` underestimates the largest eigenvalue of `AAᵀ`, and HPR-LP raises
-it to `-(‖Δx‖² / σ + 2 ⟨A Δx, Δy⟩) / (σ ‖Δy‖²) × 1.05`, which also changes the steps; the residual
+If this comes out negative, `λ` underestimates the largest eigenvalue of `AAᵀ`, and it is raised
+to `-(‖Δx‖² / σ + 2 ⟨A Δx, Δy⟩) / (σ ‖Δy‖²) × 1.05`, which also changes the steps; the residual
 is then `√(-(‖Δx‖² / σ + 2 ⟨A Δx, Δy⟩) × 0.05)`. `λ` only grows where `allow_growth` holds, which
-is the case whenever HPR-LP would have measured the residual, and never for a frozen
+is the case whenever the residual is measured, and never for a frozen
 instance of a batch. Costs one product by `A`.
 """
 function hprlp_fixed_point_error!(state::HPRLPState, milp::MILP, allow_growth::BatchedNumber)
@@ -408,7 +407,7 @@ end
 """
     hprlp_sigma(restart, Δx, Δy, λ, σ, fpe, best_fpe, best_σ, rel_primal, rel_dual, rel_gap)
 
-New penalty of one instance at a check, following `update_sigma_cpu!` of HPR-LP: unchanged
+New penalty of one instance at a check: unchanged
 without a restart; otherwise, if `Δx = ‖x̄ - x⁰‖` and `Δy = ‖ȳ - y⁰‖` both lie in `(1e-16, 1e12)`,
 
     ratio = Δx / (Δy √λ)
@@ -442,7 +441,7 @@ end
     restart!(state::HPRLPState, algo)
 
 At a check: keep track of the penalty `σ` of the smallest fixed-point residual so far (whether
-or not the instance restarts, as HPR-LP does), then for the instances selected by
+or not the instance restarts), then for the instances selected by
 [`halpern_restart_check!`](@ref), update `σ` with [`hprlp_sigma`](@ref) and move both the
 iterate and the anchor to `T(z)`. Every update is masked column by column.
 """
