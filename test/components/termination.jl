@@ -193,7 +193,7 @@ end
     # absolute only: the largest raw error is 0.5
     @test converged(; termination_reltol = 0.0, termination_abstol = 0.5)
     @test !converged(; termination_reltol = 0.0, termination_abstol = 0.49)
-    # mixed, as in cuPDLP.jl/cuOpt, with ϵₐ = 1e-3: 0.5 ≤ ϵₐ + ϵᵣ * 99 needs ϵᵣ ≥ 5.04e-3,
+    # mixed, with ϵₐ = 1e-3: 0.5 ≤ ϵₐ + ϵᵣ * 99 needs ϵᵣ ≥ 5.04e-3,
     # 0.04 ≤ ϵₐ + ϵᵣ * 9 needs ϵᵣ ≥ 4.33e-3, and the gap (zero objective scale) needs ϵₐ ≥ 1e-3
     @test converged(; termination_reltol = 0.0051, termination_abstol = 1.0e-3)
     @test !converged(; termination_reltol = 0.0051, termination_abstol = 0.9e-3)

@@ -63,8 +63,7 @@ stored in [`KKTErrors`](@ref), i.e. one plus the raw norm.
 Compute, column by column into `dest`, by how much the KKT errors `err` exceed their tolerances:
 the instance has converged when the result is nonpositive.
 
-Following cuPDLP.jl (`optimality_criteria_met`) and cuOpt (`pdlp_termination_strategy`), with
-`ϵₐ = termination_abstol` and `ϵᵣ = termination_reltol`, convergence means
+With `ϵₐ = termination_abstol` and `ϵᵣ = termination_reltol`, convergence means
 
     ‖primal residual‖ ≤ ϵₐ + ϵᵣ ‖b‖
     ‖dual residual‖   ≤ ϵₐ + ϵᵣ ‖c‖
