@@ -155,7 +155,7 @@ Same as `kkt_errors!(err, scratch, sol, milp, norm)`, with the reduced costs (mu
 the variable bounds) given by `z` rather than chosen as the projection of `c - Aᵀy` onto the
 multipliers that the bounds allow. `z === nothing` falls back to that projection.
 
-[`HPRLP`](@ref) uses it with the `z̄` of its splitting, as HPR-LP does: the dual residual is then
+[`HPRLP`](@ref) uses it with the `z̄` of its splitting: the dual residual is then
 `‖c - Aᵀy - z‖` and the dual objective uses `z`. `z` is only read.
 """
 function kkt_errors!(
