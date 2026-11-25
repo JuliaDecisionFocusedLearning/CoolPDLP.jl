@@ -166,17 +166,6 @@ Base.eltype(op::KrylovOperator) = eltype(op.K)
 Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
 LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
-# SVD of the small bidiagonal matrix: LAPACK in `Float32` and `Float64`, GenericLinearAlgebra
-# for other precisions
-function bidiagonal_svd(d, e)
-    B = Bidiagonal(d, e, :L)
-    if !applicable(LinearAlgebra.svd!, B)
-        msg = "`spectral_norm` needs the SVD of a `Bidiagonal{$(eltype(B))}`: load GenericLinearAlgebra to provide it"
-        throw(ArgumentError(msg))
-    end
-    return LinearAlgebra.svd!(B)
-end
-
 """
     spectral_norm(K, Kᵀ; reltol, maxiter)
 
@@ -195,18 +184,24 @@ function spectral_norm(
     T = eltype(K)
     m, n = size(K)
     (m == 0 || n == 0) && return zero(T)
+    # LAPACK in `Float32` and `Float64`, GenericLinearAlgebra for other precisions
+    if !hasmethod(LinearAlgebra.svd!, Tuple{Bidiagonal{T, Vector{T}}})
+        msg = "`spectral_norm` needs the SVD of a `Bidiagonal{$T}`: load GenericLinearAlgebra to provide it"
+        throw(ArgumentError(msg))
+    end
     b = copyto!(allocate(get_backend(K), T, m), randn(StableRNG(0), T, m))
+    b′ = similar(b, min(32, maxiter))
     σ, residual = zero(T), typemax(T)
     for start in 1:32:maxiter
         # restart Golub–Kahan every `k ≤ 32` steps, from the top left Ritz vector
         k = min(32, maxiter - start + 1)
         _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
         nz = nonzeros(L)  # stored column by column: `αᵢ = L[i, i]` and `βᵢ₊₁ = L[i + 1, i]`
-        F = bidiagonal_svd(nz[1:2:(2k - 1)], nz[2:2:(2k - 2)])
+        F = LinearAlgebra.svd!(Bidiagonal(nz[1:2:(2k - 1)], nz[2:2:(2k - 2)], :L))
         i = argmax(F.S)
         σ, residual = T(F.S[i]), nz[2k] * T(abs(F.V[k, i]))
         residual <= reltol * σ && return σ
-        mul!(b, view(U, :, 1:k), copyto!(similar(b, k), T.(F.U[:, i])))
+        mul!(b, view(U, :, 1:k), copyto!(view(b′, 1:k), view(F.U, :, i)))
     end
     estimate = σ + residual
     @warn "Spectral norm estimate did not converge within $maxiter iterations (residual $residual > $(reltol * σ)), using the conservative estimate $estimate"
