@@ -24,6 +24,16 @@ using Test
     @test_throws ArgumentError MILP(;
         c = Float32.(c), lv, uv, A, At, lc, uc,
     )
+    # the matrices may be in another precision, but a floating-point one
+    @test_throws ArgumentError MILP(; c, lv, uv, A = round.(Int, A), lc, uc)
+    @test MILP(; c, lv, uv, A = Float32.(A), lc, uc).At isa SparseMatrixCSC{Float32}
+    @test_throws ArgumentError MILP(; c, lv, uv, A = Float32.(A), At, lc, uc)
+    # any number type shared by the vectors and the matrices is accepted
+    r = MILP(;
+        c = [1 // 1, 2 // 1], lv = [0 // 1, 0 // 1], uv = [1 // 1, 1 // 1],
+        A = sparse([1 // 1 1 // 1]), lc = [0 // 1], uc = [1 // 1],
+    )
+    @test r isa MILP{Rational{Int}}
     # a batched field must live on the same backend as the rest
     @test_throws ArgumentError MILP(;
         c = jl(repeat(c, 1, 3)), lv, uv, A, At, lc, uc,

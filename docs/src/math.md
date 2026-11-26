@@ -170,3 +170,12 @@ The two passes run one after the other: first Ruiz produces $D_1^{\mathrm{ruiz}}
 ```math
 D_1 = D_1^{\mathrm{cp}} D_1^{\mathrm{ruiz}} \qquad D_2 = D_2^{\mathrm{ruiz}} D_2^{\mathrm{cp}}
 ```
+
+## Mixed precision
+
+`Algorithm{A}(T, Ti, M, Tm)` stores the constraint matrices $A$ and $A^\top$ with element type `Tm` while the iterates, step sizes and KKT errors stay in `T`, as in cuOpt: e.g. `PDLP(Float64, Int, GPUSparseMatrixCSR, Float32)`.
+Preconditioning happens in `T` before the matrices are rounded, and every product reads the matrix in `Tm` but accumulates in `T`, which halves the memory traffic of the products.
+The spectral norm estimate of the step size runs in `Tm`, on the rounded matrix that the iterations use.
+
+The solver then solves the problem with the rounded matrices, not the original one: each entry carries a relative error up to $\epsilon(\mathtt{Tm})/2$, and the KKT errors it measures are those of the rounded problem.
+`termination_reltol` must therefore be at least `eps(Tm)` (about $1.2 \cdot 10^{-7}$ for `Float32`), or `Algorithm` throws an `ArgumentError`.

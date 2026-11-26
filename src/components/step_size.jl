@@ -26,7 +26,8 @@ end
 function fixed_stepsize(milp::MILP{T}, params::StepSizeParameters) where {T}
     (; A, At) = milp
     (; invnorm_scaling, spectral_norm_reltol, spectral_norm_maxiter) = params
-    norm = spectral_norm(A, At; reltol = spectral_norm_reltol, maxiter = spectral_norm_maxiter)
+    # in the precision of `A`, which may be lower than `T` (mixed precision)
+    norm = T(spectral_norm(A, At; reltol = spectral_norm_reltol, maxiter = spectral_norm_maxiter))
     # a zero spectral norm (no constraint rows, or an all-zero `A`) means `A'y` never
     # contributes to the primal step regardless of `η`, so any finite step size is safe;
     # `inv(norm)` would otherwise be `Inf` and corrupt the first primal step
