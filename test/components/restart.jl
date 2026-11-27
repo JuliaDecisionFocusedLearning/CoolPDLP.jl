@@ -20,7 +20,8 @@ using Test
         restart_check!(state, milp, algo)
 
         (; restart_stats) = state
-        fresh(sol) = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
+        # the restart criterion uses the finite-bound rule
+        fresh(sol) = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp, CoolPDLP.finite_bound_multiplier)
         @test restart_stats.err_current ≈ fresh(state.sol)
         @test restart_stats.err_avg ≈ fresh(state.sol_avg)
         @test restart_stats.err_last ≈ fresh(state.sol_last)

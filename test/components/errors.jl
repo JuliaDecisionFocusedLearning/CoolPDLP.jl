@@ -35,6 +35,12 @@ err_p = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol_p), scratch, sol_p, milp_p)
     @test err.gap_scale ≈ 1 + abs(dot(c, x) + c0) + abs(p(y, lc, uc) + p(r, lv, uv) + c0)
 end
 
+@testset "Finite-bound rule of the restart criterion" begin
+    err_fb = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), scratch, sol, milp, CoolPDLP.finite_bound_multiplier)
+    @test err_fb.dual ≈ norm(c - At * y - CoolPDLP.proj_multiplier.(c - At * y, lv, uv))
+    @test err_fb.primal == err.primal
+end
+
 @testset "Invariance by preconditioning" begin
     @test err_p ≈ err
 end
