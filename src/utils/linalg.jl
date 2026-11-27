@@ -131,8 +131,9 @@ is actually wrong with the solution.
 
 Project `λ` onto the feasible space of the (double) Lagrange multiplier `λ⁺ - λ⁻` associated with the constraint `l ≤ x ≤ u`, where `l` and/or `u` might be infinite.
 
-This is the dual-feasible multiplier closest to `λ`, whatever `x`: the wrapper reports it as
-the bound duals. It is not the termination test's multiplier, see [`active_bound_multiplier`](@ref).
+This is the dual-feasible multiplier closest to `λ`, whatever `x`, as in the termination
+criterion of Applegate et al. (2021). The wrapper reports it as the bound duals. The termination
+test uses the stricter [`active_bound_multiplier`](@ref).
 """
 @inline function proj_multiplier(λ::T, l::T, u::T) where {T <: Number}
     lmin = l == typemin(T)
@@ -157,7 +158,9 @@ end
 
 Part of the reduced cost `λ` that the bounds `l ≤ x ≤ u` take as their multiplier at `x`: `λ`
 itself where it is positive and `x` is on (or below) `l`, or negative and `x` is on (or above)
-`u`, and zero elsewhere. An infinite bound is never reached by a finite `x`.
+`u`, and zero elsewhere. An infinite bound is never reached by a finite `x`. Unlike
+[`proj_multiplier`](@ref), it leaves the reduced cost of a variable off its bounds in the dual
+residual, which then also measures complementarity.
 
 "On the bound" is an exact comparison, which is meant for projected iterates: the PDHG step
 clamps `x` into its bounds, so a variable on a bound equals it exactly.
@@ -277,7 +280,7 @@ function sparse_mul! end
 """
     finite_bound_multiplier(λ, x, l, u)
 
-[`proj_multiplier`](@ref)`(λ, l, u)`, which ignores `x`: the multiplier rule of PDLP's restart
-criterion, see [`best_error!!`](@ref).
+[`proj_multiplier`](@ref)`(λ, l, u)`, which ignores `x`: the multiplier rule of Applegate et al.
+(2021), used by PDLP's restart criterion, see [`best_error!!`](@ref).
 """
 @inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)

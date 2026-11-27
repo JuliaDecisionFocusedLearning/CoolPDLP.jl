@@ -89,9 +89,10 @@ The dual residual is $c - A^\top y - z$, so the reduced cost of a variable stric
 An infinite bound is never reached, so $z \in \mathcal{Z}$, and $z_i \left(x_i - \text{bound}_i\right) = 0$: complementarity holds by construction, and its violation shows up in the dual residual instead.
 The comparison is exact because the errors are evaluated at projected iterates, which are clamped into the bounds.
 
-Taking instead $z = \mathrm{proj}_{\mathcal{Z}}(c - A^\top y)$, whatever $x$, would make the dual residual of a problem whose variables are all boxed zero for every $y$.
-The complementarity violation would then only enter the gap, where it can cancel against $y^\top (Ax - b)$ at an infeasible $x$, and a point far from optimal can pass all three tests.
-That projection is still the right multiplier to report: it is the dual-feasible $z$ closest to $c - A^\top y$, so the MathOptInterface wrapper returns it as the bound duals.
+The criterion of Applegate et al. (2021) takes instead $z = \mathrm{proj}_{\mathcal{Z}}(c - A^\top y)$, whatever $x$, and PDLP's restart criterion still uses it.
+Both rules are sound, but the one above is stricter: its dual residual also measures complementarity, which the projection leaves to the gap alone.
+With relative tolerances, the stricter rule rejects points whose primal residual is small only relative to very large right-hand sides, and whose objective is then below the optimum.
+The projection is still the right multiplier to report: it is the dual-feasible $z$ closest to $c - A^\top y$, so the MathOptInterface wrapper returns it as the bound duals.
 
 ## Preconditioning
 

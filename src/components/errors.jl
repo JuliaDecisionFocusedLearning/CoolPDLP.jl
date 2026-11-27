@@ -135,9 +135,10 @@ Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
 A bound takes the reduced cost `c - Aᵀy` of a variable as its multiplier `z` only where `sol.x`
 is on that bound, see [`active_bound_multiplier`](@ref). Elsewhere the reduced cost counts in
-the dual residual `c - Aᵀy - z`, so that a problem whose variables are all boxed cannot have a
-zero dual residual at every `y`. PDLP's restart criterion passes
-[`finite_bound_multiplier`](@ref) as `multiplier` instead.
+the dual residual `c - Aᵀy - z`, which therefore also measures the complementarity of `sol.x`.
+This is stricter than the criterion of Applegate et al. (2021), which takes the projection of
+the reduced cost onto the finite bounds whatever `x`. PDLP's restart criterion passes that rule,
+[`finite_bound_multiplier`](@ref), as `multiplier`.
 """
 function kkt_errors!(
         err::KKTErrors,
