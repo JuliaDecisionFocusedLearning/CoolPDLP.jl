@@ -65,7 +65,7 @@ export PrimalDualSolution
 
 export preprocess, initialize, solve, solve!
 export PDHG, PDLP
-@public Algorithm
+@public Algorithm, AbstractAlgorithmKind, specific_parameters, NoParameters
 @public KKTErrors, relative
 @public termination_status
 export is_feasible, objective_value

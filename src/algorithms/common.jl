@@ -1,12 +1,21 @@
 """
-    Algorithm
+    AbstractAlgorithmKind
+
+Supertype of the tags `A` in [`Algorithm{A}`](@ref), one per algorithm.
+
+A new algorithm is an abstract subtype `A` of `AbstractAlgorithmKind`, which may add a method to [`specific_parameters`](@ref). Solving with it requires methods of `initialize` and `solve!` for `Algorithm{A}`, returning and updating a subtype of `AbstractState` with methods of `instance` and `nbinstances`.
+"""
+abstract type AbstractAlgorithmKind end
+
+"""
+    Algorithm{A <: AbstractAlgorithmKind}
 
 # Fields
 
 $(TYPEDFIELDS)
 """
 struct Algorithm{
-        A,
+        A <: AbstractAlgorithmKind,
         C <: ConversionParameters,
         P <: PreconditioningParameters,
         S <: StepSizeParameters,
@@ -32,7 +41,7 @@ struct Algorithm{
             generic::G,
             termination::T,
             specific::X,
-        ) where {A, C, P, S, R, G, T, X}
+        ) where {A <: AbstractAlgorithmKind, C, P, S, R, G, T, X}
         return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
@@ -53,16 +62,16 @@ Placeholder for the specific parameters of an algorithm that has none.
 struct NoParameters end
 
 """
-    specific_parameters(::Val{A}, ::Type{T}; kwargs...)
+    specific_parameters(::Type{A}, ::Type{T}; kwargs...)
 
 Build the parameters that only algorithm `A` reads, in float type `T`, from the keyword arguments of [`Algorithm`](@ref) that the common parameters do not take.
 
 Algorithms without such parameters fall back on [`NoParameters`](@ref) and reject any extra keyword argument.
 """
-specific_parameters(::Val, ::Type) = NoParameters()
+specific_parameters(::Type{<:AbstractAlgorithmKind}, ::Type) = NoParameters()
 
 """
-    Algorithm{:ALGNAME}(
+    Algorithm{A}(
         # conversion
         _T::Type{T} = Float64,
         ::Type{Ti} = Int,
@@ -125,7 +134,7 @@ function Algorithm{A}(
         max_kkt_passes = 10^5,
         time_limit = Inf,
         kwargs...
-    ) where {A, T, Ti, M, B}
+    ) where {A <: AbstractAlgorithmKind, T, Ti, M, B}
 
     conversion = ConversionParameters(
         T, Ti, M; backend,
@@ -158,7 +167,7 @@ function Algorithm{A}(
         max_kkt_passes,
     )
 
-    specific = specific_parameters(Val(A), _T; kwargs...)
+    specific = specific_parameters(A, _T; kwargs...)
 
     return Algorithm{A}(
         conversion,
@@ -175,7 +184,7 @@ function Base.show(io::IO, algo::Algorithm{A}) where {A}
     (; conversion, preconditioning, step_size, restart, generic, termination, specific) = algo
     return print(
         io, """
-        $A algorithm:
+        $(nameof(A)) algorithm:
         - $conversion
         - $preconditioning
         - $step_size

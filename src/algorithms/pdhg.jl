@@ -1,10 +1,12 @@
 """
     PDHG(args...; kwargs...)
 
-Shortcut for [`Algorithm{:PDHG}`](@ref) with some defaults disabled.
+Shortcut for [`Algorithm{PDHG}`](@ref) with some defaults disabled.
 """
-function PDHG(args...; kwargs...)
-    return Algorithm{:PDHG}(
+abstract type PDHG <: AbstractAlgorithmKind end
+
+function (::Type{PDHG})(args...; kwargs...)
+    return Algorithm{PDHG}(
         args...;
         ruiz_iter = 0,
         primal_weight_damping = NaN,
@@ -49,7 +51,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDHG};
+        algo::Algorithm{PDHG};
         starting_time::Float64
     ) where {T, V}
     η = batched_expand(sol.x, fixed_stepsize(milp, algo.step_size))
@@ -67,7 +69,7 @@ end
 function solve!(
         state::PDHGState,
         milp::MILP,
-        algo::Algorithm{:PDHG}
+        algo::Algorithm{PDHG}
     )
     prog = init_progress("PDHG iterations:", algo.generic.show_progress)
     must_terminate = false

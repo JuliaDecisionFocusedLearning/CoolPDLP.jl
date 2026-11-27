@@ -31,6 +31,19 @@ end
     @test_throws MethodError alg(; not_a_parameter = 1)
 end
 
+module ExternalAlgorithm
+using CoolPDLP: CoolPDLP, AbstractAlgorithmKind, Algorithm
+abstract type MyAlgo <: AbstractAlgorithmKind end
+CoolPDLP.specific_parameters(::Type{MyAlgo}, ::Type{T}; my_param = 1) where {T} = (; my_param = T(my_param))
+end
+
+@testset "Algorithm defined in another module" begin
+    algo = CoolPDLP.Algorithm{ExternalAlgorithm.MyAlgo}(Float32; my_param = 2)
+    @test algo.specific === (; my_param = 2.0f0)
+    @test occursin("MyAlgo algorithm", sprint(show, algo))
+    @test_throws MethodError CoolPDLP.Algorithm{ExternalAlgorithm.MyAlgo}(; not_a_parameter = 1)
+end
+
 @testset "KKT errors" begin
     sol = PrimalDualSolution(milp)
     err = kkt_errors!(KKTErrors(sol), Scratch(sol), sol, milp)
