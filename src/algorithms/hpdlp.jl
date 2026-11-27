@@ -17,6 +17,11 @@ reflected step and `1/2` is plain Halpern on `T`.
 
 Unlike [`PDLP`](@ref), every instance of a batch restarts on its own, so
 `restart_batch_aggregation` is ignored.
+
+The KKT errors are always evaluated with active-bound reduced costs ([`ActiveBounds`](@ref)
+around `termination_norm`), as in cuPDLPx: the primal weight controller reads the ratio of the
+relative dual and primal residuals, and without `ActiveBounds` the dual residual is zero for
+every iterate of a problem whose variables are all boxed.
 """
 function HPDLP(args...; kwargs...)
     return Algorithm{:HPDLP}(
@@ -28,6 +33,13 @@ function HPDLP(args...; kwargs...)
         kwargs...
     )
 end
+
+active_bounds(norm::TerminationNorm) = ActiveBounds(norm)
+active_bounds(norm::ActiveBounds) = norm
+
+# `pid_update!` only moves the primal weight when the ratio of the relative dual and primal
+# residuals is within [1e-8, 1e8], so the dual residual must not vanish structurally
+termination_rule(algo::Algorithm{:HPDLP}) = active_bounds(algo.generic.termination_norm)
 
 """
     HalpernParameters
@@ -198,7 +210,7 @@ function initialize(
     halpern = HalpernStats(sol, ω)
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)
+    kkt_errors!(err, scratch, sol, milp, termination_rule(algo))
     tol = algo.termination.infeasibility_tol
     # the initial KKT errors cost one product by `A` and one by `Aᵀ`
     stats = ConvergenceStats(

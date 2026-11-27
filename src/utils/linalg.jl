@@ -93,6 +93,24 @@ struct L2Norm <: TerminationNorm end
 struct LInfNorm <: TerminationNorm end
 
 """
+    ActiveBounds(norm)
+
+Termination check in the norm `norm` ([`L2Norm`](@ref) or [`LInfNorm`](@ref)) in which a
+variable bound absorbs a reduced cost only where the variable sits on that bound, as in
+cuPDLPx and in PDLP's `handle_some_primal_gradients_on_finite_bounds_as_residuals`.
+
+With a plain norm, the reduced cost `c - Aᵀy` of a variable with a finite bound of the matching
+sign counts entirely as the multiplier `z` of that bound, so the dual residual of a problem
+whose variables are all boxed is zero for every `y`, and the complementarity violation
+`z (x - bound)` only enters the gap, where it can cancel against `yᵀ(Ax - b)` at an infeasible
+`x`. With `ActiveBounds`, the reduced cost of a variable strictly inside its bounds is part of
+the dual residual instead, see [`proj_multiplier_active`](@ref).
+"""
+struct ActiveBounds{N <: TerminationNorm} <: TerminationNorm
+    norm::N
+end
+
+"""
     colnorm!!(dest, x, norm::TerminationNorm)
 
 Compute the norm `norm` of `x`, or one norm per column if `x` is batched, into
@@ -106,6 +124,7 @@ function colnorm!!(dest::AbstractVector, m::AbstractMatrix, ::LInfNorm)
     Base.mapreducedim!(abs, max, transpose(dest), m)
     return dest
 end
+colnorm!!(dest, x::AbstractVecOrMat, norm::ActiveBounds) = colnorm!!(dest, x, norm.norm)
 
 """
     coldot(a, b)
@@ -177,6 +196,30 @@ Project `λ` onto the feasible space of the (double) Lagrange multiplier `λ⁺ 
         )
     )
 end
+
+"""
+    proj_multiplier_active(λ, x, l, u)
+
+Part of the reduced cost `λ` that the bounds `l ≤ x ≤ u` absorb at the point `x`: `λ` itself
+where it is positive and `x` is on (or below) its lower bound, or negative and `x` on (or
+above) its upper bound, and zero elsewhere. An infinite bound is never reached, so this is
+never more than [`proj_multiplier`](@ref) keeps.
+"""
+@inline function proj_multiplier_active(λ::T, x::T, l::T, u::T) where {T <: Number}
+    return ifelse(λ > zero(T), ifelse(x <= l, λ, zero(T)), ifelse(x >= u, λ, zero(T)))
+end
+
+@inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)
+
+"""
+    reduced_cost_rule(norm::TerminationNorm)
+
+The function `(λ, x, l, u) -> z` that [`kkt_errors!`](@ref) uses to split the reduced cost `λ`
+into the bound multiplier `z` and the dual residual `λ - z`: [`proj_multiplier`](@ref), which
+ignores `x`, or [`proj_multiplier_active`](@ref) for [`ActiveBounds`](@ref).
+"""
+reduced_cost_rule(::TerminationNorm) = finite_bound_multiplier
+reduced_cost_rule(::ActiveBounds) = proj_multiplier_active
 
 """
     combine(l, u)

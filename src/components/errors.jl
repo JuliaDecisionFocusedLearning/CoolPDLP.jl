@@ -134,6 +134,7 @@ end
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
 The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
+With [`ActiveBounds`](@ref), a bound takes a reduced cost as its multiplier only where `sol.x` is on that bound.
 
 The errors are those of the original problem, before preconditioning and bound and objective
 rescaling.
@@ -155,7 +156,8 @@ function kkt_errors!(
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
     c_At_y = mul!(scratch.x, At, y, -1, false)
     c_At_y .+= c
-    z = @. scratch.z = proj_multiplier(c_At_y, lv, uv)
+    multiplier = reduced_cost_rule(norm)
+    z = @. scratch.z = multiplier(c_At_y, x, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc)) / βr
     err.primal = colnorm!!(err.primal, primal_diff, norm)

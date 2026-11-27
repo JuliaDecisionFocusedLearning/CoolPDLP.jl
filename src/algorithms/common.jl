@@ -330,7 +330,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algori
     bounded_above = !any(@. (c < 0) & isinf(uv))
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-        kkt_errors!(state.stats.err, state.scratch, sol, milp, algo.generic.termination_norm)
+        kkt_errors!(state.stats.err, state.scratch, sol, milp, termination_rule(algo))
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         state.stats.instance_status_code = batched_fill(
@@ -417,6 +417,14 @@ returns `true`.
 """
 function solve! end
 
+"""
+    termination_rule(algo)
+
+The [`TerminationNorm`](@ref) in which `algo` evaluates the KKT errors of its termination
+check: `termination_norm`, which [`HPDLP`](@ref) wraps in [`ActiveBounds`](@ref).
+"""
+termination_rule(algo::Algorithm) = algo.generic.termination_norm
+
 function termination_check!(
         state::AbstractState,
         milp::MILP,
@@ -424,7 +432,7 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp, algo.generic.termination_norm)
+    kkt_errors!(stats.err, scratch, sol, milp, termination_rule(algo))
     stats.extra_products += 2
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant
