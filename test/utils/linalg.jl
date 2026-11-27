@@ -31,6 +31,13 @@ end
                 @test z(λ, x, l, u) === (on_matching_bound ? T(λ) : zero(T))
             end
         end
+        # a few ulps inside a bound is on it, ten times the tolerance is not
+        for b in (1, 1.0e6)
+            @test z(2, b + 4b * eps(T), b, Inf) === T(2)
+            @test z(-2, b - 4b * eps(T), -Inf, b) === T(-2)
+            @test z(2, b + 10sqrt(eps(T)) * b, b, Inf) === zero(T)
+            @test z(-2, b - 10sqrt(eps(T)) * b, -Inf, b) === zero(T)
+        end
         # entrywise, it keeps at most what the dual-feasible projection keeps
         for λ in randn(T, 20), x in (-1, 0, 1), (l, u) in ((-Inf, Inf), (-1, Inf), (-Inf, 1), (-1, 1))
             @test abs(z(λ, x, l, u)) <= abs(CoolPDLP.proj_multiplier(λ, T(l), T(u)))

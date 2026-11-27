@@ -162,11 +162,14 @@ itself where it is positive and `x` is on (or below) `l`, or negative and `x` is
 [`proj_multiplier`](@ref), it leaves the reduced cost of a variable off its bounds in the dual
 residual, which then also measures complementarity.
 
-"On the bound" is an exact comparison, which is meant for projected iterates: the PDHG step
-clamps `x` into its bounds, so a variable on a bound equals it exactly.
+`x` is on a bound when it is within `sqrt(eps(T)) * max(1, |x|)` of it. The PDHG step clamps
+`x` exactly, but unscaling or averaging can leave it a few ulps inside, and `sqrt(eps(T))` is far
+above such rounding errors while still far below a meaningful distance to the bound. The
+tolerance scales with `x` rather than the bound, so an infinite bound is never reached.
 """
 @inline function active_bound_multiplier(λ::T, x::T, l::T, u::T) where {T <: Number}
-    return ifelse(λ > zero(T), ifelse(x <= l, λ, zero(T)), ifelse(x >= u, λ, zero(T)))
+    tol = sqrt(eps(T)) * max(one(T), abs(x))
+    return ifelse(λ > zero(T), ifelse(x - l <= tol, λ, zero(T)), ifelse(u - x <= tol, λ, zero(T)))
 end
 
 """

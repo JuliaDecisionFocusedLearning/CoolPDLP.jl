@@ -191,6 +191,9 @@ end
     # at the optimum, and with x on its lower bound, the reduced cost is a multiplier
     @test kkt(PrimalDualSolution([1.0, 1.0e4], [1.0, 0.0])).dual == 0
     @test kkt(PrimalDualSolution([0.0, 1.0e4], [0.0, 0.0])).dual == 0
+    # a few ulps off the bound, as after unscaling, still counts as on it
+    @test kkt(PrimalDualSolution([4eps(), 1.0e4], [0.0, 0.0])).dual == 0
+    @test kkt(PrimalDualSolution([1.0e-4, 1.0e4], [0.0, 0.0])).dual ≈ 1
 
     @testset "$alg" for alg in (PDHG, PDLP)
         algo = alg(; termination_reltol = 1.0e-4, check_every = 1)
