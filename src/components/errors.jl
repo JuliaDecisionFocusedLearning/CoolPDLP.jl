@@ -129,14 +129,14 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
 end
 
 """
-    kkt_errors!(err, scratch, sol, milp)
+    kkt_errors!(err, scratch, sol, milp, multiplier = active_bound_multiplier)
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
 A bound takes the reduced cost `c - Aᵀy` of a variable as its multiplier `z` only where `sol.x`
 is on that bound, see [`active_bound_multiplier`](@ref). Elsewhere the reduced cost counts in
 the dual residual `c - Aᵀy - z`, so that a problem whose variables are all boxed cannot have a
-zero dual residual at every `y`.
+zero dual residual at every `y`. `multiplier(λ, x, l, u)` splits the reduced cost.
 """
 function kkt_errors!(
         err::KKTErrors,

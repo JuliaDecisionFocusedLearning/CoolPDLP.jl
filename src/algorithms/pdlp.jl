@@ -84,6 +84,7 @@ function initialize(
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
+    # the restart errors use the rule of `best_error!!`
     restart_stats.err_restart = kkt_errors!(copy(err), scratch, sol, milp, finite_bound_multiplier)
     stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
@@ -207,7 +208,9 @@ function best_error!!(
         scratch::Scratch, sol1::PrimalDualSolution, sol2::PrimalDualSolution,
         milp::MILP, ω::BatchedNumber,
     )
-    # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
+    # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first. The restart
+    # criterion splits the reduced costs without looking at `x`: averaged iterates are only
+    # approximately on their bounds, and this rule restarts better (see the PR benchmarks)
     kkt_errors!(err1, scratch, sol1, milp, finite_bound_multiplier)
     kkt_errors!(err2, scratch, sol2, milp, finite_bound_multiplier)
     abs1 = absolute!!(scratch.b1, err1, ω)

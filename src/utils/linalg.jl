@@ -117,7 +117,7 @@ Compute `left * right`, except that `right` is forced to zero whenever `left` is
 
 This is used to evaluate terms like `l * y⁺` in the dual objective, where `l` is a (possibly
 infinite) constraint/variable bound and `y⁺` its associated Lagrange multiplier. The PDHG
-update, [`proj_multiplier`](@ref) and [`active_bound_multiplier`](@ref) guarantee that the multiplier paired with an infinite
+update and [`active_bound_multiplier`](@ref) guarantee that the multiplier paired with an infinite
 bound is mathematically zero, but not necessarily *exactly* zero in floating point (e.g. a
 free row's multiplier is computed as a `σ`/`inv(σ)` round-trip that can leave a tiny nonzero
 residual). Checking `iszero(right)` instead of always zeroing out would let such residuals
@@ -274,4 +274,10 @@ KernelAbstractions choose it.
 """
 function sparse_mul! end
 
+"""
+    finite_bound_multiplier(λ, x, l, u)
+
+[`proj_multiplier`](@ref)`(λ, l, u)`, which ignores `x`: the multiplier rule of PDLP's restart
+criterion, see [`best_error!!`](@ref).
+"""
 @inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)
