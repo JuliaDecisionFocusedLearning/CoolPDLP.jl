@@ -84,7 +84,7 @@ function initialize(
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
     kkt_errors!(err, scratch, sol, milp)  # TODO: count this KKT pass
-    restart_stats.err_restart = copy(err)
+    restart_stats.err_restart = kkt_errors!(copy(err), scratch, sol, milp, finite_bound_multiplier)
     stats = ConvergenceStats(err; starting_time)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
@@ -208,8 +208,8 @@ function best_error!!(
         milp::MILP, ω::BatchedNumber,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err1, scratch, sol1, milp)
-    kkt_errors!(err2, scratch, sol2, milp)
+    kkt_errors!(err1, scratch, sol1, milp, finite_bound_multiplier)
+    kkt_errors!(err2, scratch, sol2, milp, finite_bound_multiplier)
     abs1 = absolute!!(scratch.b1, err1, ω)
     abs2 = absolute!!(scratch.b2, err2, ω)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2

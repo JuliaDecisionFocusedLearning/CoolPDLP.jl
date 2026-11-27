@@ -143,7 +143,8 @@ function kkt_errors!(
         scratch::Scratch,
         sol::PrimalDualSolution,
         milp::MILP{T},
-    ) where {T}
+        multiplier::F = active_bound_multiplier,
+    ) where {T, F}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
 
@@ -151,7 +152,7 @@ function kkt_errors!(
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
     c_At_y = mul!(scratch.x, At, y, -1, false)
     c_At_y .+= c
-    z = @. scratch.z = active_bound_multiplier(c_At_y, x, lv, uv)
+    z = @. scratch.z = multiplier(c_At_y, x, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc))
     err.primal = colnorm!!(err.primal, primal_diff)

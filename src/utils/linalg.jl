@@ -273,3 +273,5 @@ For a batch of vectors, `workgroupsize` is passed on to the kernel launch, where
 KernelAbstractions choose it.
 """
 function sparse_mul! end
+
+@inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)
