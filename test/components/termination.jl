@@ -2,6 +2,7 @@ using CoolPDLP
 using CoolPDLP: termination_status
 import MathOptInterface as MOI
 using Random
+using Random: Xoshiro
 using SparseArrays
 using Test
 
@@ -169,5 +170,47 @@ end
         @test length(stats.error_history) == 1
         @test first(first(stats.error_history)) == 0
         @test isfinite(CoolPDLP.relative(last(first(stats.error_history))))
+    end
+end
+
+@testset "No false optimum on a boxed problem" begin
+    # min x  s.t.  x = 1, w = 1e4, 0 ≤ x ≤ 2, 0 ≤ w ≤ 2e4: the optimum is 1, at x = 1, y = (1, 0)
+    I2 = sparse([1.0 0.0; 0.0 1.0])
+    milp = MILP(; c = [1.0, 0.0], lv = [0.0, 0.0], uv = [2.0, 2.0e4], A = I2, lc = [1.0, 1.0e4], uc = [1.0, 1.0e4])
+    kkt(sol) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp)
+
+    # x strictly inside its bounds with objective 0.5: if the bound took the reduced cost
+    # c - y = 0.5 as its multiplier, the dual residual would be 0 and the complementarity
+    # violation 0.5 would cancel in the gap against y (x - 1), with every error below 1e-4
+    bad = PrimalDualSolution([0.5, 1.0e4], [0.5, 0.0])
+    @test objective_value(bad.x, milp) == 0.5
+    err = kkt(bad)
+    @test err.dual ≈ 0.5
+    @test err.dual / err.dual_scale > 1.0e-4
+
+    # at the optimum, and with x on its lower bound, the reduced cost is a multiplier
+    @test kkt(PrimalDualSolution([1.0, 1.0e4], [1.0, 0.0])).dual == 0
+    @test kkt(PrimalDualSolution([0.0, 1.0e4], [0.0, 0.0])).dual == 0
+
+    @testset "$alg" for alg in (PDHG, PDLP)
+        algo = alg(; termination_reltol = 1.0e-4, check_every = 1)
+        state = CoolPDLP.initialize(milp, PrimalDualSolution(milp), algo; starting_time = time())
+        copy!(state.sol, bad)
+        CoolPDLP.termination_check!(state, milp, algo)
+        @test termination_status(state.stats) != MOI.OPTIMAL
+    end
+end
+
+@testset "Boxed problem solved to its optimum" begin
+    # every variable has two finite bounds, so a dual residual that ignored x would vanish
+    rng = Xoshiro(3)
+    m, n = 15, 40
+    A = sprandn(rng, m, n, 0.3)
+    b = A * rand(rng, n)
+    milp = MILP(; c = randn(rng, n), lv = zeros(n), uv = ones(n), A, lc = b, uc = b)
+    @testset "$alg" for alg in (PDHG, PDLP)
+        _, stats = solve(milp, alg(; termination_reltol = 1.0e-6, max_kkt_passes = 200_000))
+        @test termination_status(stats) == MOI.OPTIMAL
+        @test 0 < stats.err.dual <= 1.0e-6 * stats.err.dual_scale
     end
 end

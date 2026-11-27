@@ -72,6 +72,27 @@ g = c^\top x - \left(p(y; \ell_c, u_c) + p(z; \ell_v, u_v)\right)
 The objective constant $c_0$ shifts the primal and dual objectives alike, so it cancels out in the gap.
 It does not cancel out in the scale $1 + |c^\top x + c_0| + |p(y; \ell_c, u_c) + p(z; \ell_v, u_v) + c_0|$ that the gap is compared to.
 
+## Bound multipliers
+
+PDHG only produces $x$ and $y$, so the KKT errors need a multiplier $z$ for the variable bounds.
+CoolPDLP gives a bound the reduced cost $\lambda = c - A^\top y$ of a variable as its multiplier only where the variable is on that bound:
+
+```math
+z_i = \begin{cases}
+\lambda_i & \text{if } \lambda_i > 0 \text{ and } x_i = (\ell_v)_i \\
+\lambda_i & \text{if } \lambda_i < 0 \text{ and } x_i = (u_v)_i \\
+0 & \text{otherwise}
+\end{cases}
+```
+
+The dual residual is $c - A^\top y - z$, so the reduced cost of a variable strictly inside its bounds, or on the bound of the wrong sign, counts as dual infeasibility.
+An infinite bound is never reached, so $z \in \mathcal{Z}$, and $z_i \left(x_i - \text{bound}_i\right) = 0$: complementarity holds by construction, and its violation shows up in the dual residual instead.
+The comparison is exact because the errors are evaluated at projected iterates, which are clamped into the bounds.
+
+Taking instead $z = \mathrm{proj}_{\mathcal{Z}}(c - A^\top y)$, whatever $x$, would make the dual residual of a problem whose variables are all boxed zero for every $y$.
+The complementarity violation would then only enter the gap, where it can cancel against $y^\top (Ax - b)$ at an infeasible $x$, and a point far from optimal can pass all three tests.
+That projection is still the right multiplier to report: it is the dual-feasible $z$ closest to $c - A^\top y$, so the MathOptInterface wrapper returns it as the bound duals.
+
 ## Preconditioning
 
 The original problem $P$ and preconditioned problem $\tilde{P}$ are linked by:
