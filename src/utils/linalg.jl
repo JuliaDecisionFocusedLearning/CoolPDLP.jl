@@ -117,7 +117,7 @@ Compute `left * right`, except that `right` is forced to zero whenever `left` is
 
 This is used to evaluate terms like `l * y⁺` in the dual objective, where `l` is a (possibly
 infinite) constraint/variable bound and `y⁺` its associated Lagrange multiplier. The PDHG
-update and [`proj_multiplier`](@ref) guarantee that the multiplier paired with an infinite
+update and [`active_bound_multiplier`](@ref) guarantee that the multiplier paired with an infinite
 bound is mathematically zero, but not necessarily *exactly* zero in floating point (e.g. a
 free row's multiplier is computed as a `σ`/`inv(σ)` round-trip that can leave a tiny nonzero
 residual). Checking `iszero(right)` instead of always zeroing out would let such residuals
@@ -130,6 +130,9 @@ is actually wrong with the solution.
     proj_multiplier(λ, l, u)
 
 Project `λ` onto the feasible space of the (double) Lagrange multiplier `λ⁺ - λ⁻` associated with the constraint `l ≤ x ≤ u`, where `l` and/or `u` might be infinite.
+
+This is the dual-feasible multiplier closest to `λ`, whatever `x`: the wrapper reports it as
+the bound duals. It is not the termination test's multiplier, see [`active_bound_multiplier`](@ref).
 """
 @inline function proj_multiplier(λ::T, l::T, u::T) where {T <: Number}
     lmin = l == typemin(T)
@@ -147,6 +150,20 @@ Project `λ` onto the feasible space of the (double) Lagrange multiplier `λ⁺ 
             λ
         )
     )
+end
+
+"""
+    active_bound_multiplier(λ, x, l, u)
+
+Part of the reduced cost `λ` that the bounds `l ≤ x ≤ u` take as their multiplier at `x`: `λ`
+itself where it is positive and `x` is on (or below) `l`, or negative and `x` is on (or above)
+`u`, and zero elsewhere. An infinite bound is never reached by a finite `x`.
+
+"On the bound" is an exact comparison, which is meant for projected iterates: the PDHG step
+clamps `x` into its bounds, so a variable on a bound equals it exactly.
+"""
+@inline function active_bound_multiplier(λ::T, x::T, l::T, u::T) where {T <: Number}
+    return ifelse(λ > zero(T), ifelse(x <= l, λ, zero(T)), ifelse(x >= u, λ, zero(T)))
 end
 
 """

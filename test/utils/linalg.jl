@@ -21,6 +21,23 @@ end
     end
 end
 
+@testset "Active-bound multiplier" begin
+    @testset for T in (Float64, Float32)
+        z(λ, x, l, u) = CoolPDLP.active_bound_multiplier(T(λ), T(x), T(l), T(u))
+        # (lower, upper) bounds: free, lower only, upper only, boxed
+        for (l, u) in ((-Inf, Inf), (-1, Inf), (-Inf, 1), (-1, 1)), λ in (-2, 0, 2)
+            for x in (-1, 0, 1)
+                on_matching_bound = (λ > 0 && x == l) || (λ < 0 && x == u)
+                @test z(λ, x, l, u) === (on_matching_bound ? T(λ) : zero(T))
+            end
+        end
+        # entrywise, it keeps at most what the dual-feasible projection keeps
+        for λ in randn(T, 20), x in (-1, 0, 1), (l, u) in ((-Inf, Inf), (-1, Inf), (-Inf, 1), (-1, 1))
+            @test abs(z(λ, x, l, u)) <= abs(CoolPDLP.proj_multiplier(λ, T(l), T(u)))
+        end
+    end
+end
+
 @testset "Safe product" begin
     # normal (finite `left`) case is an ordinary product
     @test CoolPDLP.safeprod_left(3.0, 5.0) == 15.0

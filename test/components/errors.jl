@@ -13,7 +13,7 @@ end
 milp, sol = CoolPDLP.random_milp_and_sol(100, 200, 0.4)
 (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
 (; x, y) = sol
-r = CoolPDLP.proj_multiplier.(c - At * y, lv, uv)
+r = CoolPDLP.active_bound_multiplier.(c - At * y, x, lv, uv)
 scratch = CoolPDLP.Scratch(sol)
 
 params = CoolPDLP.PreconditioningParameters(; chambolle_pock_alpha = 1.0, ruiz_iter = 10)
@@ -41,7 +41,7 @@ end
 
 @testset "Warm start violating the multiplier invariant" begin
     # `safeprod_left` assumes that the multiplier paired with an infinite bound is exactly
-    # zero: PDHG's own `y`-update and `proj_multiplier` maintain this invariant, but a
+    # zero: PDHG's own `y`-update and `active_bound_multiplier` maintain this invariant, but a
     # user-supplied warm start need not. Here `uc == Inf`, so the dual-feasible sign for `y`
     # is nonnegative (only `y⁺` may be nonzero); we deliberately warm-start with `y = -0.1`,
     # a negative (invariant-violating) value, and check that `initialize` — which calls

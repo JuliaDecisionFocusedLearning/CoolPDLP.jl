@@ -251,6 +251,8 @@ function MOI.optimize!(dest::Optimizer{T}, fcache::MOI.Utilities.UniversalFallba
 
     dest.x = Array(sol.x)
     dest.y = Array(sol.y)
+    # the reported bound duals are the dual-feasible projection of the reduced costs, not the
+    # active-bound multipliers of the termination test, which leave a dual residual
     dest.z = proj_multiplier.(c .- milp.At * dest.y, lv, uv)
 
     raw_obj = objective_value(dest.x, milp)
