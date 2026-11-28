@@ -32,9 +32,9 @@ end
 end
 
 module ExternalAlgorithm
-using CoolPDLP: CoolPDLP, AbstractAlgorithmKind, Algorithm
-abstract type MyAlgo <: AbstractAlgorithmKind end
-CoolPDLP.specific_parameters(::Type{MyAlgo}, ::Type{T}; my_param = 1) where {T} = (; my_param = T(my_param))
+    using CoolPDLP: CoolPDLP, AbstractAlgorithmKind, Algorithm
+    abstract type MyAlgo <: AbstractAlgorithmKind end
+    CoolPDLP.specific_parameters(::Type{MyAlgo}, ::Type{T}; my_param = 1) where {T} = (; my_param = T(my_param))
 end
 
 @testset "Algorithm defined in another module" begin
