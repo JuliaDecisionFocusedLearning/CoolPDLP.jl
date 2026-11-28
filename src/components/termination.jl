@@ -135,9 +135,21 @@ mutable struct ConvergenceStats{
     active::A
     "number of KKT passes of each instance of a batch when it terminated, or so far if it is still running (`nothing` without batching)"
     instance_kkt_passes::IP
+    "products by `A` or `Aᵀ` outside the KKT passes and the infeasibility checks: the initial KKT errors, the KKT errors of the termination and restart checks, and the restart metrics; see [`matrix_products`](@ref)"
+    extra_products::I
     "statistics that only the algorithm in use records, or `nothing`"
     algorithm::X
 end
+
+"""
+    matrix_products(stats)
+
+Total number of products by `A` or `Aᵀ` made by the solver: two per KKT pass and per KKT pass
+of the infeasibility checks (`stats.ray_passes`), plus `stats.extra_products`, which counts every
+other product (initial KKT errors, termination and restart checks). It is comparable across
+algorithms, whereas `kkt_passes` leaves out the work that differs between them.
+"""
+matrix_products(stats::ConvergenceStats) = 2 * (stats.kkt_passes + stats.ray_passes) + stats.extra_products
 
 """
     batched_tracker(like, val)
@@ -183,6 +195,7 @@ function ConvergenceStats(
         error_history = [(kkt_passes, copy(err))],
         active = batched_tracker(err.primal, true),
         instance_kkt_passes = batched_tracker(err.primal, kkt_passes),
+        extra_products = zero(kkt_passes),
         algorithm::X = nothing,
     ) where {T, I, S, C, X}
     F = Base.promote_type(typeof(starting_time), typeof(time_elapsed))
@@ -202,6 +215,7 @@ function ConvergenceStats(
         error_history,
         active,
         instance_kkt_passes,
+        convert(I, extra_products),
         algorithm,
     )
 end
@@ -256,6 +270,7 @@ function instance(stats::ConvergenceStats, i::Int)
         primal_ray_error = instance_num(stats.primal_ray_error, i),
         dual_ray_error = instance_num(stats.dual_ray_error, i),
         error_history = [(passes, instance(err, i)) for (passes, err) in stats.error_history],
+        extra_products = stats.extra_products,
         algorithm = instance(stats.algorithm, i),
     )
 end

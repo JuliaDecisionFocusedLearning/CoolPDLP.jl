@@ -171,10 +171,10 @@ The diagonal preconditioner chains the following stages in this order, each acti
 - `geometric_mean_iter` passes of geometric-mean scaling, dividing each row, then each column, by $\sqrt{\min |a| \cdot \max |a|}$;
 - `ruiz_iter` Ruiz passes and the Pock–Chambolle step above.
 
-`Algorithm` turns the first two off by default, while `PDLP()` runs 20 Curtis–Reid rounds. Their factors are clamped to $[10^{-20}, 10^{20}]$.
+`Algorithm` turns the first two off by default, while `PDLP()` and `HPDLP()` run 20 Curtis–Reid rounds. Their factors are clamped to $[10^{-20}, 10^{20}]$.
 
 With `bound_objective_rescaling = true`, the preconditioned bounds are then multiplied by $\beta = 1 / (1 + \|b\|_2)$ and the objective by $\gamma = 1 / (1 + \|c\|_2)$, per instance, as in cuPDLPx and HPR-LP.
-A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, PDLP starts from a primal weight of one, and errors and solutions are still reported for the original problem.
+A solution $(x, y)$ of the original problem becomes $(\beta x, \gamma y)$, PDLP and HPDLP start from a primal weight of one, and errors and solutions are still reported for the original problem.
 
 The factors of the stages multiply: if stage $k$ produces $D_1^{(k)}, D_2^{(k)}$, the final scaling is
 
@@ -197,6 +197,12 @@ This is the criterion of cuPDLP.jl and cuOpt.
 The default $\epsilon_a = \epsilon_r$ gives back the purely relative criterion $\text{error} / (1 + \text{norm}) \leq \epsilon_r$ of PDLP.
 Every quantity is that of the original problem, whatever the preconditioning.
 Restarts always compare errors in the $\ell_2$ norm.
+
+With `bound_multiplier = FiniteBounds()` (the default, as in Applegate et al. 2021), the multiplier $z$ of the variable bounds is the part of the reduced cost $c - A^\top y$ whose sign a finite bound allows, wherever $x$ is.
+For a problem whose variables are all boxed, the dual residual is therefore zero for every $y$, and the complementarity violation $z (x - \text{bound})$ only enters the gap, where it can cancel against $y^\top (Ax - b)$ when $x$ is infeasible.
+`bound_multiplier = ActiveBounds()` keeps a reduced cost in $z$ only where $x$ is on the matching bound and counts it in the dual residual elsewhere.
+It is the default of `HPDLP`: its primal weight controller reads the ratio of the dual and primal residuals, which must not vanish structurally.
+
 ## Infeasibility detection
 
 When a problem is infeasible, the iterates diverge, and their differences converge to a direction whose primal or dual part certifies it ([Applegate et al.](https://arxiv.org/abs/2102.04592)).
@@ -212,4 +218,42 @@ The certificates are returned in `stats.ray`, in the original space: `stats.ray.
 Each check costs two more KKT passes (one product by $A$ and $A^\top$ per candidate), counted in `stats.ray_passes` rather than in `stats.kkt_passes`, so they do not count towards `max_kkt_passes`.
 With `infeasibility_tol = nothing`, the detection is removed at the type level: no buffers, no extra passes, and nothing to trace under Reactant.
 Crossed bounds ($\ell > u$) are reported as infeasible before the solve, without a certificate.
+
+## Halpern methods
+
+`HPDLP` runs the following outer loop. Write $T$ for an operator that is firmly nonexpansive in a metric $P$. Each step is reflected and anchored (Halpern):
+
+```math
+z^{k+1} = \frac{k+1}{k+2} \left( \gamma \, (2 T(z^k) - z^k) + (1 - \gamma) \, z^k \right) + \frac{1}{k+2} \, z^0
+```
+
+where $k$ counts steps since the last restart and $z^0$ is the anchor. $T(z^k)$ is the reported point.
+Every `check_every` steps, the fixed-point residual $E = \|z - T(z)\|_P$ decides restarts. An instance restarts when either:
+
+- $E \leq \beta_{\text{suff}} E_0$, or
+- $E \leq \beta_{\text{nec}} E_0$ and $E$ grew since the last check, or
+- the inner loop is long: $k \geq \beta_{\text{art}}$ times the total number of steps.
+
+Here $E_0$ is the residual at the first step after the last restart. A restart moves both $z$ and $z^0$ to $T(z)$. In a batch, every instance restarts on its own.
+
+### HPDLP: reflected Halpern PDHG (r²HPDHG)
+
+$T$ is the PDHG step of `pdhg_update!`, with $\tau = \eta/\omega$ and $\sigma = \eta\omega$. With the sign convention of $y$ used here, its metric is $P = \begin{bmatrix} I/\tau & A^\top \\ A & I/\sigma \end{bmatrix}$, and the residual is measured as
+
+```math
+\eta \|\Delta\|_P^2 = \omega \|\Delta x\|^2 + \|\Delta y\|^2/\omega + 2\eta \langle \Delta x, A^\top \Delta y\rangle.
+```
+
+At a restart, PID control in log space sets the primal weight. The error is $e = \log(\|\Delta y\| / (\omega \|\Delta x\|))$, measured between $T(z)$ and the previous anchor. The update is $\omega \leftarrow \omega \exp(k_P e + k_I s + k_D (e - e_{\text{prev}}))$, with $s \leftarrow \zeta s + e$.
+
+This is the method of [Lu, Peng & Yang (2025)](https://arxiv.org/abs/2507.14051), whose step size $0.998/\|A\|_2$ `HPDLP()` keeps. Its other defaults are:
+
+| | `HPDLP()` |
+|---|---|
+| restart decays (suff., nec., art.) | 0.2, 0.5, 0.36 |
+| check frequency | 200 |
+| PID $(k_P, k_I, k_D, \zeta)$ | (0.99, 0.01, 0, 0.3) |
+| preconditioning | Curtis-Reid 20 + Ruiz 10 + Pock-Chambolle |
+| bound/objective rescaling | off (on costs about 15 % more passes on Netlib) |
+| ray candidates | $T(z) - z^0$, $T(z)$ |
 

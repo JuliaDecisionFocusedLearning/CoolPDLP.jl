@@ -2,6 +2,7 @@ using CoolPDLP
 using CoolPDLP: KKTErrors, Scratch, initialize, instance, kkt_errors!,
     nbinstances, prog_showvalues, relative, restart!, restart_check!, step!,
     termination_status
+using MathOptBenchmarkInstances: Netlib, read_instance
 using Random
 using Test
 
@@ -168,6 +169,36 @@ end
                 @test value isa String
                 @test occursin("max ", value) && occursin("mean ", value)
             end
+        end
+    end
+end
+
+@testset verbose = true "Terminated instances are frozen" begin
+    # instances of very different difficulty: the objective of afiro, scaled per instance
+    base = MILP(read_instance(Netlib, "afiro")[1])
+    rng = Xoshiro(1)
+    scales = (1.0, 1.0e-3, 30.0, 0.5)
+    C = stack([s * base.c .* (1 .+ 0.05 .* randn(rng, length(base.c))) for s in scales])
+    batch = MILP(; c = C, lv = base.lv, uv = base.uv, A = base.A, lc = base.lc, uc = base.uc)
+    B = length(scales)
+    @testset "$alg" for alg in (HPDLP,)
+        algo = alg(; termination_reltol = 1.0e-6, max_kkt_passes = 20_000)
+        sol, stats = solve(batch, algo)
+        @test termination_status(stats) == CoolPDLP.MOI.OPTIMAL
+        passes = [instance(stats, i).kkt_passes for i in 1:B]
+        # the batch only ran as long as its slowest instance, the others stopped earlier
+        @test maximum(passes) == stats.kkt_passes
+        @test minimum(passes) < stats.kkt_passes
+        @test !any(stats.active)
+        for i in 1:B
+            milp_i = MILP(; c = C[:, i], lv = base.lv, uv = base.uv, A = base.A, lc = base.lc, uc = base.uc)
+            sol_i, stats_i = solve(milp_i, algo)
+            # every instance stops where it would on its own, with the same solution: only the
+            # rounding of the batched reductions differs from an unbatched solve
+            @test instance(stats, i).kkt_passes == stats_i.kkt_passes
+            @test termination_status(instance(stats, i)) == termination_status(stats_i)
+            @test sol.x[:, i] ≈ sol_i.x rtol = 1.0e-9
+            @test stats.err.primal[i] ≈ stats_i.err.primal rtol = 1.0e-6 atol = 1.0e-12
         end
     end
 end

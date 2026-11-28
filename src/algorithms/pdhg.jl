@@ -65,9 +65,9 @@ function initialize(
     scratch = Scratch(sol)
     # the error history is seeded with the starting point, so its errors must be filled already
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, algo.generic.termination_norm)  # TODO: count this KKT pass
+    kkt_errors!(err, scratch, sol, milp, termination_rule(algo)...)
     tol = algo.termination.infeasibility_tol
-    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products = 2)
     infeas = InfeasibilityWorkspace(sol, tol)
     # only the infeasibility check needs the previous iterate
     sol_last = ray_buffer(sol, tol)

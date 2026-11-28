@@ -71,6 +71,10 @@ function instance(state::PDLPState, i::Int)
     )
 end
 
+# whether the termination check measures the KKT errors as the restart criterion does
+is_restart_rule(::TerminationNorm, ::BoundMultiplier) = false
+is_restart_rule(::L2Norm, ::FiniteBounds) = true
+
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
@@ -93,14 +97,16 @@ function initialize(
     # The error history is seeded with the starting point, and `restart_check!` reads the errors
     # of the restart point without recomputing them, so both must be filled already.
     err = KKTErrors(sol)
-    kkt_errors!(err, scratch, sol, milp, L2Norm())  # TODO: count this KKT pass
-    # Restarts stay in L2 whatever `termination_norm` is: PDLP's decay factors in
+    kkt_errors!(err, scratch, sol, milp, L2Norm(), FiniteBounds())
+    # Restarts stay in L2 with finite-bound multipliers whatever the termination settings are: PDLP's decay factors in
     # `should_restart` assume it, and the stopping test alone must not change the iterates.
     restart_stats.err_restart = copy(err)
-    (; termination_norm) = algo.generic
-    termination_norm isa L2Norm || kkt_errors!(err, scratch, sol, milp, termination_norm)
+    same_rule = is_restart_rule(termination_rule(algo)...)
+    same_rule || kkt_errors!(err, scratch, sol, milp, termination_rule(algo)...)
     tol = algo.termination.infeasibility_tol
-    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time)
+    # each evaluation of the initial KKT errors costs one product by `A` and one by `Aᵀ`
+    extra_products = same_rule ? 2 : 4
+    stats = ConvergenceStats(err; ray = ray_buffer(sol, tol), starting_time, extra_products)
     infeas = InfeasibilityWorkspace(sol, tol)
     state = PDLPState(;
         sol, sol_last, sol_avg, sol_avg_last, sol_restart,
@@ -220,6 +226,8 @@ function restart_check!(
 
     # `err_restart` stays valid between restarts, only the primal weight `ω` moves
     restart_stats.abs_restart = absolute!!(restart_stats.abs_restart, err_restart, ω)
+    # the four KKT errors of `best_error!!`, two products each
+    state.stats.extra_products += 8
 
     return should_restart(restart_stats, iteration, algo.restart)
 end
@@ -237,8 +245,8 @@ function best_error!!(
         milp::MILP, ω::BatchedNumber,
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first
-    kkt_errors!(err1, scratch, sol1, milp, L2Norm())
-    kkt_errors!(err2, scratch, sol2, milp, L2Norm())
+    kkt_errors!(err1, scratch, sol1, milp, L2Norm(), FiniteBounds())
+    kkt_errors!(err2, scratch, sol2, milp, L2Norm(), FiniteBounds())
     abs1 = absolute!!(scratch.b1, err1, ω)
     abs2 = absolute!!(scratch.b2, err2, ω)
     return broadcast!!(min, abs_err, abs1, abs2), abs1, abs2

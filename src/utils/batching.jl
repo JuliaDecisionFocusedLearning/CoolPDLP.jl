@@ -153,7 +153,7 @@ Compute the per-instance quantity `f(args...)` into `dest` like `broadcast!!`, k
 previous value of `dest` for the instances which are not active.
 """
 function masked_apply!!(f::F, dest::BatchedNumber, ::Bool, args::Vararg{Any, N}) where {F, N}
-    return broadcast!!(f, dest, args...)
+    return batched_apply!!(f, dest, args...)
 end
 function masked_apply!!(
         f::F, dest::AbstractVector, active::AbstractVector, args::Vararg{Any, N}

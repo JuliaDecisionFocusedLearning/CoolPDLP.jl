@@ -8,7 +8,7 @@ Reactant, they are compile-time constants: see the Reactant section of the READM
 
 $(TYPEDFIELDS)
 """
-@kwdef struct GenericParameters{I <: Number, B, F <: Number, N <: TerminationNorm}
+@kwdef struct GenericParameters{I <: Number, B, F <: Number, N <: TerminationNorm, R <: BoundMultiplier}
     "whether to show a progress bar"
     show_progress::B
     "frequency of restart or termination checks"
@@ -19,9 +19,11 @@ $(TYPEDFIELDS)
     time_limit::F
     "norm of the termination check, see [`TerminationNorm`](@ref)"
     termination_norm::N
+    "multiplier rule of the termination check, see [`BoundMultiplier`](@ref)"
+    bound_multiplier::R
 end
 
 function Base.show(io::IO, params::GenericParameters)
-    (; show_progress, check_every, record_error_history, time_limit, termination_norm) = params
-    return print(io, "GenericParameters: show_progress=$show_progress, check_every=$check_every, record_error_history=$record_error_history, time_limit=$time_limit, termination_norm=$termination_norm")
+    (; show_progress, check_every, record_error_history, time_limit, termination_norm, bound_multiplier) = params
+    return print(io, "GenericParameters: show_progress=$show_progress, check_every=$check_every, record_error_history=$record_error_history, time_limit=$time_limit, termination_norm=$termination_norm, bound_multiplier=$bound_multiplier")
 end

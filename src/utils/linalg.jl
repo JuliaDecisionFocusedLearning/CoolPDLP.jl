@@ -93,6 +93,35 @@ struct L2Norm <: TerminationNorm end
 struct LInfNorm <: TerminationNorm end
 
 """
+    BoundMultiplier
+
+Rule by which the KKT errors split the reduced cost `c - Aᵀy` into the multiplier `z` of the
+variable bounds and the dual residual `c - Aᵀy - z`: [`FiniteBounds`](@ref) or
+[`ActiveBounds`](@ref).
+"""
+abstract type BoundMultiplier end
+
+"""
+    FiniteBounds()
+
+A finite bound takes the reduced cost of the matching sign as its multiplier, wherever the
+variable is (see [`proj_multiplier`](@ref)): the termination criterion of Applegate et al.
+(2021). The dual residual of a problem whose variables are all boxed is then zero for every `y`,
+and the complementarity violation `z (x - bound)` only enters the gap.
+"""
+struct FiniteBounds <: BoundMultiplier end
+
+"""
+    ActiveBounds()
+
+A bound takes the reduced cost of the matching sign as its multiplier only where the variable
+is on that bound (see [`proj_multiplier_active`](@ref)). Elsewhere, the reduced cost counts in
+the dual residual, which therefore also measures complementarity. This is stricter than
+[`FiniteBounds`](@ref).
+"""
+struct ActiveBounds <: BoundMultiplier end
+
+"""
     colnorm!!(dest, x, norm::TerminationNorm)
 
 Compute the norm `norm` of `x`, or one norm per column if `x` is batched, into
@@ -177,6 +206,31 @@ Project `λ` onto the feasible space of the (double) Lagrange multiplier `λ⁺ 
         )
     )
 end
+
+"""
+    proj_multiplier_active(λ, x, l, u)
+
+Part of the reduced cost `λ` that the bounds `l ≤ x ≤ u` absorb at the point `x`: `λ` itself
+where it is positive and `x` is on (or below) its lower bound, or negative and `x` on (or
+above) its upper bound, and zero elsewhere. An infinite bound is never reached, so this is
+never more than [`proj_multiplier`](@ref) keeps.
+"""
+@inline function proj_multiplier_active(λ::T, x::T, l::T, u::T) where {T <: Number}
+    return ifelse(λ > zero(T), ifelse(x <= l, λ, zero(T)), ifelse(x >= u, λ, zero(T)))
+end
+
+@inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)
+
+"""
+    reduced_cost_rule(rule::BoundMultiplier)
+
+The function `(λ, x, l, u) -> z` that [`kkt_errors!`](@ref) uses to split the reduced cost `λ`
+into the bound multiplier `z` and the dual residual `λ - z`: [`proj_multiplier`](@ref), which
+ignores `x`, for [`FiniteBounds`](@ref), or [`proj_multiplier_active`](@ref) for
+[`ActiveBounds`](@ref).
+"""
+reduced_cost_rule(::FiniteBounds) = finite_bound_multiplier
+reduced_cost_rule(::ActiveBounds) = proj_multiplier_active
 
 """
     combine(l, u)

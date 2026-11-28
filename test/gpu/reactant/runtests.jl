@@ -279,6 +279,32 @@ end
     end
 end
 
+# the Halpern algorithms have their own loop and their own bookkeeping, whose unbatched updates
+# must not go through zero-dimensional broadcasts (see `batched_apply!!`)
+const HALPERN_ALGORITHMS = (:HPDLP,)
+
+@testset verbose = true "$A with $M" for A in HALPERN_ALGORITHMS, M in (Matrix, GPUSparseMatrixCSR)
+    algo = CoolPDLP.Algorithm{A}(
+        Float64,
+        Int32,
+        M;
+        backend = nothing,
+        termination_reltol = 1.0e-4,
+        max_kkt_passes = 2000,
+        time_limit = Inf,
+        check_every = 50,
+        record_error_history = false,
+        show_progress = false,
+    )
+    @testset "$name" for (name, milp_init, sol_init) in (
+            ("single", milp0, sol0), ("batched", milp_batch, sol_batch),
+        )
+        state, state_r = solve_plain_and_compiled(algo, milp_init, sol_init)
+        test_agreement(state, state_r; rtol = 1.0e-8)
+        @test unwrap(state_r.stats.extra_products) == unwrap(state.stats.extra_products)
+    end
+end
+
 """
     OpaqueOperator
 
