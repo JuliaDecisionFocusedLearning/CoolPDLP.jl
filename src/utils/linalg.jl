@@ -5,18 +5,18 @@ Union of the sparse formats that CoolPDLP implements with its own kernels.
 """
 const GPUSparseMatrix = Union{GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL}
 
-# The formats implement `sparse_mul!`, and `mul!` forwards to it with exactly the signatures of
-# `sparse_mul!`: a broader one would be ambiguous with LinearAlgebra's generic `mul!`, and would
-# also catch the products with mismatched storage that this generic `mul!` used to serve.
-for (M, AV) in (
-        (:GPUSparseMatrixCOO, :(GPUSparseMatrixCOO{T, Ti, V})),
-        (:GPUSparseMatrixCSR, :(GPUSparseMatrixCSR{T, Ti, V})),
-        (:GPUSparseMatrixELL, :(GPUSparseMatrixELL{T, Ti})),
-    )
+# The formats are not wrappers around another array: say so, so that packages walking the
+# wrapper chain (e.g. Reactant's `ancestor`) do not have to guess, and warn.
+Adapt.parent_type(::Type{M}) where {M <: GPUSparseMatrix} = M
+
+# The formats implement `sparse_mul!`, and `mul!` forwards to it. Vectors may be strided, like
+# the column views that Krylov.jl multiplies: those on different backends throw an
+# `ArgumentError` rather than fall back to the generic `mul!`, which reads `A` entry by entry.
+for M in (:GPUSparseMatrixCOO, :GPUSparseMatrixCSR, :GPUSparseMatrixELL)
     @eval begin
         function LinearAlgebra.mul!(
-                c::V, A::$AV, b::V, α::Number, β::Number
-            ) where {T <: Number, Ti, V <: DenseVector{T}}
+                c::StridedVector{T}, A::$M{T}, b::StridedVector{T}, α::Number, β::Number
+            ) where {T <: Number}
             return sparse_mul!(c, A, b, α, β)
         end
         function LinearAlgebra.mul!(
@@ -156,68 +156,56 @@ function combine(l::Number, u::Number)
     return max(zero(l), ls, us)
 end
 
-"""
-    Symmetrized
-
-Represent a symmetric matrix `Kᵀ * K` lazily.
-"""
-struct Symmetrized{T <: Number, V <: DenseVector{T}, M <: AbstractMatrix{T}, Mt <: AbstractMatrix{T}}
+# `K` with its explicit transpose, since Krylov.jl multiplies by `K'`
+struct KrylovOperator{M, Mt}
     K::M
     Kᵀ::Mt
-    scratch::V
 end
-
-function Symmetrized(K::AbstractMatrix, Kᵀ::AbstractMatrix)
-    scratch = allocate(get_backend(K), eltype(K), size(K, 1))
-    return Symmetrized(K, Kᵀ, scratch)
-end
-
-Base.eltype(sym::Symmetrized) = eltype(sym.K)
-Base.size(sym::Symmetrized) = (n = size(sym.K, 2); (n, n))
-Base.size(sym::Symmetrized, d::Int) = d in (1, 2) ? size(sym.K, 2) : 1
-
-function LinearAlgebra.mul!(y, sym::Symmetrized, x)
-    check_mul_dims(y, sym, x)
-    (; K, Kᵀ, scratch) = sym
-    mul!(scratch, K, x)
-    mul!(y, Kᵀ, scratch)
-    return y
-end
+Base.size(op::KrylovOperator) = size(op.K)
+Base.eltype(op::KrylovOperator) = eltype(op.K)
+Base.adjoint(op::KrylovOperator) = KrylovOperator(op.Kᵀ, op.K)
+LinearAlgebra.mul!(y::AbstractVector, op::KrylovOperator, x::AbstractVector) = mul!(y, op.K, x)
 
 """
-    spectral_norm(K, Kᵀ; tol, maxiter)
+    spectral_norm(K, Kᵀ; reltol, maxiter)
 
-Compute the spectral norm of `K` with the power method from IterativeSolvers.jl, using
-`tol` as the absolute tolerance on the estimated eigenvalue of `Kᵀ * K` and `maxiter` as
-the iteration budget.
+Return an iterative estimate `σ` of the spectral norm `‖K‖₂`, from a deterministic start and
+with at most `maxiter` products by each of `K` and `Kᵀ`, accepted once `K` has a singular
+value within `reltol * σ` of it. `maxiter` should not depend on the size of `K` (#95).
 
-Throws an `AssertionError` if the power method fails to converge within `maxiter`
-iterations, instead of silently returning an inaccurate estimate. `maxiter` should be
-chosen independently of the size of `K`: IterativeSolvers' own default (`size(B, 2)`)
-ties the budget to problem size instead of the power method's convergence rate, which is
-exactly what let the estimate diverge silently on large matrices (#95).
+On non-convergence, warn and return the conservative estimate `σ + residual`.
 """
 function spectral_norm(
         K::AbstractMatrix{<:Number},
         Kᵀ::AbstractMatrix{<:Number};
-        tol::Number,
+        reltol::Number,
         maxiter::Integer,
     )
-    x0 = allocate(get_backend(K), eltype(K), size(K, 2))
-    x0_cpu = adapt(CPU(), x0)  # StableRNGs doesn't work on GPU
-    randn!(StableRNG(0), x0_cpu)
-    copyto!(x0, x0_cpu)
-    # normalize initial guess following the docstring of `powm!`
-    x0 ./= norm(x0)
-    KᵀK = Symmetrized(K, Kᵀ)
-    λ, _, powm_history = powm!(KᵀK, x0; tol, maxiter, log = true)
-    # `λ` is a Rayleigh quotient of the PSD matrix `KᵀK`, so it is mathematically
-    # nonnegative; `>= zero(λ)` (not `>`) so a legitimately zero spectral norm (no
-    # constraint rows, or an all-zero `K`) is not mistaken for the floating-point-noise
-    # case this guards against, which would otherwise reach `sqrt` as a small negative
-    @assert λ >= zero(λ)
-    @assert powm_history.isconverged
-    return sqrt(λ)
+    T = eltype(K)
+    m, n = size(K)
+    (m == 0 || n == 0) && return zero(T)
+    # LAPACK in `Float32` and `Float64`, GenericLinearAlgebra for other precisions
+    if !hasmethod(LinearAlgebra.svd!, Tuple{Bidiagonal{T, Vector{T}}})
+        msg = "`spectral_norm` needs the SVD of a `Bidiagonal{$T}`: load GenericLinearAlgebra to provide it"
+        throw(ArgumentError(msg))
+    end
+    b = copyto!(allocate(get_backend(K), T, m), randn(StableRNG(0), T, m))
+    b′ = similar(b, min(32, maxiter))
+    σ, residual = zero(T), typemax(T)
+    for start in 1:32:maxiter
+        # restart Golub–Kahan every `k ≤ 32` steps, from the top left Ritz vector
+        k = min(32, maxiter - start + 1)
+        _, U, _, L = golub_kahan(KrylovOperator(K, Kᵀ), b, k; allow_breakdown = true)
+        nz = nonzeros(L)  # stored column by column: `αᵢ = L[i, i]` and `βᵢ₊₁ = L[i + 1, i]`
+        F = LinearAlgebra.svd!(Bidiagonal(nz[1:2:(2k - 1)], nz[2:2:(2k - 2)], :L))
+        i = argmax(F.S)
+        σ, residual = T(F.S[i]), nz[2k] * T(abs(F.V[k, i]))
+        residual <= reltol * σ && return σ
+        mul!(b, view(U, :, 1:k), copyto!(view(b′, 1:k), view(F.U, :, i)))
+    end
+    estimate = σ + residual
+    @warn "Spectral norm estimate did not converge within $maxiter iterations (residual $residual > $(reltol * σ)), using the conservative estimate $estimate"
+    return estimate
 end
 
 column_norm(A::AbstractMatrix, j::Integer, p) = norm(view(A, :, j), p)

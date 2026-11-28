@@ -61,11 +61,11 @@ function sametype_transpose(A::GPUSparseMatrixCOO)
 end
 
 @kernel function spmv_coo!(
-        c::DenseVector{T},
+        c::AbstractVector{T},
         A_rowval::DenseVector{Ti},
         A_colval::DenseVector{Ti},
         A_nzval::DenseVector{T},
-        b::DenseVector{T},
+        b::AbstractVector{T},
         α::Number,
     ) where {T, Ti}
     k = @index(Global, Linear)
@@ -74,12 +74,12 @@ end
 end
 
 function sparse_mul!(
-        c::V,
-        A::GPUSparseMatrixCOO{T, Ti, V},
-        b::V,
+        c::AbstractVector{T},
+        A::GPUSparseMatrixCOO{T, Ti},
+        b::AbstractVector{T},
         α::Number,
         β::Number
-    ) where {T <: Number, Ti, V <: DenseVector{T}}
+    ) where {T <: Number, Ti}
     check_mul_dims(c, A, b)
     backend = common_backend(c, A, b)
     kernel! = spmv_coo!(backend)

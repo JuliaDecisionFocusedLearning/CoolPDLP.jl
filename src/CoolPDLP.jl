@@ -6,7 +6,7 @@ using Atomix: Atomix
 using BangBang: add!!, broadcast!!
 using DispatchDoctor: @stable
 using DocStringExtensions: TYPEDFIELDS
-using IterativeSolvers: powm!
+using Krylov: golub_kahan
 using KernelAbstractions: KernelAbstractions, Backend, CPU, @kernel, @index, allocate, get_backend
 import MathOptInterface as MOI
 using ProgressMeter: ProgressUnknown, finish!, next!
@@ -15,15 +15,18 @@ using QPSReader: QPSData, VTYPE_Binary, VTYPE_Integer, readqps
 using StableRNGs: StableRNG
 
 # standard libraries
-using LinearAlgebra: LinearAlgebra, Diagonal, axpby!, diag, dot, mul!, norm
+using LinearAlgebra: LinearAlgebra, Bidiagonal, Diagonal, axpby!, diag, dot, mul!, norm
 using Logging: NullLogger, with_logger
 using Printf: @sprintf
-using Random: Random, randn!
+using Random: Random
 using SparseArrays: SparseArrays, SparseMatrixCSC, AbstractSparseMatrix, findnz, nnz, nonzeros, nzrange, rowvals, sparse, sprandn
 
 include("public.jl")
 
-@stable begin
+# DispatchDoctor's checks are off unless the `dispatch_doctor_mode` preference turns them on
+# (the test suite sets it to "error"): left on, their wrappers can stop hot-path broadcasts
+# from inlining and make them allocate, so users get the plain code
+@stable default_mode = "disable" begin
     include("utils/device.jl")
     include("utils/mat_coo.jl")
     include("utils/mat_csr.jl")

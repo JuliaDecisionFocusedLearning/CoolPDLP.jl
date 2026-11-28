@@ -85,6 +85,19 @@ end
     @test JuMP.get_attribute(model, "algorithm") == CoolPDLP.PDLP
 end
 
+@testset "Time limit attribute" begin
+    model = CoolPDLP.Optimizer()
+    @test MOI.get(model, MOI.TimeLimitSec()) === nothing
+    MOI.set(model, MOI.TimeLimitSec(), 3)
+    @test MOI.get(model, MOI.TimeLimitSec()) === 3.0
+    # the raw attribute stores the value as given, and `TimeLimitSec` still reads it back
+    MOI.set(model, MOI.RawOptimizerAttribute("time_limit"), 5)
+    @test MOI.get(model, MOI.RawOptimizerAttribute("time_limit")) === 5
+    @test MOI.get(model, MOI.TimeLimitSec()) === 5.0
+    MOI.set(model, MOI.TimeLimitSec(), nothing)
+    @test MOI.get(model, MOI.TimeLimitSec()) === nothing
+end
+
 @testset "Limit statuses" begin
     function limited_model(attributes...)
         model = JuMP.Model(CoolPDLP.Optimizer)

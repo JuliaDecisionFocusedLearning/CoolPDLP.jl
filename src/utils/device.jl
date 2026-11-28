@@ -16,7 +16,7 @@ end
 
 Throw a `DimensionMismatch` unless `c`, `A` and `b` have compatible sizes for `mul!(c, A, b, α, β)`,
 i.e. `size(c, 1) == size(A, 1)` and `size(b, 1) == size(A, 2)`. `A` need not be an `AbstractMatrix`,
-only support `size`, which covers matrix-free operators like [`Symmetrized`](@ref).
+only support `size`.
 """
 function check_mul_dims(c::AbstractVecOrMat, A, b::AbstractVecOrMat)
     if size(c, 1) != size(A, 1) || size(b, 1) != size(A, 2)

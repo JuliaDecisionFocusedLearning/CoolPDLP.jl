@@ -48,49 +48,11 @@ end
     @test CoolPDLP.combine(-Inf, Inf) == 0
 end
 
-@testset "Symmetrized" begin
-    for _ in 1:10
-        A = randn(10, 20)
-        S = CoolPDLP.Symmetrized(A, Matrix(transpose(A)))
-        x = randn(20)
-        y = zeros(20)
-        mul!(y, S, x)
-        @test y ≈ transpose(A) * A * x
-    end
-end
-
-@testset "Symmetrized size" begin
-    A = randn(10, 20)
-    S = CoolPDLP.Symmetrized(A, Matrix(transpose(A)))
-    @test size(S) == (20, 20)
-    @test size(S, 1) == 20
-    @test size(S, 2) == 20
-    @test size(S, 3) == 1
-    @test size(S, 100) == 1
-end
-
-@testset "Symmetrized mul! dimension mismatch" begin
-    A = randn(10, 20)
-    S = CoolPDLP.Symmetrized(A, Matrix(transpose(A)))
-    @test_throws DimensionMismatch mul!(zeros(20), S, randn(19))
-    @test_throws DimensionMismatch mul!(zeros(19), S, randn(20))
-end
-
-@testset "Symmetrized with mismatched K/Kᵀ types" begin
-    # K and Kᵀ need not share a concrete matrix type (see issue #102)
-    A = randn(10, 20)
-    S = CoolPDLP.Symmetrized(A, sparse(Matrix(transpose(A))))
-    x = randn(20)
-    y = zeros(20)
-    mul!(y, S, x)
-    @test y ≈ transpose(A) * A * x
-end
-
 @testset "Spectral norm" begin
     rng = Xoshiro(42)
     for _ in 1:10
         A = randn(rng, 10, 20)
-        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); tol = 1.0e-7, maxiter = 1000)
+        s1 = CoolPDLP.spectral_norm(A, Matrix(transpose(A)); reltol = 1.0e-7, maxiter = 1000)
         s1_ref = opnorm(A, 2)
         # normalizing the initial guess and giving the power method a generous,
         # size-independent iteration budget (#95) makes this accurate to near machine
@@ -106,7 +68,7 @@ end
     A = randn(5, 5)
     Aᵀ = Matrix(transpose(A))
     @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ)
-    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; tol = 1.0e-7)
+    @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; reltol = 1.0e-7)
     @test_throws UndefKeywordError CoolPDLP.spectral_norm(A, Aᵀ; maxiter = 1000)
 end
 
@@ -116,17 +78,38 @@ end
     # an all-zero `K`) must not be rejected by the guard against a slightly-negative `λ`
     # reaching `sqrt` (see #95 and the "Fixed step size stays finite" test)
     Z = zeros(2, 2)
-    @test CoolPDLP.spectral_norm(Z, Z; tol = 1.0e-3, maxiter = 1000) == 0.0
+    @test CoolPDLP.spectral_norm(Z, Z; reltol = 1.0e-3, maxiter = 1000) == 0.0
 end
 
-@testset "Spectral norm errors instead of silently under-converging" begin
-    # a `maxiter` too small for the requested `tol` (rather than IterativeSolvers'
-    # size-tied default) must surface as an error instead of an inaccurate estimate
-    rng = Xoshiro(42)
-    A = randn(rng, 10, 20)
-    @test_throws AssertionError CoolPDLP.spectral_norm(
-        A, Matrix(transpose(A)); tol = 1.0e-12, maxiter = 1
-    )
+@testset "Spectral norm of a matrix with a small norm" begin
+    # the relative tolerance does not depend on the scale, unlike the old absolute one
+    A = randn(Xoshiro(0), 30, 60)
+    for scale in (1.0e-3, 1.0e-6)
+        s = CoolPDLP.spectral_norm(scale * A, scale * Matrix(transpose(A)); reltol = 1.0e-3, maxiter = 1000)
+        @test s ≈ scale * opnorm(A, 2) rtol = 2.0e-3
+    end
+end
+
+@testset "Spectral norm warns and stays conservative instead of crashing" begin
+    # a clustered top of the spectrum, which 30 iterations cannot resolve to `reltol`
+    λs = vcat(1.0, 1.0 - 1.0e-7, range(0.0, 0.999; length = 98))
+    K = sparse(Diagonal(sqrt.(λs)))
+    s = @test_logs (:warn, r"did not converge") CoolPDLP.spectral_norm(K, K; reltol = 1.0e-12, maxiter = 30)
+    @test 1.0 <= s <= 1.05
+end
+
+@testset "Spectral norm on the CoolPDLP sparse formats, on CPU and JLArrays" begin
+    using JLArrays: JLArrays, JLBackend
+    JLArrays.allowscalar(false)
+    milp, _ = CoolPDLP.random_milp_and_sol(60, 80, 0.1)
+    ref = opnorm(Matrix(milp.A), 2)
+    for F in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL), backend in (CoolPDLP.CPU(), JLBackend())
+        # Krylov.jl multiplies column views, which must reach the sparse kernels
+        m = CoolPDLP.perform_conversion(milp, CoolPDLP.ConversionParameters(Float32, Int32, F; backend))
+        s = CoolPDLP.spectral_norm(m.A, m.At; reltol = 1.0f-5, maxiter = 1000)
+        @test s isa Float32
+        @test s ≈ ref rtol = 1.0e-4
+    end
 end
 
 @testset "Column reductions" begin
@@ -162,4 +145,21 @@ end
         @test CoolPDLP.sametype_transpose(A) == transpose(A)
         @test CoolPDLP.sametype_transpose(A) isa typeof(A)
     end
+end
+
+@testset "Spectral norm in other precisions" begin
+    S = sprandn(Xoshiro(6), 30, 40, 0.2)
+    ref = opnorm(Matrix(S), 2)
+    A16 = convert(SparseMatrixCSC{Float16, Int}, S)
+    A = convert(SparseMatrixCSC{BigFloat, Int}, S)
+    # precisions outside LAPACK need GenericLinearAlgebra: loaded last, since it extends LinearAlgebra
+    @test_throws "load GenericLinearAlgebra" CoolPDLP.spectral_norm(A16, sparse(transpose(A16)); reltol = 1.0e-2, maxiter = 1000)
+    @test_throws "load GenericLinearAlgebra" CoolPDLP.spectral_norm(A, sparse(transpose(A)); reltol = 1.0e-2, maxiter = 1000)
+    @eval using GenericLinearAlgebra: GenericLinearAlgebra
+    s = Base.invokelatest(CoolPDLP.spectral_norm, A16, sparse(transpose(A16)); reltol = 1.0e-2, maxiter = 1000)
+    @test s isa Float16
+    @test s ≈ ref rtol = 1.0e-2
+    s = Base.invokelatest(CoolPDLP.spectral_norm, A, sparse(transpose(A)); reltol = BigFloat(1.0e-40), maxiter = 1000)
+    @test s isa BigFloat
+    @test s ≈ maximum(GenericLinearAlgebra.svdvals!(Matrix(A))) rtol = 1.0e-35
 end

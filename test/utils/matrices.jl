@@ -45,14 +45,11 @@ end
     end
 end
 
-@testset "mul! with mismatched storage falls back to LinearAlgebra $M" for M in (
+@testset "mul! with mismatched storage throws $M" for M in (
         GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL,
     )
-    A = sprand(7, 5, 0.5)
-    b = rand(5)
-    # `c` is a `JLArray` but `b` a `Vector`, so the format's kernels do not apply
-    c = @allowscalar mul!(jl(zeros(7)), M(A), b, 1.0, 0.0)
-    @test Array(c) ≈ A * b
+    # `c` is a `JLArray` but `A` and `b` are on the CPU: no silent generic `mul!`
+    @test_throws ArgumentError mul!(jl(zeros(7)), M(sprand(7, 5, 0.5)), rand(5), 1.0, 0.0)
 end
 
 @testset "spmm! $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
@@ -87,4 +84,9 @@ end
     A_ell = GPUSparseMatrixELL(A)
     @test size(A_ell) == (0, 5)
     @test SparseMatrixCSC(A_ell) == A
+end
+
+@testset "parent_type $M" for M in (GPUSparseMatrixCOO, GPUSparseMatrixCSR, GPUSparseMatrixELL)
+    A = M(sprand(10, 8, 0.3))
+    @test Adapt.parent_type(typeof(A)) == typeof(A)
 end
