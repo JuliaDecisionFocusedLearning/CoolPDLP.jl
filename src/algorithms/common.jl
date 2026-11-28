@@ -1,18 +1,28 @@
 """
-    Algorithm
+    AbstractAlgorithmKind
+
+Supertype of the tags `A` in [`Algorithm{A}`](@ref), one per algorithm.
+
+A new algorithm is an abstract subtype `A` of `AbstractAlgorithmKind`, which may add a method to [`specific_parameters`](@ref). Solving with it requires methods of `initialize` and `solve!` for `Algorithm{A}`, returning and updating a subtype of `AbstractState` with methods of `instance` and `nbinstances`.
+"""
+abstract type AbstractAlgorithmKind end
+
+"""
+    Algorithm{A <: AbstractAlgorithmKind}
 
 # Fields
 
 $(TYPEDFIELDS)
 """
 struct Algorithm{
-        A,
+        A <: AbstractAlgorithmKind,
         C <: ConversionParameters,
         P <: PreconditioningParameters,
         S <: StepSizeParameters,
         R <: RestartParameters,
         G <: GenericParameters,
         T <: TerminationParameters,
+        X,
     }
     conversion::C
     preconditioning::P
@@ -20,6 +30,8 @@ struct Algorithm{
     restart::R
     generic::G
     termination::T
+    "parameters that only algorithm `A` reads, built by [`specific_parameters`](@ref)"
+    specific::X
 
     function Algorithm{A}(
             conversion::C,
@@ -28,20 +40,38 @@ struct Algorithm{
             restart::R,
             generic::G,
             termination::T,
-        ) where {A, C, P, S, R, G, T}
-        return new{A, C, P, S, R, G, T}(
+            specific::X,
+        ) where {A <: AbstractAlgorithmKind, C, P, S, R, G, T, X}
+        return new{A, C, P, S, R, G, T, X}(
             conversion,
             preconditioning,
             step_size,
             restart,
             generic,
             termination,
+            specific,
         )
     end
 end
 
 """
-    Algorithm{:ALGNAME}(
+    NoParameters
+
+Placeholder for the specific parameters of an algorithm that has none.
+"""
+struct NoParameters end
+
+"""
+    specific_parameters(::Type{A}, ::Type{T}; kwargs...)
+
+Build the parameters that only algorithm `A` reads, in float type `T`, from the keyword arguments of [`Algorithm`](@ref) that the common parameters do not take.
+
+Algorithms without such parameters fall back on [`NoParameters`](@ref) and reject any extra keyword argument.
+"""
+specific_parameters(::Type{<:AbstractAlgorithmKind}, ::Type) = NoParameters()
+
+"""
+    Algorithm{A}(
         # conversion
         _T::Type{T} = Float64,
         ::Type{Ti} = Int,
@@ -69,6 +99,8 @@ end
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = Inf,
+        # specific to algorithm `A`, see `specific_parameters`
+        kwargs...
     )
 
 Constructor for algorithm configs.
@@ -101,7 +133,8 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         max_kkt_passes = 10^5,
         time_limit = Inf,
-    ) where {A, T, Ti, M, B}
+        kwargs...
+    ) where {A <: AbstractAlgorithmKind, T, Ti, M, B}
 
     conversion = ConversionParameters(
         T, Ti, M; backend,
@@ -134,27 +167,31 @@ function Algorithm{A}(
         max_kkt_passes,
     )
 
+    specific = specific_parameters(A, _T; kwargs...)
+
     return Algorithm{A}(
         conversion,
         preconditioning,
         step_size,
         restart,
         generic,
-        termination
+        termination,
+        specific,
     )
 end
 
 function Base.show(io::IO, algo::Algorithm{A}) where {A}
-    (; conversion, preconditioning, step_size, restart, generic, termination) = algo
+    (; conversion, preconditioning, step_size, restart, generic, termination, specific) = algo
     return print(
         io, """
-        $A algorithm:
+        $(nameof(A)) algorithm:
         - $conversion
         - $preconditioning
         - $step_size
         - $restart
         - $generic
-        - $termination"""
+        - $termination
+        - $specific"""
     )
 end
 

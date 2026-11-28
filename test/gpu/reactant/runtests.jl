@@ -187,10 +187,10 @@ end
 # each check, so a binding time limit would stop the two runs after different numbers of
 # iterations and make them incomparable. The KKT pass budget bounds the runtime instead.
 configs = [
-    (:PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
-    (:PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
-    (:PDHG, Float64, 1.0e-4, 2000, 1.0e-8),
-    (:PDLP, Float64, 1.0e-4, 2000, 1.0e-8),
+    (PDHG, Float32, 1.0f-2, 1000, 1.0e-3),
+    (PDLP, Float32, 1.0f-2, 1000, 1.0e-3),
+    (PDHG, Float64, 1.0e-4, 2000, 1.0e-8),
+    (PDLP, Float64, 1.0e-4, 2000, 1.0e-8),
 ]
 
 @testset verbose = true "$A in $T" for (A, T, termination_reltol, max_kkt_passes, rtol) in configs
@@ -256,7 +256,7 @@ sol_batch = PrimalDualSolution(milp_batch)
 end
 
 # the custom sparse formats go through the extension's `mul!` overlay rather than a dense product
-@testset verbose = true "$A with $M" for A in (:PDHG, :PDLP),
+@testset verbose = true "$A with $M" for A in (PDHG, PDLP),
         M in (GPUSparseMatrixCSR, GPUSparseMatrixELL, GPUSparseMatrixCOO)
 
     algo = CoolPDLP.Algorithm{A}(

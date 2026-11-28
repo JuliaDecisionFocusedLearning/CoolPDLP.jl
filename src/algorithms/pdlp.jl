@@ -1,10 +1,12 @@
 """
     PDLP(args...; kwargs...)
 
-Shortcut for [`Algorithm{:PDLP}`](@ref).
+Shortcut for [`Algorithm{PDLP}`](@ref).
 """
-function PDLP(args...; kwargs...)
-    return Algorithm{:PDLP}(
+abstract type PDLP <: AbstractAlgorithmKind end
+
+function (::Type{PDLP})(args...; kwargs...)
+    return Algorithm{PDLP}(
         args...;
         kwargs...
     )
@@ -67,7 +69,7 @@ end
 function initialize(
         milp::MILP{T},
         sol::PrimalDualSolution{T, V},
-        algo::Algorithm{:PDLP};
+        algo::Algorithm{PDLP};
         starting_time::Float64
     ) where {T, V}
     sol_last = zero(sol)
@@ -96,7 +98,7 @@ end
 function solve!(
         state::PDLPState,
         milp::MILP,
-        algo::Algorithm{:PDLP}
+        algo::Algorithm{PDLP}
     )
     prog = init_progress("PDLP iterations:", algo.generic.show_progress)
     must_terminate = false
@@ -169,7 +171,7 @@ is guarded by.
 function restart_check!(
         state::PDLPState,
         milp::MILP,
-        algo::Algorithm{:PDLP}
+        algo::Algorithm{PDLP}
     )
     (;
         sol, sol_last, sol_avg, sol_avg_last,
@@ -220,7 +222,7 @@ end
 
 Restart the PDLP iterations from the candidate selected by [`restart_check!`](@ref).
 """
-function restart!(state::PDLPState{T}, algo::Algorithm{:PDLP}) where {T}
+function restart!(state::PDLPState{T}, algo::Algorithm{PDLP}) where {T}
     (;
         sol, sol_avg, sol_restart,
         step_sizes, iteration, scratch, restart_stats,
