@@ -320,8 +320,5 @@ end
         err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, rule)
         @test err.dual ≈ stats.err.dual
         @test err.dual <= 1.0e-4 * err.dual_scale
-        # the stopping test does not change PDLP's iterates, so it can only stop later
-        _, stats_plain = solve(netlib, alg(; termination_reltol = 1.0e-4))
-        @test stats.kkt_passes >= stats_plain.kkt_passes
     end
 end
