@@ -210,8 +210,8 @@ function best_error!!(
     )
     # `kkt_errors!` writes into `scratch.b1` and `b2`, so both errors come first. The restart
     # criterion takes the projected reduced costs as multipliers, whatever `x`: averaged iterates
-    # are only approximately on their bounds, and with the active-bound rule PDLP no longer
-    # reached a relative tolerance of 1e-6 on Netlib's vtp-base, e226 and boeing1
+    # are only approximately on their bounds, and restarting on the active-bound rule slowed
+    # PDLP down at tight tolerances
     kkt_errors!(err1, scratch, sol1, milp, finite_bound_multiplier)
     kkt_errors!(err2, scratch, sol2, milp, finite_bound_multiplier)
     abs1 = absolute!!(scratch.b1, err1, ω)

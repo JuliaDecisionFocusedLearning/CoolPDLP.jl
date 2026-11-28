@@ -87,7 +87,7 @@ z_i = \begin{cases}
 
 The dual residual is $c - A^\top y - z$, so the reduced cost of a variable strictly inside its bounds, or on the bound of the wrong sign, counts as dual infeasibility.
 An infinite bound is never reached, so $z \in \mathcal{Z}$, and $z_i \left(x_i - \text{bound}_i\right) = 0$: complementarity holds by construction, and its violation shows up in the dual residual instead.
-The comparison is exact because the errors are evaluated at projected iterates, which are clamped into the bounds.
+A variable counts as on a bound when it is within $\sqrt{\varepsilon} \max(1, |x_i|)$ of it, where $\varepsilon$ is the machine epsilon: the checked iterates are clamped into the bounds, but unscaling or averaging can leave them a few ulps inside.
 
 The criterion of Applegate et al. (2021) takes instead $z = \mathrm{proj}_{\mathcal{Z}}(c - A^\top y)$, whatever $x$, and PDLP's restart criterion still uses it.
 Both rules are sound, but the one above is stricter: its dual residual also measures complementarity, which the projection leaves to the gap alone.
