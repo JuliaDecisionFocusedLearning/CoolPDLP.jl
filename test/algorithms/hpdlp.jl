@@ -118,6 +118,28 @@ end
     @test all(isfinite, state.sol.x)
 end
 
+@testset "Primal weight control with boxed variables" begin
+    # every variable has two finite bounds, so without active-bound reduced costs the dual
+    # residual is zero for every iterate and the controller never accepts a weight update
+    rng = Xoshiro(3)
+    m, n = 15, 40
+    A = sprandn(rng, m, n, 0.3)
+    b = A * rand(rng, n)
+    milp = MILP(; c = randn(rng, n), lv = zeros(n), uv = ones(n), A, lc = b, uc = b)
+    algo = HPDLP(; check_every = 20, termination_reltol = 0.0, max_kkt_passes = 2000)
+    @test CoolPDLP.termination_rule(algo) == ActiveBounds(L2Norm())
+    @test CoolPDLP.termination_rule(HPDLP(; termination_norm = LInfNorm())) == ActiveBounds(LInfNorm())
+    @test CoolPDLP.termination_rule(HPDLP(; termination_norm = ActiveBounds(L2Norm()))) == ActiveBounds(L2Norm())
+    @test CoolPDLP.termination_rule(PDLP()) == L2Norm()
+    milp_p, sol_p = preprocess(milp, PrimalDualSolution(milp), algo)
+    state = initialize(milp_p, sol_p, algo; starting_time = time())
+    ω0 = state.step_sizes.ω
+    solve!(state, milp_p, algo)
+    @test state.halpern.restarts > 1
+    @test isfinite(state.halpern.best_gap)
+    @test state.step_sizes.ω != ω0
+end
+
 @testset "Batch matches per-instance solves" begin
     # one Netlib instance with a rescaled objective per column, which keeps every instance
     # well-conditioned enough for the batched and single runs to stay comparable
