@@ -279,7 +279,7 @@ end
     I2 = sparse([1.0 0.0; 0.0 1.0])
     milp = MILP(; c = [1.0, 0.0], lv = [0.0, 0.0], uv = [2.0, 2.0e4], A = I2, lc = [1.0, 1.0e4], uc = [1.0, 1.0e4])
     params = CoolPDLP.TerminationParameters(; termination_reltol = 1.0e-4, max_kkt_passes = 10)
-    kkt(sol, rule) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp, rule)
+    kkt(sol, rule...) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, milp, rule...)
     margin(err) = CoolPDLP.termination_margin!!(0.0, err, params)
 
     # x strictly inside its bounds with objective 0.5: the bound absorbs the whole reduced cost
@@ -289,35 +289,34 @@ end
     @test err.dual == 0
     @test err.gap == 0
     @test margin(err) <= 0
-    err_active = kkt(sol, ActiveBounds(L2Norm()))
+    err_active = kkt(sol, L2Norm(), ActiveBounds())
     @test err_active.dual ≈ 0.5
     @test err_active.primal == err.primal
     @test margin(err_active) > 0
-    @test kkt(sol, ActiveBounds(LInfNorm())).dual ≈ 0.5
+    @test kkt(sol, LInfNorm(), ActiveBounds()).dual ≈ 0.5
 
     # at the optimum both rules agree
     opt = PrimalDualSolution([1.0, 1.0e4], [1.0, 0.0])
     @test margin(kkt(opt, L2Norm())) <= 0
-    @test margin(kkt(opt, ActiveBounds(L2Norm()))) <= 0
+    @test margin(kkt(opt, L2Norm(), ActiveBounds())) <= 0
 
     # x on its lower bound: the positive reduced cost is a multiplier under both rules
     low = PrimalDualSolution([0.0, 1.0e4], [0.0, 0.0])
-    @test kkt(low, ActiveBounds(L2Norm())).dual == 0
+    @test kkt(low, L2Norm(), ActiveBounds()).dual == 0
 
     # the active rule never keeps more of the reduced cost than the finite-bound rule
     Random.seed!(2)
     rmilp, _ = CoolPDLP.random_milp_and_sol(20, 30, 0.4)
     rsol = PrimalDualSolution(clamp.(randn(nbvar(rmilp)), rmilp.lv, rmilp.uv), randn(nbcons(rmilp)))
-    rkkt(rule) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(rsol), CoolPDLP.Scratch(rsol), rsol, rmilp, rule)
-    @test rkkt(ActiveBounds(L2Norm())).dual >= rkkt(L2Norm()).dual
-    @test rkkt(ActiveBounds(L2Norm())).primal == rkkt(L2Norm()).primal
+    rkkt(rule...) = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(rsol), CoolPDLP.Scratch(rsol), rsol, rmilp, rule...)
+    @test rkkt(L2Norm(), ActiveBounds()).dual >= rkkt(L2Norm()).dual
+    @test rkkt(L2Norm(), ActiveBounds()).primal == rkkt(L2Norm()).primal
 
     netlib = MILP(read_instance(Netlib, "afiro")[1])
     @testset "$alg" for alg in (PDHG, PDLP)
-        rule = ActiveBounds(L2Norm())
-        sol, stats = solve(netlib, alg(; termination_reltol = 1.0e-4, termination_norm = rule))
+        sol, stats = solve(netlib, alg(; termination_reltol = 1.0e-4, bound_multiplier = ActiveBounds()))
         @test termination_status(stats) == MOI.OPTIMAL
-        err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, rule)
+        err = CoolPDLP.kkt_errors!(CoolPDLP.KKTErrors(sol), CoolPDLP.Scratch(sol), sol, netlib, L2Norm(), ActiveBounds())
         @test err.dual ≈ stats.err.dual
         @test err.dual <= 1.0e-4 * err.dual_scale
     end

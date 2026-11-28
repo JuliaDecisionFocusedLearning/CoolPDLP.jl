@@ -129,12 +129,12 @@ function absolute!!(dest::BatchedNumber, err::KKTErrors, ω::BatchedNumber)
 end
 
 """
-    kkt_errors!(err, scratch, sol, milp, norm)
+    kkt_errors!(err, scratch, sol, milp, norm, rule = FiniteBounds())
 
 Fill `err` with the KKT errors of `sol`, one value per column of the batch.
 
 The residuals and the norms of the bounds and the objective are measured in the [`TerminationNorm`](@ref) `norm`.
-With [`ActiveBounds`](@ref), a bound takes a reduced cost as its multiplier only where `sol.x` is on that bound.
+The [`BoundMultiplier`](@ref) `rule` splits the reduced cost into the multiplier of the variable bounds and the dual residual.
 
 The errors are those of the original problem, before preconditioning and bound and objective
 rescaling.
@@ -145,6 +145,7 @@ function kkt_errors!(
         sol::PrimalDualSolution,
         milp::MILP{T},
         norm::TerminationNorm,
+        rule::BoundMultiplier = FiniteBounds(),
     ) where {T}
     (; x, y) = sol
     (; c, c0, lv, uv, A, At, lc, uc, D1, D2) = milp
@@ -156,7 +157,7 @@ function kkt_errors!(
     # literals rather than `-one(T)` and `zero(T)`, which are traced under Reactant
     c_At_y = mul!(scratch.x, At, y, -1, false)
     c_At_y .+= c
-    multiplier = reduced_cost_rule(norm)
+    multiplier = reduced_cost_rule(rule)
     z = @. scratch.z = multiplier(c_At_y, x, lv, uv)
 
     primal_diff = @. scratch.y = inv(D1.diag) * (A_x - clamp(A_x, lc, uc)) / βr

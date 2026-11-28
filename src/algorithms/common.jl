@@ -93,6 +93,7 @@ specific_parameters(::Val, ::Type) = NoParameters()
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
         termination_norm = L2Norm(),
+        bound_multiplier = FiniteBounds(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
@@ -105,7 +106,8 @@ Constructor for algorithm configs.
 The algorithm stops when, for every instance, the KKT errors meet
 `error ≤ termination_abstol + termination_reltol * scale` (see
 [`termination_margin!!`](@ref)), with the residuals measured in the norm `termination_norm`
-(a [`TerminationNorm`](@ref)). The default `termination_abstol = termination_reltol`
+(a [`TerminationNorm`](@ref)) and the bound multipliers given by `bound_multiplier` (a
+[`BoundMultiplier`](@ref)). The default `termination_abstol = termination_reltol`
 is the purely relative criterion `error / (1 + scale) ≤ termination_reltol`.
 
 With `infeasibility_tol` (default `1e-8`), PDHG and PDLP look for infeasibility
@@ -148,6 +150,7 @@ function Algorithm{A}(
         termination_reltol = 1.0e-4,
         termination_abstol = termination_reltol,
         termination_norm = L2Norm(),
+        bound_multiplier = FiniteBounds(),
         max_kkt_passes = 10^5,
         time_limit = Inf,
         infeasibility_tol = DEFAULT_INFEASIBILITY_TOL,
@@ -183,6 +186,7 @@ function Algorithm{A}(
         record_error_history,
         time_limit,
         termination_norm,
+        bound_multiplier,
     )
     termination = TerminationParameters(;
         termination_reltol = _T(termination_reltol),
@@ -330,7 +334,7 @@ function try_solve_noconstraints!(state::AbstractState, milp::MILP, algo::Algori
     bounded_above = !any(@. (c < 0) & isinf(uv))
     if box_feasible && bounded_below && bounded_above
         @. sol.x = ifelse(c > 0, lv, ifelse(c < 0, uv, clamp(zero(eltype(lv)), lv, uv)))
-        kkt_errors!(state.stats.err, state.scratch, sol, milp, termination_rule(algo))
+        kkt_errors!(state.stats.err, state.scratch, sol, milp, termination_rule(algo)...)
         state.stats.time_elapsed = current_time() - state.stats.starting_time
         state.stats.termination_status_code = status_code(MOI.OPTIMAL)
         state.stats.instance_status_code = batched_fill(
@@ -420,10 +424,10 @@ function solve! end
 """
     termination_rule(algo)
 
-The [`TerminationNorm`](@ref) in which `algo` evaluates the KKT errors of its termination
-check: `termination_norm`, which [`HPDLP`](@ref) wraps in [`ActiveBounds`](@ref).
+The [`TerminationNorm`](@ref) and [`BoundMultiplier`](@ref) in which `algo` evaluates the KKT
+errors of its termination check, as a tuple to splat into [`kkt_errors!`](@ref).
 """
-termination_rule(algo::Algorithm) = algo.generic.termination_norm
+termination_rule(algo::Algorithm) = (algo.generic.termination_norm, algo.generic.bound_multiplier)
 
 function termination_check!(
         state::AbstractState,
@@ -432,7 +436,7 @@ function termination_check!(
     )
     (; sol, scratch, stats) = state
     update_time_elapsed!(stats, algo.generic.time_limit)
-    kkt_errors!(stats.err, scratch, sol, milp, termination_rule(algo))
+    kkt_errors!(stats.err, scratch, sol, milp, termination_rule(algo)...)
     stats.extra_products += 2
     # dispatches to a no-op when the detection is disabled (`state.infeas === nothing`): that
     # is a type-level choice, so it costs nothing and is resolved at trace time under Reactant

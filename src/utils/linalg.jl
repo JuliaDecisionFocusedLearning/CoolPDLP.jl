@@ -93,22 +93,33 @@ struct L2Norm <: TerminationNorm end
 struct LInfNorm <: TerminationNorm end
 
 """
-    ActiveBounds(norm)
+    BoundMultiplier
 
-Termination check in the norm `norm` ([`L2Norm`](@ref) or [`LInfNorm`](@ref)) in which a
-variable bound absorbs a reduced cost only where the variable sits on that bound, as in
-cuPDLPx and in PDLP's `handle_some_primal_gradients_on_finite_bounds_as_residuals`.
-
-With a plain norm, the reduced cost `c - Aᵀy` of a variable with a finite bound of the matching
-sign counts entirely as the multiplier `z` of that bound, so the dual residual of a problem
-whose variables are all boxed is zero for every `y`, and the complementarity violation
-`z (x - bound)` only enters the gap, where it can cancel against `yᵀ(Ax - b)` at an infeasible
-`x`. With `ActiveBounds`, the reduced cost of a variable strictly inside its bounds is part of
-the dual residual instead, see [`proj_multiplier_active`](@ref).
+Rule by which the KKT errors split the reduced cost `c - Aᵀy` into the multiplier `z` of the
+variable bounds and the dual residual `c - Aᵀy - z`: [`FiniteBounds`](@ref) or
+[`ActiveBounds`](@ref).
 """
-struct ActiveBounds{N <: TerminationNorm} <: TerminationNorm
-    norm::N
-end
+abstract type BoundMultiplier end
+
+"""
+    FiniteBounds()
+
+A finite bound takes the reduced cost of the matching sign as its multiplier, wherever the
+variable is (see [`proj_multiplier`](@ref)): the termination criterion of Applegate et al.
+(2021). The dual residual of a problem whose variables are all boxed is then zero for every `y`,
+and the complementarity violation `z (x - bound)` only enters the gap.
+"""
+struct FiniteBounds <: BoundMultiplier end
+
+"""
+    ActiveBounds()
+
+A bound takes the reduced cost of the matching sign as its multiplier only where the variable
+is on that bound (see [`proj_multiplier_active`](@ref)). Elsewhere, the reduced cost counts in
+the dual residual, which therefore also measures complementarity. This is stricter than
+[`FiniteBounds`](@ref).
+"""
+struct ActiveBounds <: BoundMultiplier end
 
 """
     colnorm!!(dest, x, norm::TerminationNorm)
@@ -124,7 +135,6 @@ function colnorm!!(dest::AbstractVector, m::AbstractMatrix, ::LInfNorm)
     Base.mapreducedim!(abs, max, transpose(dest), m)
     return dest
 end
-colnorm!!(dest, x::AbstractVecOrMat, norm::ActiveBounds) = colnorm!!(dest, x, norm.norm)
 
 """
     coldot(a, b)
@@ -212,13 +222,14 @@ end
 @inline finite_bound_multiplier(λ, x, l, u) = proj_multiplier(λ, l, u)
 
 """
-    reduced_cost_rule(norm::TerminationNorm)
+    reduced_cost_rule(rule::BoundMultiplier)
 
 The function `(λ, x, l, u) -> z` that [`kkt_errors!`](@ref) uses to split the reduced cost `λ`
 into the bound multiplier `z` and the dual residual `λ - z`: [`proj_multiplier`](@ref), which
-ignores `x`, or [`proj_multiplier_active`](@ref) for [`ActiveBounds`](@ref).
+ignores `x`, for [`FiniteBounds`](@ref), or [`proj_multiplier_active`](@ref) for
+[`ActiveBounds`](@ref).
 """
-reduced_cost_rule(::TerminationNorm) = finite_bound_multiplier
+reduced_cost_rule(::FiniteBounds) = finite_bound_multiplier
 reduced_cost_rule(::ActiveBounds) = proj_multiplier_active
 
 """

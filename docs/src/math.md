@@ -198,10 +198,11 @@ The default $\epsilon_a = \epsilon_r$ gives back the purely relative criterion $
 Every quantity is that of the original problem, whatever the preconditioning.
 Restarts always compare errors in the $\ell_2$ norm.
 
-The multiplier $z$ of the variable bounds is the part of the reduced cost $c - A^\top y$ whose sign a finite bound allows, wherever $x$ is.
+With `bound_multiplier = FiniteBounds()` (the default, as in Applegate et al. 2021), the multiplier $z$ of the variable bounds is the part of the reduced cost $c - A^\top y$ whose sign a finite bound allows, wherever $x$ is.
 For a problem whose variables are all boxed, the dual residual is therefore zero for every $y$, and the complementarity violation $z (x - \text{bound})$ only enters the gap, where it can cancel against $y^\top (Ax - b)$ when $x$ is infeasible.
-`termination_norm = ActiveBounds(L2Norm())` (or `ActiveBounds(LInfNorm())`) keeps a reduced cost in $z$ only where $x$ is on the matching bound and counts it in the dual residual elsewhere, as cuPDLPx and PDLP (`handle_some_primal_gradients_on_finite_bounds_as_residuals`) do.
-`HPDLP` always does so: its primal weight controller reads the ratio of the dual and primal residuals, which must not vanish structurally.
+`bound_multiplier = ActiveBounds()` keeps a reduced cost in $z$ only where $x$ is on the matching bound and counts it in the dual residual elsewhere.
+It is the default of `HPDLP`: its primal weight controller reads the ratio of the dual and primal residuals, which must not vanish structurally.
+
 ## Infeasibility detection
 
 When a problem is infeasible, the iterates diverge, and their differences converge to a direction whose primal or dual part certifies it ([Applegate et al.](https://arxiv.org/abs/2102.04592)).
